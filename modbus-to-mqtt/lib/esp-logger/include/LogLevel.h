@@ -1,0 +1,9 @@
+#ifndef LOGLEVEL_H
+#define LOGLEVEL_H
+enum LogLevel {
+  LOGLEVEL_DEBUG = 0,
+  LOGLEVEL_INFO = 1,
+  LOGLEVEL_WARN = 2,
+  LOGLEVEL_ERROR = 3,
+};
+#endif //LOGLEVEL_H

@@ -19,8 +19,8 @@ ModbusManager mb_manager(&commLink, &logger);
 AT24CDriver eeprom;
 
 void addHandlers() {
-    const auto fullTopic = String(MQTT_ROOT_TOPIC + String(MQTT_SUB_NETWORK_RESET));
-    subscriptionHandler.addHandler(fullTopic.c_str(), [](const String &) {
+    const auto fullTopic = MQTT_ROOT_TOPIC + MQTT_SUB_NETWORK_RESET;
+    subscriptionHandler.addHandler(fullTopic, [](const String &) {
         logger.logInformation("Network reset requested by MQTT message");
         commLink.networkReset();
     });

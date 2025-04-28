@@ -16,8 +16,8 @@ public:
         TopicHandlerFunc handlerFunc;
     };
 
-    void addHandler(const char* topic, TopicHandlerFunc handler);
-    void handle(const char* topic, const String& message);
+    void addHandler(const String& topic, TopicHandlerFunc handler);
+    void handle(const String& topic, const String& message);
 private:
      std::vector<HandlerEntry> _handlers;
     Logger * _logger;

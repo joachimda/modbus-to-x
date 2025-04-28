@@ -3,7 +3,7 @@
 
 MqttSubscriptionHandler::MqttSubscriptionHandler(Logger *logger) : _logger(logger){}
 
-void MqttSubscriptionHandler::addHandler(const char* topic, TopicHandlerFunc func) {
+void MqttSubscriptionHandler::addHandler(const String& topic, TopicHandlerFunc func) {
     HandlerEntry entry;
     entry.topic = topic;
     entry.handlerFunc = std::move(func);
@@ -11,10 +11,10 @@ void MqttSubscriptionHandler::addHandler(const char* topic, TopicHandlerFunc fun
     _logger->logInformation((String("Handler added for topic: [")+ topic + "]").c_str());
 }
 
-void MqttSubscriptionHandler::handle(const char* topic, const String& message) {
+void MqttSubscriptionHandler::handle(const String& topic, const String& message) {
     for (auto &entry : _handlers) {
         _logger->logInformation(entry.topic.c_str());
-        _logger->logInformation(topic);
+        _logger->logInformation(topic.c_str());
         if (entry.topic.equals(topic)) {
             _logger->logDebug((String("MqttSubscriptionHandler::handle - Matched handler for topic [") + topic + "]").c_str());
             entry.handlerFunc(message);

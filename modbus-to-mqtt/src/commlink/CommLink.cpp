@@ -13,7 +13,8 @@ CommLink::CommLink(MqttSubscriptionHandler *subscriptionHandler, PubSubClient *m
 
 void handleMqttMessage(char *topic, byte *payload, unsigned int length) {
     if (s_activeCommLink) {
-        s_activeCommLink->onMqttMessage(topic, payload, length);
+        String topicStr = String(topic);
+        s_activeCommLink->onMqttMessage(topicStr, payload, length);
     }
 }
 
@@ -159,7 +160,7 @@ bool CommLink::mqttPublish(const char *topic, const char *payload) {
     return _mqttClient->publish(topic, payload);
 }
 
-void CommLink::onMqttMessage(const char *topic, const uint8_t *payload, size_t length) {
+void CommLink::onMqttMessage(const String& topic, const uint8_t *payload, size_t length) {
     String message;
     _logger->logInformation("CommLink::onMqttMessage - Received MQTT message");
 

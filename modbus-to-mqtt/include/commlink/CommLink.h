@@ -17,7 +17,7 @@ public:
 
     bool mqttPublish(const char *topic, const char *payload);
 
-    void onMqttMessage(const char *topic, const uint8_t *payload, size_t length);
+    void onMqttMessage(const String& topic, const uint8_t *payload, size_t length);
 
     bool startMqttTask();
 

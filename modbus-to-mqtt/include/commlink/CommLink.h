@@ -13,11 +13,11 @@ public:
 
     bool begin();
 
-    bool ensureMQTTConnection();
+    bool ensureMQTTConnection() const;
 
-    bool mqttPublish(const char *topic, const char *payload);
+    bool mqttPublish(const char *topic, const char *payload) const;
 
-    void onMqttMessage(const String& topic, const uint8_t *payload, size_t length);
+    void onMqttMessage(const String& topic, const uint8_t *payload, size_t length) const;
 
     bool startMqttTask();
 

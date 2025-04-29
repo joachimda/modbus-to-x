@@ -7,7 +7,7 @@
 
 class ModbusManager {
 public:
-    explicit ModbusManager(CommLink *commLink, Logger *logger);
+    explicit ModbusManager(Logger *logger);
 
     void initialize();
 
@@ -15,16 +15,23 @@ public:
 
     void readRegisters();
 
+    void clearRegisters();
+
+    void loadRegisters();
+    void addRegister(const ModbusRegister& reg);
+    void updateRegistersFromJson(const String& registerConfigJson);
+
 private:
     static void preTransmissionHandler();
 
     static void postTransmissionHandler();
 
+    void saveRegisters() const;
+
     static std::vector<ModbusRegister> setupInputRegisters();
 
     std::vector<ModbusRegister> sensorRegisters;
     ModbusMaster node;
-    CommLink *_commLink;
     Logger * _logger;
 };
 #endif //MODBUSMANAGER_H

@@ -100,7 +100,7 @@ void CommLink::saveMQTTConfig() {
     prefs.end();
 }
 
-bool CommLink::ensureMQTTConnection() {
+bool CommLink::ensureMQTTConnection() const {
     String clientId = MQTT_CLIENT_PREFIX;
     clientId += String(random(0xffff), HEX);
     const bool connected = _mqttClient->connect(clientId.c_str(), LOCAL_MQTT_USER, LOCAL_MQTT_PASSWORD);
@@ -110,28 +110,40 @@ bool CommLink::ensureMQTTConnection() {
             delay(250);
             setLedColor(false, false, false);
             delay(250);
+            _logger->logError(("MQTT connect failed, rc=" + String(_mqttClient->state())).c_str());
         }
     } else {
         setLedColor(false, false, false);
     }
-    _logger->logError(("MQTT connect failed, rc=" + String(_mqttClient->state())).c_str());
+    auto tops = _subscriptionHandler->getHandlerTopics();
+    auto siz = tops.size();
+    _logger->logInformation(("found topics: " + String(siz)).c_str());
+
+    for (const auto& topic : _subscriptionHandler->getHandlerTopics()) {
+        _mqttClient->subscribe(topic.c_str());
+        _logger->logInformation(("MQTT subscribe to: " + topic).c_str());
+    }
 
     //todo: use subscriptionhandler to find subscribed topics
-
-    _mqttClient->subscribe((MQTT_ROOT_TOPIC + MQTT_SUB_NETWORK_RESET).c_str());
-    _logger->logInformation(("MQTT subscribe to: " + String(MQTT_ROOT_TOPIC) + String(MQTT_SUB_NETWORK_RESET)).c_str());
+    // _mqttClient->subscribe((MQTT_ROOT_TOPIC + SUB_NETWORK_RESET).c_str());
+    // _mqttClient->subscribe((MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG).c_str());
+    // _mqttClient->subscribe((MQTT_ROOT_TOPIC + SUB_SYSTEM_ECHO).c_str());
     return connected;
 }
 
 [[noreturn]] void CommLink::processMQTTAsync(void *parameter) {
-    auto *commLink = static_cast<CommLink *>(parameter);
+    const auto *commLink = static_cast<CommLink *>(parameter);
     constexpr TickType_t delayTicks = MQTT_TASK_LOOP_DELAY_MS / portTICK_PERIOD_MS;
     static unsigned long lastReconnectAttempt = 0;
     while (true) {
         if (!commLink->_mqttClient->connected()) {
+            commLink->_logger->logError("MQTT disconnected, attempting reconnect");
             const unsigned long now = millis();
             if (now - lastReconnectAttempt >= MQTT_RECONNECT_INTERVAL_MS) {
                 lastReconnectAttempt = now;
+                if (!commLink->ensureMQTTConnection()) {
+                    commLink->_logger->logError("MQTT reconnect attempt failed in task loop");
+                }
             }
         }
         commLink->_mqttClient->loop();
@@ -156,24 +168,25 @@ bool CommLink::startMqttTask() {
     return true;
 }
 
-bool CommLink::mqttPublish(const char *topic, const char *payload) {
+bool CommLink::mqttPublish(const char *topic, const char *payload) const {
     return _mqttClient->publish(topic, payload);
 }
 
-void CommLink::onMqttMessage(const String& topic, const uint8_t *payload, size_t length) {
+void CommLink::onMqttMessage(const String &topic, const uint8_t *payload, const size_t length) const {
     String message;
-    _logger->logInformation("CommLink::onMqttMessage - Received MQTT message");
-
     message.reserve(length);
     for (size_t i = 0; i < length; i++) {
         message += static_cast<char>(payload[i]);
     }
     _subscriptionHandler->handle(topic, message);
+    _logger->logDebug("CommLink::onMqttMessage - Received MQTT message");
 }
 
 
 void CommLink::networkReset() {
     wm.resetSettings();
+    _logger->logDebug("CommLink::networkReset - WifiManager preferences purged successfully");
+    _logger->logDebug("CommLink::networkReset - Sending restart signal");
     ESP.restart();
 }
 
@@ -216,11 +229,9 @@ void CommLink::checkResetButton() {
                 prefs.begin(MQTT_PREFS_NAMESPACE, false);
                 prefs.clear();
                 prefs.end();
-
-                wm.resetSettings();
+                networkReset();
 
                 delay(1000);
-                _logger->logInformation("CommLink::checkResetButton - Settings cleared, rebooting...");
                 ESP.restart();
             }
             delay(50);

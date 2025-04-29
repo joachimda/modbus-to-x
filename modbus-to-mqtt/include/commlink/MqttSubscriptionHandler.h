@@ -10,17 +10,23 @@
 class MqttSubscriptionHandler {
 public:
     explicit MqttSubscriptionHandler(Logger *logger);
-    using TopicHandlerFunc = std::function<void(const String&)>;
+
+    using TopicHandlerFunc = std::function<void(const String &)>;
+
+    std::vector<String> getHandlerTopics() const;
+
+    void addHandler(const String &topic, TopicHandlerFunc handler);
+
+    void handle(const String &topic, const String &message) const;
+
     struct HandlerEntry {
         String topic;
         TopicHandlerFunc handlerFunc;
     };
 
-    void addHandler(const String& topic, TopicHandlerFunc handler);
-    void handle(const String& topic, const String& message);
 private:
-     std::vector<HandlerEntry> _handlers;
-    Logger * _logger;
+    std::vector<HandlerEntry> _handlers;
+    Logger *_logger;
 };
 
 #endif //TOPICHANDLERSTRUCT_H

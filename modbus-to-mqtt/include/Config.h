@@ -30,7 +30,13 @@
 #define MODBUS_CONFIG_COUNT_ADDR 0x0020
 #define MODBUS_CONFIG_ADDR_START 0x0022
 #define EEPROM_WRITE_CYCLE_MS 5
+
 #define MQTT_PREFS_NAMESPACE "mqtt"
+#define MODBUS_PREFS_NAMESPACE "modbus"
+
+#define MODBUS_MAX_REGISTERS 100
+#define REG_COUNT_KEY "count"
+#define REG_DATA_KEY "data"
 
 /****************************************************
  * MQTT

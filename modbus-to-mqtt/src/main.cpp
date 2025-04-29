@@ -10,33 +10,46 @@ MqttSubscriptionHandler subscriptionHandler(&logger);
 WiFiClient wifiClient;
 PubSubClient pubSubClient(wifiClient);
 CommLink commLink(&subscriptionHandler, &pubSubClient, &logger);
-MqttLogger mqttLogger([](const char* msg) {
-    const auto fullTopic = String(MQTT_ROOT_TOPIC + "/log");
-    pubSubClient.publish(fullTopic.c_str(), msg);
+MqttLogger mqttLogger([](const char *msg) {
+    const auto logTopic = MQTT_ROOT_TOPIC + SUB_SYSTEM_LOG;
+    pubSubClient.publish(logTopic.c_str(), msg);
 });
 
-ModbusManager mb_manager(&commLink, &logger);
+ModbusManager mb_manager(&logger);
 AT24CDriver eeprom;
 
-void addHandlers() {
-    const auto fullTopic = MQTT_ROOT_TOPIC + MQTT_SUB_NETWORK_RESET;
-    subscriptionHandler.addHandler(fullTopic, [](const String &) {
+void addSubscriptionHandlers() {
+    const auto netReset = MQTT_ROOT_TOPIC + SUB_NETWORK_RESET;
+    subscriptionHandler.addHandler(netReset, [](const String &) {
         logger.logInformation("Network reset requested by MQTT message");
         commLink.networkReset();
+    });
+
+    const auto mbConfig = MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG;
+    subscriptionHandler.addHandler(mbConfig, [](const String &message) {
+        logger.logInformation("New MODBUS config received from MQTT message");
+        mb_manager.updateRegistersFromJson(message);
+    });
+
+    const auto echo = MQTT_ROOT_TOPIC + SUB_SYSTEM_ECHO;
+    subscriptionHandler.addHandler(echo, [](const String &message) {
+        logger.logInformation(message.c_str());
     });
 }
 
 void setup() {
     logger.addTarget(&mqttLogger);
+
+    logger.logDebug("setup started");
+    addSubscriptionHandlers();
+
     commLink.begin();
+    Serial.begin(115200);
     // mb_manager.initialize();
     // AT24CDriver::begin();
-    addHandlers();
-
 }
 
 void loop() {
-    logger.logInformation("loop::Loop begin");
     // mb_manager.readRegisters();
 
     // uint8_t numData = eeprom.readByte(0x0020);
@@ -48,5 +61,4 @@ void loop() {
     //
     // eeprom.writeByte(0x0020, numData + numDataPoints);
     delay(2000);
-
 }

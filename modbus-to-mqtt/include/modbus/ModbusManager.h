@@ -11,15 +11,15 @@ public:
 
     void initialize();
 
-    void readSwVersion();
-
     void readRegisters();
 
     void clearRegisters();
 
-    void loadRegisters();
+    String getRegisterConfigurationAsJson() const;
+
+    void loadRegisterConfig();
     void addRegister(const ModbusRegister& reg);
-    void updateRegistersFromJson(const String& registerConfigJson);
+    void updateRegisterConfigurationFromJson(const String& registerConfigJson);
 
 private:
     static void preTransmissionHandler();

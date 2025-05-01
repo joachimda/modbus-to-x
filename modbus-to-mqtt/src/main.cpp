@@ -28,24 +28,30 @@ void addSubscriptionHandlers() {
     const auto mbConfig = MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG;
     subscriptionHandler.addHandler(mbConfig, [](const String &message) {
         logger.logInformation("New MODBUS config received from MQTT message");
-        mb_manager.updateRegistersFromJson(message);
+        mb_manager.updateRegisterConfigurationFromJson(message);
     });
 
     const auto echo = MQTT_ROOT_TOPIC + SUB_SYSTEM_ECHO;
     subscriptionHandler.addHandler(echo, [](const String &message) {
         logger.logInformation(message.c_str());
     });
+
+    const auto registerList = MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG_LIST;
+    subscriptionHandler.addHandler(MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG_LIST, [](const String &) {
+        const String json = mb_manager.getRegisterConfigurationAsJson();
+        logger.logInformation(json.c_str());
+    });
 }
 
 void setup() {
+    logger.useDebug(true);
     logger.addTarget(&mqttLogger);
 
     logger.logDebug("setup started");
     addSubscriptionHandlers();
 
     commLink.begin();
-    Serial.begin(115200);
-    // mb_manager.initialize();
+    mb_manager.initialize();
     // AT24CDriver::begin();
 }
 

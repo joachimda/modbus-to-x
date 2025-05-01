@@ -1,6 +1,5 @@
 #include "commlink/CommLink.h"
 
-#include <commlink/MqttSubscriptions.h>
 #include "Config.h"
 
 static CommLink *s_activeCommLink = nullptr;
@@ -11,9 +10,9 @@ CommLink::CommLink(MqttSubscriptionHandler *subscriptionHandler, PubSubClient *m
     s_activeCommLink = this;
 }
 
-void handleMqttMessage(char *topic, byte *payload, unsigned int length) {
+void handleMqttMessage(char *topic, const byte *payload, const unsigned int length) {
     if (s_activeCommLink) {
-        String topicStr = String(topic);
+        const auto topicStr = String(topic);
         s_activeCommLink->onMqttMessage(topicStr, payload, length);
     }
 }
@@ -115,19 +114,12 @@ bool CommLink::ensureMQTTConnection() const {
     } else {
         setLedColor(false, false, false);
     }
-    auto tops = _subscriptionHandler->getHandlerTopics();
-    auto siz = tops.size();
-    _logger->logInformation(("found topics: " + String(siz)).c_str());
 
     for (const auto& topic : _subscriptionHandler->getHandlerTopics()) {
         _mqttClient->subscribe(topic.c_str());
         _logger->logInformation(("MQTT subscribe to: " + topic).c_str());
     }
 
-    //todo: use subscriptionhandler to find subscribed topics
-    // _mqttClient->subscribe((MQTT_ROOT_TOPIC + SUB_NETWORK_RESET).c_str());
-    // _mqttClient->subscribe((MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG).c_str());
-    // _mqttClient->subscribe((MQTT_ROOT_TOPIC + SUB_SYSTEM_ECHO).c_str());
     return connected;
 }
 
@@ -182,7 +174,6 @@ void CommLink::onMqttMessage(const String &topic, const uint8_t *payload, const 
     _logger->logDebug("CommLink::onMqttMessage - Received MQTT message");
 }
 
-
 void CommLink::networkReset() {
     wm.resetSettings();
     _logger->logDebug("CommLink::networkReset - WifiManager preferences purged successfully");
@@ -208,7 +199,7 @@ void CommLink::checkResetButton() {
     pinMode(RESET_BUTTON_PIN, INPUT);
 
     if (digitalRead(RESET_BUTTON_PIN) == HIGH) {
-        _logger->logInformation("CommLink::checkResetButton - Button press detected");
+        _logger->logInformation("CommLink::checkResetButton - Reset Button press detected");
 
         const unsigned long pressStart = millis();
 

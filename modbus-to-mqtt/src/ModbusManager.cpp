@@ -21,7 +21,7 @@ void ModbusManager::initialize() {
     node.preTransmission(preTransmissionHandler);
     node.postTransmission(postTransmissionHandler);
 
-    loadRegisters();
+    loadRegisterConfig();
 
     sensorRegisters = setupInputRegisters();
     _logger->logInformation("ModbusManager::initialize - Finished");
@@ -48,13 +48,40 @@ void ModbusManager::readRegisters() {
     }
 }
 
-void ModbusManager::updateRegistersFromJson(const String &registerConfigJson) {
+void ModbusManager::clearRegisters() {
+    sensorRegisters.clear();
+    Preferences prefs;
+    prefs.begin(MODBUS_PREFS_NAMESPACE, false);
+    prefs.putUShort(REG_COUNT_KEY, 0);
+    prefs.end();
+}
+
+String ModbusManager::getRegisterConfigurationAsJson() const {
+    JsonDocument doc;
+    const auto json_array = doc.to<JsonArray>();
+
+    for (const auto& reg : sensorRegisters) {
+        auto obj = json_array.add<JsonObject>();
+        obj["address"] = reg.address;
+        obj["numOfRegisters"] = reg.numOfRegisters;
+        obj["scale"] = reg.scale;
+        obj["registerType"] = reg.registerType;
+        obj["dataType"] = reg.dataType;
+        obj["name"] = reg.name;
+    }
+
+    String out;
+    serializeJson(doc, out);
+    return out;
+}
+
+void ModbusManager::updateRegisterConfigurationFromJson(const String &registerConfigJson) {
     JsonDocument doc;
     _logger->logInformation((registerConfigJson).c_str());
-    DeserializationError err =  deserializeJson(doc, registerConfigJson);
+    const DeserializationError err =  deserializeJson(doc, registerConfigJson);
 
     if (err) {
-        _logger->logError(("Error parsing register config: " + String(err.c_str())).c_str());
+        _logger->logError(("ModbusManager::updateRegistersFromJson - Error parsing register config: " + String(err.c_str())).c_str());
         return;
     }
 
@@ -66,7 +93,7 @@ void ModbusManager::updateRegistersFromJson(const String &registerConfigJson) {
 
         reg.address = obj["address"] | 0;
         reg.numOfRegisters = obj["numOfRegisters"] | 1;
-        reg.scale = obj["scale"] | 1.0;
+        reg.scale = obj["scale"] | 1.0f;
         reg.registerType = static_cast<RegisterType>(obj["registerType"] | 1);
         reg.dataType = static_cast<ModbusDataType>(obj["dataType"] | 2);
         const char* name = obj["name"] | "unnamed";
@@ -89,10 +116,11 @@ void ModbusManager::postTransmissionHandler() {
     digitalWrite(RS485_RE_PIN, LOW);
 }
 
-void ModbusManager::loadRegisters() {
+void ModbusManager::loadRegisterConfig() {
     Preferences prefs;
     prefs.begin(MODBUS_PREFS_NAMESPACE, true);
     const uint16_t count = prefs.getUShort(REG_COUNT_KEY, 0);
+    _logger->logDebug(("ModbusManager::loadRegisterConfig - Found " + String(count) + " registers").c_str());
     if (count > 0 && count < MODBUS_MAX_REGISTERS + 1) {
         sensorRegisters.resize(count);
         prefs.getBytes(REG_DATA_KEY, sensorRegisters.data(), count * sizeof(ModbusRegister));

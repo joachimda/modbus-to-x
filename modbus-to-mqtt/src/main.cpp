@@ -5,7 +5,6 @@
 #include "MqttLogger.h"
 #include "commlink/MqttSubscriptions.h"
 #include "modbus/ModbusManager.h"
-#include "SPIFFS.h"
 
 Logger logger;
 MqttSubscriptionHandler subscriptionHandler(&logger);

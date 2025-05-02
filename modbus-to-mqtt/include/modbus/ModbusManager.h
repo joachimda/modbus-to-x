@@ -18,19 +18,18 @@ public:
     String getRegisterConfigurationAsJson() const;
 
     void loadRegisterConfig();
-    void addRegister(const ModbusRegister& reg);
-    void updateRegisterConfigurationFromJson(const String& registerConfigJson);
 
+    void updateRegisterConfigurationFromJson(const String& registerConfigJson, bool clearExisting);
 private:
     static void preTransmissionHandler();
+
+    void addRegister(const ModbusRegister& reg);
 
     static void postTransmissionHandler();
 
     void saveRegisters() const;
 
-    static std::vector<ModbusRegister> setupInputRegisters();
-
-    std::vector<ModbusRegister> sensorRegisters;
+    std::vector<ModbusRegister> _modbusRegisters;
     ModbusMaster node;
     Logger * _logger;
 };

@@ -1,9 +1,11 @@
 #include <Arduino.h>
+#include <nvs_flash.h>
 #include "commlink/CommLink.h"
 #include "AT24CDriver.h"
 #include "MqttLogger.h"
 #include "commlink/MqttSubscriptions.h"
 #include "modbus/ModbusManager.h"
+#include "SPIFFS.h"
 
 Logger logger;
 MqttSubscriptionHandler subscriptionHandler(&logger);
@@ -11,7 +13,7 @@ WiFiClient wifiClient;
 PubSubClient pubSubClient(wifiClient);
 CommLink commLink(&subscriptionHandler, &pubSubClient, &logger);
 MqttLogger mqttLogger([](const char *msg) {
-    const auto logTopic = MQTT_ROOT_TOPIC + SUB_SYSTEM_LOG;
+    const auto logTopic = MQTT_ROOT_TOPIC + PUB_SYSTEM_LOG;
     pubSubClient.publish(logTopic.c_str(), msg);
 });
 
@@ -28,7 +30,7 @@ void addSubscriptionHandlers() {
     const auto mbConfig = MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG;
     subscriptionHandler.addHandler(mbConfig, [](const String &message) {
         logger.logInformation("New MODBUS config received from MQTT message");
-        mb_manager.updateRegisterConfigurationFromJson(message);
+        mb_manager.updateRegisterConfigurationFromJson(message, true);
     });
 
     const auto echo = MQTT_ROOT_TOPIC + SUB_SYSTEM_ECHO;
@@ -36,10 +38,27 @@ void addSubscriptionHandlers() {
         logger.logInformation(message.c_str());
     });
 
+    const auto systemInfo = MQTT_ROOT_TOPIC + SUB_SYSTEM_INFO;
+    subscriptionHandler.addHandler(systemInfo, [](const String &) {
+        nvs_stats_t stats;
+        esp_err_t err = nvs_get_stats(nullptr, &stats);  // NULL = current NVS partition
+
+        if (err == ESP_OK) {
+            logger.logInformation(("NVS Usage: Used="+String(stats.used_entries) + "  Total=" + String(stats.total_entries) + "  Free=" + String(stats.free_entries)).c_str());
+        } else {
+            logger.logError(("Failed to get NVS stats: " + String(esp_err_to_name(err))).c_str());
+        }
+    });
     const auto registerList = MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG_LIST;
-    subscriptionHandler.addHandler(MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG_LIST, [](const String &) {
+    subscriptionHandler.addHandler(registerList, [](const String &) {
         const String json = mb_manager.getRegisterConfigurationAsJson();
         logger.logInformation(json.c_str());
+    });
+
+    const auto addRegister = MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG_ADD;
+    subscriptionHandler.addHandler(addRegister, [](const String &message) {
+        logger.logInformation("Additional MODBUS register configuration received");
+        mb_manager.updateRegisterConfigurationFromJson(message, true);
     });
 }
 

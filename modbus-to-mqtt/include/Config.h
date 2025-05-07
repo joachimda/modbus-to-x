@@ -45,7 +45,9 @@ static constexpr auto MQTT_CLIENT_PREFIX = "MODBUS_CLIENT-";
 static constexpr auto MQTT_RECONNECT_INTERVAL_MS = 5000;
 static constexpr auto DEFAULT_MQTT_BROKER_PORT = "1883";
 static constexpr auto DEFAULT_MQTT_BROKER_IP = "0.0.0.0";
-
+#ifndef MQTT_BROKER
+#define MQTT_BROKER "localhost"
+#endif
 /****************************************************
  * WIFI SETUP
  ****************************************************/

@@ -40,10 +40,15 @@
  * MQTT
  ****************************************************/
 #define MQTT_RECONNECT_INTERVAL_MS 5000
+
 #ifndef MQTT_OTA_BROKER
 #define MQTT_OTA_BROKER "localhost"
-
 #endif
+
+#ifndef MQTT_BUFFER_SIZE
+#define MQTT_BUFFER_SIZE 4096
+#endif
+
 /****************************************************
  * WIFI SETUP
  ****************************************************/

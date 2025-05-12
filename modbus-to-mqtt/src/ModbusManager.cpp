@@ -44,7 +44,7 @@ void ModbusManager::initialize() {
 
 void ModbusManager::readRegisters() {
     for (auto &reg: _modbusRegisters) {
-        _logger->logInformation(("Reading register: " + String(reg.name)).c_str());
+        _logger->logDebug(("ModbusManager::readRegisters - Reading register: " + String(reg.name)).c_str());
 
         const uint8_t result = reg.registerType == INPUT_REGISTER
                                    ? node.readInputRegisters(reg.address, reg.numOfRegisters)
@@ -55,9 +55,8 @@ void ModbusManager::readRegisters() {
             const float rawData = node.getResponseBuffer(0);
             const float value = rawData * reg.scale;
             auto payload = String(value);
-            _logger->logInformation(("After Read register: " + String(reg.name) + " Data: " + String(payload)).c_str());
         } else {
-            _logger->logInformation(
+            _logger->logError(
                 ("Error reading register: " + String(reg.name) + " Error code: " + String(result)).c_str());
         }
     }

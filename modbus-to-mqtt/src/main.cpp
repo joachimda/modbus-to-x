@@ -31,8 +31,6 @@ void setupEnvironment() {
     if (IS_DEBUG) {
         logger.useDebug(true);
         Serial.begin(115200);
-        Serial.println("HELLO");
-
         return;
     }
 }
@@ -107,7 +105,6 @@ void addSubscriptionHandlers() {
 
 void setup() {
     setupEnvironment();
-
     logger.addTarget(&mqttLogger);
     logger.logDebug("setup started");
     addSubscriptionHandlers();
@@ -117,23 +114,6 @@ void setup() {
 
 void loop() {
     // mb_manager.readRegisters();
-    Serial.print("ESP - Free Heap Space: ");
-    Serial.println(ESP.getFreeHeap());
-
-    Serial.print("ESP - Free Sketch Space: ");
-    Serial.println(ESP.getFreeSketchSpace());
-
-    Serial.print("ESP - Free PSRAM: ");
-    Serial.println(ESP.getFreePsram());
-
-
-    // uint8_t numData = eeprom.readByte(0x0020);
-
     // commLink.mqttPublish("log", ("Datapoints available: " + String(numData)).c_str());
-
-    // constexpr uint8_t numDataPoints = sizeof(dataPoints) / sizeof(dataPoints[0]);
-    // eeprom.writeBuffer(0x0021, (uint8_t *) dataPoints, sizeof(dataPoints));
-    //
-    // eeprom.writeByte(0x0020, numData + numDataPoints);
     delay(500);
 }

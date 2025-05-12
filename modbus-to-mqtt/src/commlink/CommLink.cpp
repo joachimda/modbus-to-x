@@ -28,7 +28,7 @@ bool CommLink::begin() {
     checkResetButton();
     wifiSetup();
 
-    _mqttClient->setBufferSize(4096);
+    _mqttClient->setBufferSize(MQTT_BUFFER_SIZE);
     const char *broker = {LOCAL_MQTT_BROKER};
     _logger->logInformation(
         ("Connecting to MQTT broker [" + String(broker) + ":" + String(LOCAL_MQTT_PORT) + "]").c_str());
@@ -36,9 +36,6 @@ bool CommLink::begin() {
     if (!ensureMQTTConnection())
         _logger->logError("MQTT connection failed");
     _mqttClient->setCallback(handleMqttMessage);
-
-    Serial.print("MQTT Buffer size: "); _mqttClient->getBufferSize();
-    Serial.println(_mqttClient->getBufferSize());
     return startMqttTask();
 }
 

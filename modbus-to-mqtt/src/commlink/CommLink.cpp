@@ -22,7 +22,7 @@ bool CommLink::begin() {
     checkResetButton();
     wifiSetup();
 
-    const char *ipAddr = {LOCAL_MQTT_SERVER_IP};
+    const char *ipAddr = {LOCAL_MQTT_BROKER_IP};
     _logger->logInformation(
         ("Connecting to MQTT broker [" + String(ipAddr) + ":" + String(LOCAL_MQTT_PORT) + "]").c_str());
     _mqttClient->setServer(ipAddr, atoi(LOCAL_MQTT_PORT));
@@ -35,12 +35,13 @@ bool CommLink::begin() {
 void CommLink::wifiSetup() {
     loadMQTTConfig();
 
-    WiFiManagerParameter p_mqtt_server("server", "MQTT Server", LOCAL_MQTT_SERVER_IP, 40);
+    WiFiManagerParameter p_mqtt_broker_ip("server", "MQTT Server", LOCAL_MQTT_BROKER_IP, 40);
+    WiFiManagerParameter p_mqtt_broker_url("server", "MQTT Server", LOCAL_MQTT_BROKER_IP, 40);
     WiFiManagerParameter p_mqtt_port("port", "MQTT Port", LOCAL_MQTT_PORT, 6);
     WiFiManagerParameter p_mqtt_user("user", "MQTT Username", LOCAL_MQTT_USER, 32);
     WiFiManagerParameter p_mqtt_pass("pass", "MQTT Password", LOCAL_MQTT_PASSWORD, 32);
 
-    wm.addParameter(&p_mqtt_server);
+    wm.addParameter(&p_mqtt_broker_ip);
     wm.addParameter(&p_mqtt_port);
     wm.addParameter(&p_mqtt_user);
     wm.addParameter(&p_mqtt_pass);
@@ -53,7 +54,7 @@ void CommLink::wifiSetup() {
         delay(100);
     }
 
-    strcpy(LOCAL_MQTT_SERVER_IP, p_mqtt_server.getValue());
+    strcpy(LOCAL_MQTT_BROKER_IP, p_mqtt_broker_ip.getValue());
     strcpy(LOCAL_MQTT_PORT, p_mqtt_port.getValue());
     strcpy(LOCAL_MQTT_USER, p_mqtt_user.getValue());
     strcpy(LOCAL_MQTT_PASSWORD, p_mqtt_pass.getValue());
@@ -62,41 +63,41 @@ void CommLink::wifiSetup() {
 }
 
 void CommLink::loadMQTTConfig() {
-    prefs.begin(MQTT_PREFS_NAMESPACE, false);
+    preferences.begin(MQTT_PREFS_NAMESPACE, false);
 
-    if (prefs.isKey("server")) {
-        strcpy(LOCAL_MQTT_SERVER_IP, prefs.getString("server").c_str());
+    if (preferences.isKey("server")) {
+        strcpy(LOCAL_MQTT_BROKER_IP, preferences.getString("server").c_str());
     } else {
-        strcpy(LOCAL_MQTT_SERVER_IP, DEFAULT_MQTT_BROKER_IP);
+        strcpy(LOCAL_MQTT_BROKER_IP, DEFAULT_MQTT_BROKER_IP);
     }
 
-    if (prefs.isKey("port")) {
-        strcpy(LOCAL_MQTT_PORT, prefs.getString("port").c_str());
+    if (preferences.isKey("port")) {
+        strcpy(LOCAL_MQTT_PORT, preferences.getString("port").c_str());
     } else {
         strcpy(LOCAL_MQTT_PORT, DEFAULT_MQTT_BROKER_PORT);
     }
 
-    if (prefs.isKey("user")) {
-        strcpy(LOCAL_MQTT_USER, prefs.getString("user").c_str());
+    if (preferences.isKey("user")) {
+        strcpy(LOCAL_MQTT_USER, preferences.getString("user").c_str());
     } else {
         LOCAL_MQTT_USER[0] = '\0';
     }
 
-    if (prefs.isKey("pass")) {
-        strcpy(LOCAL_MQTT_PASSWORD, prefs.getString("pass").c_str());
+    if (preferences.isKey("pass")) {
+        strcpy(LOCAL_MQTT_PASSWORD, preferences.getString("pass").c_str());
     } else {
         LOCAL_MQTT_PASSWORD[0] = '\0';
     }
-    prefs.end();
+    preferences.end();
 }
 
 void CommLink::saveMQTTConfig() {
-    prefs.begin(MQTT_PREFS_NAMESPACE, false);
-    prefs.putString("server", LOCAL_MQTT_SERVER_IP);
-    prefs.putString("port", LOCAL_MQTT_PORT);
-    prefs.putString("user", LOCAL_MQTT_USER);
-    prefs.putString("pass", LOCAL_MQTT_PASSWORD);
-    prefs.end();
+    preferences.begin(MQTT_PREFS_NAMESPACE, false);
+    preferences.putString("server", LOCAL_MQTT_BROKER_IP);
+    preferences.putString("port", LOCAL_MQTT_PORT);
+    preferences.putString("user", LOCAL_MQTT_USER);
+    preferences.putString("pass", LOCAL_MQTT_PASSWORD);
+    preferences.end();
 }
 
 bool CommLink::ensureMQTTConnection() const {
@@ -217,9 +218,9 @@ void CommLink::checkResetButton() {
 
                 setLedColor(true, false, false); // Red ON
 
-                prefs.begin(MQTT_PREFS_NAMESPACE, false);
-                prefs.clear();
-                prefs.end();
+                preferences.begin(MQTT_PREFS_NAMESPACE, false);
+                preferences.clear();
+                preferences.end();
                 networkReset();
 
                 delay(1000);

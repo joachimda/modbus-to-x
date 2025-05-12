@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <nvs_flash.h>
 #include "commlink/CommLink.h"
-#include "AT24CDriver.h"
 #include "MqttLogger.h"
 #include "commlink/MqttSubscriptions.h"
 #include "modbus/ModbusManager.h"
@@ -17,7 +16,6 @@ MqttLogger mqttLogger([](const char *msg) {
 });
 
 ModbusManager mb_manager(&logger);
-AT24CDriver eeprom;
 
 void addSubscriptionHandlers() {
     const auto netReset = MQTT_ROOT_TOPIC + SUB_NETWORK_RESET;
@@ -48,6 +46,7 @@ void addSubscriptionHandlers() {
             logger.logError(("Failed to get NVS stats: " + String(esp_err_to_name(err))).c_str());
         }
     });
+
     const auto registerList = MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG_LIST;
     subscriptionHandler.addHandler(registerList, [](const String &) {
         const String json = mb_manager.getRegisterConfigurationAsJson();
@@ -62,15 +61,17 @@ void addSubscriptionHandlers() {
 }
 
 void setup() {
+    disableLoopWDT();
+    disableCore0WDT();
+    disableCore1WDT();
+    Serial.begin(115200);
     logger.useDebug(true);
     logger.addTarget(&mqttLogger);
-
     logger.logDebug("setup started");
     addSubscriptionHandlers();
 
     commLink.begin();
     mb_manager.initialize();
-    // AT24CDriver::begin();
 }
 
 void loop() {
@@ -84,5 +85,5 @@ void loop() {
     // eeprom.writeBuffer(0x0021, (uint8_t *) dataPoints, sizeof(dataPoints));
     //
     // eeprom.writeByte(0x0020, numData + numDataPoints);
-    delay(2000);
+    delay(100);
 }

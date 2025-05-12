@@ -38,7 +38,8 @@ private:
 
     void saveMQTTConfig();
 
-    char LOCAL_MQTT_SERVER_IP[40] = "";
+    char LOCAL_MQTT_BROKER_IP[40] = "";
+    char LOCAL_MQTT_BROKER_URL[40] = "";
     char LOCAL_MQTT_PORT[6] = "";
     char LOCAL_MQTT_USER[32] = "";
     char LOCAL_MQTT_PASSWORD[32] = "";
@@ -47,7 +48,7 @@ private:
     TaskHandle_t _mqttTaskHandle;
     MqttSubscriptionHandler *_subscriptionHandler;
     WiFiManager wm;
-    Preferences prefs;
+    Preferences preferences;
 };
 
 #endif //COMMLINK_H

@@ -4,11 +4,13 @@
 /****************************************************
  * WIRING
  ****************************************************/
-#define RX_PIN 3
-#define TX_PIN 1
-
+#ifndef RS485_DE_PIN
 #define RS485_DE_PIN 32
+#endif
+
+#ifndef RS485_RE_PIN
 #define RS485_RE_PIN 33
+#endif
 
 #define RGB_LED_RED_PIN 2
 #define RGB_LED_GREEN_PIN 16
@@ -32,6 +34,8 @@
 #define EEPROM_WRITE_CYCLE_MS 5
 
 #define MQTT_PREFS_NAMESPACE "mqtt"
+#define MQTT_PREFS_NAMESPACE "mqtt"
+
 #define MODBUS_PREFS_NAMESPACE "modbus"
 
 #define MODBUS_MAX_REGISTERS 100
@@ -42,11 +46,11 @@
  * MQTT
  ****************************************************/
 static constexpr auto MQTT_CLIENT_PREFIX = "MODBUS_CLIENT-";
-static constexpr auto MQTT_RECONNECT_INTERVAL_MS = 5000;
+#define MQTT_RECONNECT_INTERVAL_MS 5000
 static constexpr auto DEFAULT_MQTT_BROKER_PORT = "1883";
 static constexpr auto DEFAULT_MQTT_BROKER_IP = "0.0.0.0";
-#ifndef MQTT_BROKER
-#define MQTT_BROKER "localhost"
+#ifndef MQTT_OTA_BROKER
+#define MQTT_OTA_BROKER "localhost"
 #endif
 /****************************************************
  * WIFI SETUP
@@ -60,5 +64,8 @@ static constexpr auto WIFI_CONNECT_TIMEOUT = 10000;
  ****************************************************/
 static constexpr auto MQTT_TASK_STACK = 4096;
 static constexpr auto MQTT_TASK_LOOP_DELAY_MS = 100;
+#ifndef IS_EMULATED
+#define IS_EMULATED false
+#endif
 
 #endif

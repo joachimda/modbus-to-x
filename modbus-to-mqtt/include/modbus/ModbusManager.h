@@ -3,6 +3,7 @@
 #include <ModbusMaster.h>
 #include <vector>
 #include "ModbusRegister.h"
+#include "ModbusUserConfig.h"
 #include "commlink/CommLink.h"
 
 class ModbusManager {
@@ -24,6 +25,9 @@ public:
     void updateRegisterConfigurationFromJson(const String& registerConfigJson, bool clearExisting);
 
     std::vector<ModbusRegister> getRegisters() const;
+
+    ModbusUserConfig getUserConfig();
+
 private:
     static void preTransmissionHandler();
 
@@ -36,5 +40,7 @@ private:
     std::vector<ModbusRegister> _modbusRegisters;
     ModbusMaster node;
     Logger * _logger;
+    Preferences preferences;
+
 };
 #endif //MODBUSMANAGER_H

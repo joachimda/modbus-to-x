@@ -21,9 +21,14 @@
 /****************************************************
  * MODBUS
  ****************************************************/
-#define MODBUS_BAUD_RATE 9600
-#define MODBUS_CONF_8E1 0x800001e
-#define MODBUS_CONF_8N1 = 0x800001c
+#ifndef DEFAULT_MODBUS_BAUD_RATE
+#define DEFAULT_MODBUS_BAUD_RATE 9600
+#endif
+
+#ifndef DEFAULT_MODBUS_MODE
+#define DEFAULT_MODBUS_MODE "8N1"
+#endif
+
 #define MODBUS_SLAVE_ID 1
 
 /****************************************************

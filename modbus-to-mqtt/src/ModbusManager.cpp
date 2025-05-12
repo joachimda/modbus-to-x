@@ -8,30 +8,54 @@
 static constexpr auto REG_COUNT_KEY = "count";
 static constexpr auto REG_DATA_KEY = "data";
 
-static constexpr std::array<String ,2> asd = {"8N1", "8E1"};
-
-static const std::map<String, uint32_t> communicationModes = {
-    {"8N1", SERIAL_8N1},
-    {"8N2", SERIAL_8N2},
-    {"8E1", SERIAL_8E1},
-    {"8O1", SERIAL_8O1},
-    {"8O2", SERIAL_8O2}
-};
-
-
 ModbusManager::ModbusManager(Logger *logger) : _logger(logger) {
+}
+
+ModbusUserConfig ModbusManager::getUserConfig() {
+    preferences.begin(MQTT_PREFS_NAMESPACE, false);
+
+    ModbusUserConfig config{};
+    String modbusMode = "";
+
+    if (preferences.isKey("modbus_mode")) {
+         modbusMode = preferences.getString("modbus_mode");
+        _logger->logDebug(("ModbusManager::getMode - Found stored mode: " + modbusMode).c_str());
+    } else {
+        modbusMode = DEFAULT_MODBUS_MODE;
+        _logger->logWarning("ModbusManager::getMode - No stored mode found. Using default");
+    }
+
+    if (communicationModes.find(modbusMode) != communicationModes.end()) {
+        config.communicationMode = communicationModes.at(modbusMode);
+    } else {
+        _logger->logWarning(("ModbusManager::getMode - Invalid mode: " + modbusMode + ". Using default").c_str());
+        config.communicationMode = communicationModes.at(DEFAULT_MODBUS_MODE);
+    }
+
+    if (preferences.isKey("modbus_baud_rate")) {
+        config.baudRate = preferences.getUShort("modbus_baud_rate");
+        _logger->logDebug(("ModbusManager::getMode - Found stored baud rate: " + String(config.baudRate)).c_str());
+    } else {
+        config.baudRate = DEFAULT_MODBUS_BAUD_RATE;
+        _logger->logWarning("ModbusManager::getMode - No stored baud rate found. Using default");
+
+    }
+    preferences.end();
+    return config;
+
 }
 
 void ModbusManager::initialize() {
     _logger->logDebug("ModbusManager::initialize - Entry");
 
+    const auto userConfig = getUserConfig();
     pinMode(RS485_DE_PIN, OUTPUT);
     pinMode(RS485_RE_PIN, OUTPUT);
-    
+
     digitalWrite(RS485_DE_PIN, LOW);
     digitalWrite(RS485_RE_PIN, LOW);
-    
-    Serial1.begin(MODBUS_BAUD_RATE, SERIAL_8N1, RX, TX);
+
+    Serial1.begin(userConfig.baudRate, userConfig.communicationMode, RX, TX);
     node.begin(MODBUS_SLAVE_ID, Serial1);
     
     node.preTransmission(preTransmissionHandler);

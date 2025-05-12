@@ -82,7 +82,9 @@ void addSubscriptionHandlers() {
         communication["user"] = commLink.getMQTTUser();
         const auto modbus = doc["modbus"].to<JsonObject>();
         modbus["registerCount"] = ModbusManager::getRegisterCount();
-        modbus["communicationMode"] = modbusManager.getMode();
+        auto userConfig = modbusManager.getUserConfig();
+        modbus["communicationMode"] = communicationModesBackwards.at(userConfig.communicationMode);
+        modbus["baudRate"] = userConfig.baudRate;
 
         String out;
         const auto payloadSize = serializeJson(doc, out);

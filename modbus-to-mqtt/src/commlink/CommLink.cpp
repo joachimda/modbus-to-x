@@ -4,7 +4,7 @@
 static CommLink *s_activeCommLink = nullptr;
 static constexpr auto DEFAULT_MQTT_BROKER_PORT = "1883";
 static constexpr auto DEFAULT_MQTT_BROKER_IP = "0.0.0.0";
-static constexpr auto DEFAULT_MODBUS_MODE = "8N1";
+
 static constexpr auto MQTT_CLIENT_PREFIX = "MODBUS_CLIENT-";
 static constexpr auto WIFI_CONNECT_TIMEOUT = 10000;
 static constexpr auto MQTT_TASK_STACK = 4096;
@@ -47,7 +47,7 @@ void CommLink::wifiSetup() {
     WiFiManagerParameter p_mqtt_user("user", "MQTT Username", LOCAL_MQTT_USER, 32);
     WiFiManagerParameter p_mqtt_pass("pass", "MQTT Password", LOCAL_MQTT_PASSWORD, 32);
     WiFiManagerParameter p_modbus_mode("modbus_mode", "MODBUS Mode",DEFAULT_MODBUS_MODE , 3);
-
+    WiFiManagerParameter p_modbus_baud("modbus_baud", "MODBUS Baud Rate", String(DEFAULT_MODBUS_BAUD_RATE).c_str(), 6);
     wm.addParameter(&p_mqtt_broker);
     wm.addParameter(&p_mqtt_port);
     wm.addParameter(&p_mqtt_user);
@@ -97,12 +97,6 @@ void CommLink::loadMQTTConfig() {
         LOCAL_MQTT_PASSWORD[0] = '\0';
     }
 
-    if (preferences.isKey("modbus_mode")) {
-        strcpy(LOCAL_MODBUS_MODE, preferences.getString("modbus_mode").c_str());
-    } else {
-        strcpy(LOCAL_MODBUS_MODE, DEFAULT_MODBUS_MODE);
-    }
-
     preferences.end();
 }
 
@@ -113,7 +107,9 @@ void CommLink::saveUserConfig() {
     preferences.putString("user", LOCAL_MQTT_USER);
     preferences.putString("pass", LOCAL_MQTT_PASSWORD);
     preferences.putString("modbus_mode", LOCAL_MODBUS_MODE);
+    preferences.putULong("modbus_baud", LOCAL_MODBUS_BAUD);
     preferences.end();
+
 }
 
 bool CommLink::ensureMQTTConnection() const {

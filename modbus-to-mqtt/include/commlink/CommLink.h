@@ -49,6 +49,7 @@ private:
     char LOCAL_MQTT_USER[32] = "";
     char LOCAL_MQTT_PASSWORD[32] = "";
     char LOCAL_MODBUS_MODE[3] = "";
+    int LOCAL_MODBUS_BAUD = 0;
     PubSubClient *_mqttClient;
     Logger *_logger;
     TaskHandle_t _mqttTaskHandle;

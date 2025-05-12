@@ -1,6 +1,23 @@
 #include "Config.h"
 #include "Modbus/ModbusManager.h"
+
+#include <map>
+
 #include "ArduinoJson.h"
+
+static constexpr auto REG_COUNT_KEY = "count";
+static constexpr auto REG_DATA_KEY = "data";
+
+static constexpr std::array<String ,2> asd = {"8N1", "8E1"};
+
+static const std::map<String, uint32_t> communicationModes = {
+    {"8N1", SERIAL_8N1},
+    {"8N2", SERIAL_8N2},
+    {"8E1", SERIAL_8E1},
+    {"8O1", SERIAL_8O1},
+    {"8O2", SERIAL_8O2}
+};
+
 
 ModbusManager::ModbusManager(Logger *logger) : _logger(logger) {
 }
@@ -10,13 +27,13 @@ void ModbusManager::initialize() {
 
     pinMode(RS485_DE_PIN, OUTPUT);
     pinMode(RS485_RE_PIN, OUTPUT);
-
+    
     digitalWrite(RS485_DE_PIN, LOW);
     digitalWrite(RS485_RE_PIN, LOW);
-
+    
     Serial1.begin(MODBUS_BAUD_RATE, SERIAL_8N1, RX, TX);
     node.begin(MODBUS_SLAVE_ID, Serial1);
-
+    
     node.preTransmission(preTransmissionHandler);
     node.postTransmission(postTransmissionHandler);
 
@@ -56,18 +73,16 @@ void ModbusManager::clearRegisters() {
 
 String ModbusManager::getRegisterConfigurationAsJson() const {
     JsonDocument doc;
-    const auto json_array = doc.to<JsonArray>();
 
-    for (const auto& reg : _modbusRegisters) {
-        auto obj = json_array.add<JsonObject>();
-        obj["address"] = reg.address;
-        obj["numOfRegisters"] = reg.numOfRegisters;
-        obj["scale"] = reg.scale;
-        obj["registerType"] = reg.registerType;
-        obj["dataType"] = reg.dataType;
-        obj["name"] = reg.name;
+    const auto modbusRegisters = doc.to<JsonArray>();
+    for (auto &reg: _modbusRegisters) {
+        modbusRegisters.add<JsonObject>()["name"] = reg.name;
+        modbusRegisters.add<JsonObject>()["address"] = reg.address;
+        modbusRegisters.add<JsonObject>()["numOfRegisters"] = reg.numOfRegisters;
+        modbusRegisters.add<JsonObject>()["scale"] = reg.scale;
+        modbusRegisters.add<JsonObject>()["registerType"] = reg.registerType;
+        modbusRegisters.add<JsonObject>()["dataType"] = reg.dataType;
     }
-
     String out;
     serializeJson(doc, out);
     return out;
@@ -76,20 +91,20 @@ String ModbusManager::getRegisterConfigurationAsJson() const {
 void ModbusManager::updateRegisterConfigurationFromJson(const String &registerConfigJson, bool clearExisting) {
     JsonDocument doc;
     _logger->logInformation((registerConfigJson).c_str());
-    const DeserializationError err =  deserializeJson(doc, registerConfigJson);
+    const DeserializationError err = deserializeJson(doc, registerConfigJson);
 
     if (err) {
-        _logger->logError(("ModbusManager::updateRegistersFromJson - Error parsing register config: " + String(err.c_str())).c_str());
+        _logger->logError(
+            ("ModbusManager::updateRegistersFromJson - Error parsing register config: " + String(err.c_str())).c_str());
         return;
     }
 
     const auto arr = doc.as<JsonArray>();
-    if(clearExisting)
-    {
+    if (clearExisting) {
         clearRegisters();
     }
 
-    for (JsonObject obj : arr) {
+    for (JsonObject obj: arr) {
         ModbusRegister reg{};
 
         reg.address = obj["address"] | 0;
@@ -97,7 +112,7 @@ void ModbusManager::updateRegisterConfigurationFromJson(const String &registerCo
         reg.scale = obj["scale"] | 1.0f;
         reg.registerType = static_cast<RegisterType>(obj["registerType"] | 1);
         reg.dataType = static_cast<ModbusDataType>(obj["dataType"] | 2);
-        const char* name = obj["name"] | "unnamed";
+        const char *name = obj["name"] | "unnamed";
         strncpy(reg.name, name, sizeof(reg.name));
         reg.name[sizeof(reg.name) - 1] = '\0';
 
@@ -105,6 +120,10 @@ void ModbusManager::updateRegisterConfigurationFromJson(const String &registerCo
     }
     _logger->logInformation(("Loaded " + String(_modbusRegisters.size()) + " registers from JSON").c_str());
     saveRegisters();
+}
+
+std::vector<ModbusRegister> ModbusManager::getRegisters() const {
+    return _modbusRegisters;
 }
 
 void ModbusManager::preTransmissionHandler() {
@@ -129,7 +148,16 @@ void ModbusManager::loadRegisterConfig() {
     preferences.end();
 }
 
-void ModbusManager::addRegister(const ModbusRegister& reg) {
+uint16_t ModbusManager::getRegisterCount() {
+    Preferences preferences;
+    preferences.begin(MODBUS_PREFS_NAMESPACE, true);
+    const uint16_t count = preferences.getUShort(REG_COUNT_KEY, 0);
+    preferences.end();
+
+    return count;
+}
+
+void ModbusManager::addRegister(const ModbusRegister &reg) {
     _modbusRegisters.push_back(reg);
     saveRegisters();
 }
@@ -142,4 +170,3 @@ void ModbusManager::saveRegisters() const {
     preferences.putBytes(REG_DATA_KEY, _modbusRegisters.data(), count * sizeof(ModbusRegister));
     preferences.end();
 }
-

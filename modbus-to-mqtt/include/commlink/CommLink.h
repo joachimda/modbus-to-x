@@ -29,6 +29,12 @@ public:
 
     void checkResetButton();
 
+    char* getMqttBroker();
+
+    int getMQTTState() const;
+
+    char *getMQTTUser();
+
 private:
     [[noreturn]] static void processMQTTAsync(void *parameter);
 
@@ -36,13 +42,13 @@ private:
 
     void loadMQTTConfig();
 
-    void saveMQTTConfig();
+    void saveUserConfig();
 
-    char LOCAL_MQTT_BROKER_IP[40] = "";
-    char LOCAL_MQTT_BROKER_URL[40] = "";
+    char LOCAL_MQTT_BROKER[150] = "";
     char LOCAL_MQTT_PORT[6] = "";
     char LOCAL_MQTT_USER[32] = "";
     char LOCAL_MQTT_PASSWORD[32] = "";
+    char LOCAL_MODBUS_MODE[3] = "";
     PubSubClient *_mqttClient;
     Logger *_logger;
     TaskHandle_t _mqttTaskHandle;

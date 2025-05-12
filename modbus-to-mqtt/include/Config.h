@@ -29,43 +29,42 @@
 /****************************************************
  * EEPROM & PREFERENCE STORAGE
  ****************************************************/
-#define MODBUS_CONFIG_COUNT_ADDR 0x0020
-#define MODBUS_CONFIG_ADDR_START 0x0022
 #define EEPROM_WRITE_CYCLE_MS 5
 
 #define MQTT_PREFS_NAMESPACE "mqtt"
-#define MQTT_PREFS_NAMESPACE "mqtt"
-
 #define MODBUS_PREFS_NAMESPACE "modbus"
 
 #define MODBUS_MAX_REGISTERS 100
-#define REG_COUNT_KEY "count"
-#define REG_DATA_KEY "data"
 
 /****************************************************
  * MQTT
  ****************************************************/
-static constexpr auto MQTT_CLIENT_PREFIX = "MODBUS_CLIENT-";
 #define MQTT_RECONNECT_INTERVAL_MS 5000
-static constexpr auto DEFAULT_MQTT_BROKER_PORT = "1883";
-static constexpr auto DEFAULT_MQTT_BROKER_IP = "0.0.0.0";
 #ifndef MQTT_OTA_BROKER
 #define MQTT_OTA_BROKER "localhost"
+
 #endif
 /****************************************************
  * WIFI SETUP
  ****************************************************/
-static constexpr auto DEFAULT_AP_SSID = "MODBUS-MQTT-BRIDGE";
-static constexpr auto DEFAULT_AP_PASS = "you-shall-not-pass";
-static constexpr auto WIFI_CONNECT_TIMEOUT = 10000;
+#ifndef DEFAULT_AP_SSID
+#define DEFAULT_AP_SSID "MODBUS-MQTT-BRIDGE"
+#endif
+
+#ifndef DEFAULT_AP_PASS
+#define DEFAULT_AP_PASS "you-shall-not-pass"
+#endif
 
 /****************************************************
  * System
  ****************************************************/
-static constexpr auto MQTT_TASK_STACK = 4096;
-static constexpr auto MQTT_TASK_LOOP_DELAY_MS = 100;
+
 #ifndef IS_EMULATED
 #define IS_EMULATED false
+#endif
+
+#ifndef IS_DEBUG
+#define IS_DEBUG false
 #endif
 
 #endif

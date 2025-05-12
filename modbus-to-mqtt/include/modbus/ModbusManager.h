@@ -19,7 +19,11 @@ public:
 
     void loadRegisterConfig();
 
+    static uint16_t getRegisterCount();
+
     void updateRegisterConfigurationFromJson(const String& registerConfigJson, bool clearExisting);
+
+    std::vector<ModbusRegister> getRegisters() const;
 private:
     static void preTransmissionHandler();
 

@@ -1,8 +1,14 @@
 #include "commlink/CommLink.h"
-
 #include "Config.h"
 
 static CommLink *s_activeCommLink = nullptr;
+static constexpr auto DEFAULT_MQTT_BROKER_PORT = "1883";
+static constexpr auto DEFAULT_MQTT_BROKER_IP = "0.0.0.0";
+static constexpr auto DEFAULT_MODBUS_MODE = "8N1";
+static constexpr auto MQTT_CLIENT_PREFIX = "MODBUS_CLIENT-";
+static constexpr auto WIFI_CONNECT_TIMEOUT = 10000;
+static constexpr auto MQTT_TASK_STACK = 4096;
+static constexpr auto MQTT_TASK_LOOP_DELAY_MS = 100;
 
 CommLink::CommLink(MqttSubscriptionHandler *subscriptionHandler, PubSubClient *mqttClient, Logger *logger)
     : _mqttClient(mqttClient), _logger(logger), _mqttTaskHandle(nullptr), _subscriptionHandler(subscriptionHandler) {
@@ -22,29 +28,34 @@ bool CommLink::begin() {
     checkResetButton();
     wifiSetup();
 
-    const char *ipAddr = {LOCAL_MQTT_BROKER_IP};
+    _mqttClient->setBufferSize(4096);
+    const char *broker = {LOCAL_MQTT_BROKER};
     _logger->logInformation(
-        ("Connecting to MQTT broker [" + String(ipAddr) + ":" + String(LOCAL_MQTT_PORT) + "]").c_str());
-    _mqttClient->setServer(ipAddr, atoi(LOCAL_MQTT_PORT));
+        ("Connecting to MQTT broker [" + String(broker) + ":" + String(LOCAL_MQTT_PORT) + "]").c_str());
+    _mqttClient->setServer(broker, atoi(LOCAL_MQTT_PORT));
     if (!ensureMQTTConnection())
         _logger->logError("MQTT connection failed");
     _mqttClient->setCallback(handleMqttMessage);
+
+    Serial.print("MQTT Buffer size: "); _mqttClient->getBufferSize();
+    Serial.println(_mqttClient->getBufferSize());
     return startMqttTask();
 }
 
 void CommLink::wifiSetup() {
     loadMQTTConfig();
 
-    WiFiManagerParameter p_mqtt_broker_ip("server", "MQTT Server", LOCAL_MQTT_BROKER_IP, 40);
-    WiFiManagerParameter p_mqtt_broker_url("server", "MQTT Server", LOCAL_MQTT_BROKER_IP, 40);
-    WiFiManagerParameter p_mqtt_port("port", "MQTT Port", LOCAL_MQTT_PORT, 6);
+    WiFiManagerParameter p_mqtt_broker("server", "MQTT Broker domain/IP", LOCAL_MQTT_BROKER, 150);
+    WiFiManagerParameter p_mqtt_port("port", "MQTT Broker Port", LOCAL_MQTT_PORT, 6);
     WiFiManagerParameter p_mqtt_user("user", "MQTT Username", LOCAL_MQTT_USER, 32);
     WiFiManagerParameter p_mqtt_pass("pass", "MQTT Password", LOCAL_MQTT_PASSWORD, 32);
+    WiFiManagerParameter p_modbus_mode("modbus_mode", "MODBUS Mode",DEFAULT_MODBUS_MODE , 3);
 
-    wm.addParameter(&p_mqtt_broker_ip);
+    wm.addParameter(&p_mqtt_broker);
     wm.addParameter(&p_mqtt_port);
     wm.addParameter(&p_mqtt_user);
     wm.addParameter(&p_mqtt_pass);
+    wm.addParameter(&p_modbus_mode);
 
     const unsigned long startAttemptTime = millis();
     while (!wm.autoConnect(DEFAULT_AP_SSID, DEFAULT_AP_PASS)) {
@@ -54,21 +65,21 @@ void CommLink::wifiSetup() {
         delay(100);
     }
 
-    strcpy(LOCAL_MQTT_BROKER_IP, p_mqtt_broker_ip.getValue());
+    strcpy(LOCAL_MQTT_BROKER, p_mqtt_broker.getValue());
     strcpy(LOCAL_MQTT_PORT, p_mqtt_port.getValue());
     strcpy(LOCAL_MQTT_USER, p_mqtt_user.getValue());
     strcpy(LOCAL_MQTT_PASSWORD, p_mqtt_pass.getValue());
 
-    saveMQTTConfig();
+    saveUserConfig();
 }
 
 void CommLink::loadMQTTConfig() {
     preferences.begin(MQTT_PREFS_NAMESPACE, false);
 
     if (preferences.isKey("server")) {
-        strcpy(LOCAL_MQTT_BROKER_IP, preferences.getString("server").c_str());
+        strcpy(LOCAL_MQTT_BROKER, preferences.getString("server").c_str());
     } else {
-        strcpy(LOCAL_MQTT_BROKER_IP, DEFAULT_MQTT_BROKER_IP);
+        strcpy(LOCAL_MQTT_BROKER, DEFAULT_MQTT_BROKER_IP);
     }
 
     if (preferences.isKey("port")) {
@@ -88,15 +99,23 @@ void CommLink::loadMQTTConfig() {
     } else {
         LOCAL_MQTT_PASSWORD[0] = '\0';
     }
+
+    if (preferences.isKey("modbus_mode")) {
+        strcpy(LOCAL_MODBUS_MODE, preferences.getString("modbus_mode").c_str());
+    } else {
+        strcpy(LOCAL_MODBUS_MODE, DEFAULT_MODBUS_MODE);
+    }
+
     preferences.end();
 }
 
-void CommLink::saveMQTTConfig() {
+void CommLink::saveUserConfig() {
     preferences.begin(MQTT_PREFS_NAMESPACE, false);
-    preferences.putString("server", LOCAL_MQTT_BROKER_IP);
+    preferences.putString("server", LOCAL_MQTT_BROKER);
     preferences.putString("port", LOCAL_MQTT_PORT);
     preferences.putString("user", LOCAL_MQTT_USER);
     preferences.putString("pass", LOCAL_MQTT_PASSWORD);
+    preferences.putString("modbus_mode", LOCAL_MODBUS_MODE);
     preferences.end();
 }
 
@@ -216,7 +235,7 @@ void CommLink::checkResetButton() {
             if (heldTime >= RESET_HOLD_TIME_MS) {
                 _logger->logInformation("CommLink::checkResetButton - Reset confirmed: clearing settings");
 
-                setLedColor(true, false, false); // Red ON
+                setLedColor(true, false, false);
 
                 preferences.begin(MQTT_PREFS_NAMESPACE, false);
                 preferences.clear();
@@ -234,4 +253,16 @@ void CommLink::checkResetButton() {
         delay(500);
         setLedColor(false, false, false);
     }
+}
+
+char * CommLink::getMqttBroker() {
+    return LOCAL_MQTT_BROKER;
+}
+
+int CommLink::getMQTTState() const {
+    return _mqttClient->state();
+}
+
+char *CommLink::getMQTTUser() {
+    return LOCAL_MQTT_USER;
 }

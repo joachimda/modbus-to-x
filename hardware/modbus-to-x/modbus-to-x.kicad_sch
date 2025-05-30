@@ -2726,7 +2726,11 @@
 		(uuid "222bdef2-fc0b-40b0-9963-13011902560c")
 	)
 	(no_connect
-		(at 40.64 147.32)
+		(at 22.86 147.32)
+		(uuid "2e098318-d95c-4e6e-8c74-913f06a30082")
+	)
+	(no_connect
+		(at 43.18 147.32)
 		(uuid "350e9514-47df-40a4-8e60-9381010c6832")
 	)
 	(no_connect
@@ -2734,12 +2738,24 @@
 		(uuid "37579211-245a-4bbc-b0b0-d3e49e16e6fd")
 	)
 	(no_connect
+		(at 22.86 144.78)
+		(uuid "422a8ec0-cae0-4200-bad8-108769ca8f0f")
+	)
+	(no_connect
 		(at 240.03 72.39)
 		(uuid "496670e1-529e-49f5-bd30-3a25254c859f")
 	)
 	(no_connect
+		(at 63.5 147.32)
+		(uuid "4bc5e54f-b575-484a-a9ec-4ba115ce0acf")
+	)
+	(no_connect
 		(at 240.03 77.47)
 		(uuid "54c10f87-a51b-4920-aa79-f52ddd4f5996")
+	)
+	(no_connect
+		(at 63.5 142.24)
+		(uuid "571694dd-cf1d-4c0d-a53f-4b0277eb18b2")
 	)
 	(no_connect
 		(at 240.03 69.85)
@@ -2750,7 +2766,7 @@
 		(uuid "9e3a15aa-f8c4-4d26-8d7c-1d0ee68bed63")
 	)
 	(no_connect
-		(at 74.93 147.32)
+		(at 83.82 147.32)
 		(uuid "e13d36ea-2626-4e47-b43a-f7f05c667b80")
 	)
 	(wire
@@ -2895,7 +2911,7 @@
 	)
 	(wire
 		(pts
-			(xy 49.53 142.24) (xy 40.64 142.24)
+			(xy 52.07 142.24) (xy 43.18 142.24)
 		)
 		(stroke
 			(width 0)
@@ -2975,7 +2991,7 @@
 	)
 	(wire
 		(pts
-			(xy 83.82 144.78) (xy 74.93 144.78)
+			(xy 92.71 144.78) (xy 83.82 144.78)
 		)
 		(stroke
 			(width 0)
@@ -3105,7 +3121,7 @@
 	)
 	(wire
 		(pts
-			(xy 64.77 130.81) (xy 64.77 137.16)
+			(xy 73.66 130.81) (xy 73.66 137.16)
 		)
 		(stroke
 			(width 0)
@@ -3155,7 +3171,7 @@
 	)
 	(wire
 		(pts
-			(xy 30.48 130.81) (xy 30.48 137.16)
+			(xy 33.02 130.81) (xy 33.02 137.16)
 		)
 		(stroke
 			(width 0)
@@ -3225,6 +3241,16 @@
 	)
 	(wire
 		(pts
+			(xy 55.88 144.78) (xy 63.5 144.78)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a7bd19a4-952e-48e0-9f7f-f5da64d78243")
+	)
+	(wire
+		(pts
 			(xy 198.12 102.87) (xy 198.12 97.79)
 		)
 		(stroke
@@ -3235,7 +3261,7 @@
 	)
 	(wire
 		(pts
-			(xy 49.53 144.78) (xy 40.64 144.78)
+			(xy 52.07 144.78) (xy 43.18 144.78)
 		)
 		(stroke
 			(width 0)
@@ -3515,7 +3541,7 @@
 	)
 	(wire
 		(pts
-			(xy 83.82 142.24) (xy 74.93 142.24)
+			(xy 92.71 142.24) (xy 83.82 142.24)
 		)
 		(stroke
 			(width 0)
@@ -3562,6 +3588,16 @@
 			(type default)
 		)
 		(uuid "fe7f784d-d058-4fa2-b183-e099e0620cf1")
+	)
+	(wire
+		(pts
+			(xy 16.51 142.24) (xy 22.86 142.24)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "fee22052-3148-451b-b0ab-9f960f03b562")
 	)
 	(rectangle
 		(start 152.4 12.7)
@@ -3613,7 +3649,7 @@
 	)
 	(rectangle
 		(start 14.605 127.635)
-		(end 86.995 160.02)
+		(end 102.87 160.02)
 		(stroke
 			(width 0)
 			(type default)
@@ -3661,7 +3697,7 @@
 	)
 	(text "EEPROM\n"
 		(exclude_from_sim no)
-		(at 50.546 129.54 0)
+		(at 59.436 129.54 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -3776,7 +3812,7 @@
 		(uuid "3679f60b-096e-447d-8c95-63c827063381")
 	)
 	(label "VDD33"
-		(at 30.48 130.81 270)
+		(at 33.02 130.81 270)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -3798,7 +3834,7 @@
 		(uuid "48fdc943-edf8-47d3-b91c-01fdce71a189")
 	)
 	(label "SCL_BUS"
-		(at 83.82 144.78 180)
+		(at 92.71 144.78 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -3820,7 +3856,7 @@
 		(uuid "58dd122b-4416-4961-a3b9-0acc85df076d")
 	)
 	(label "SCL_BUS"
-		(at 49.53 144.78 180)
+		(at 52.07 144.78 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -3864,7 +3900,7 @@
 		(uuid "75d749ed-1075-41f0-b418-d43ceec696e0")
 	)
 	(label "SDA_BUS"
-		(at 83.82 142.24 180)
+		(at 92.71 142.24 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -3886,7 +3922,7 @@
 		(uuid "9ffe57a4-8e68-43f5-994c-c55916b6bfa7")
 	)
 	(label "VDD33"
-		(at 64.77 130.81 270)
+		(at 73.66 130.81 270)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -3919,7 +3955,7 @@
 		(uuid "bc439216-e7ea-4249-afb1-867ec792c760")
 	)
 	(label "SDA_BUS"
-		(at 49.53 142.24 180)
+		(at 52.07 142.24 180)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -3972,6 +4008,28 @@
 			(justify left bottom)
 		)
 		(uuid "e6ad337f-0388-440d-bf9d-6522f718f12b")
+	)
+	(label "VDD33"
+		(at 55.88 144.78 0)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "f64353e2-50a7-493b-b7af-3956fb7a975f")
+	)
+	(label "VDD33"
+		(at 16.51 142.24 0)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "f75454c5-e1e2-4204-88c2-9e2587dfb4ef")
 	)
 	(label "RS485_RE"
 		(at 27.94 99.06 0)
@@ -5374,7 +5432,7 @@
 	)
 	(symbol
 		(lib_id "power:GND")
-		(at 64.77 152.4 0)
+		(at 73.66 152.4 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -5383,7 +5441,7 @@
 		(fields_autoplaced yes)
 		(uuid "8a67d3ec-e974-4e72-bc26-d258f30e3704")
 		(property "Reference" "#PWR019"
-			(at 64.77 158.75 0)
+			(at 73.66 158.75 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5392,7 +5450,7 @@
 			)
 		)
 		(property "Value" "GND"
-			(at 64.77 157.48 0)
+			(at 73.66 157.48 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5400,7 +5458,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 64.77 152.4 0)
+			(at 73.66 152.4 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5409,7 +5467,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 64.77 152.4 0)
+			(at 73.66 152.4 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5418,7 +5476,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 64.77 152.4 0)
+			(at 73.66 152.4 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6040,7 +6098,7 @@
 	)
 	(symbol
 		(lib_id "power:GND")
-		(at 30.48 152.4 0)
+		(at 33.02 152.4 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -6049,7 +6107,7 @@
 		(fields_autoplaced yes)
 		(uuid "9c7fe071-e4d1-4727-996e-32edf023c212")
 		(property "Reference" "#PWR018"
-			(at 30.48 158.75 0)
+			(at 33.02 158.75 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6058,7 +6116,7 @@
 			)
 		)
 		(property "Value" "GND"
-			(at 30.48 157.48 0)
+			(at 33.02 157.48 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6066,7 +6124,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 30.48 152.4 0)
+			(at 33.02 152.4 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6075,7 +6133,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 30.48 152.4 0)
+			(at 33.02 152.4 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6084,7 +6142,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 30.48 152.4 0)
+			(at 33.02 152.4 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6106,7 +6164,7 @@
 	)
 	(symbol
 		(lib_id "Memory_EEPROM:AT24CS64-XHM")
-		(at 30.48 144.78 0)
+		(at 33.02 144.78 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -6115,7 +6173,7 @@
 		(fields_autoplaced yes)
 		(uuid "ab74a739-01e1-4614-a787-e0c4470495ca")
 		(property "Reference" "U5"
-			(at 32.6741 134.62 0)
+			(at 35.2141 134.62 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6124,7 +6182,7 @@
 			)
 		)
 		(property "Value" "AT24CS64-XHM"
-			(at 32.6741 137.16 0)
+			(at 35.2141 137.16 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6133,7 +6191,7 @@
 			)
 		)
 		(property "Footprint" "Package_SO:TSSOP-8_4.4x3mm_P0.65mm"
-			(at 30.48 144.78 0)
+			(at 33.02 144.78 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6142,7 +6200,7 @@
 			)
 		)
 		(property "Datasheet" "http://ww1.microchip.com/downloads/en/DeviceDoc/Atmel-8870-SEEPROM-AT24CS64-Datasheet.pdf"
-			(at 30.48 144.78 0)
+			(at 33.02 144.78 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6151,7 +6209,7 @@
 			)
 		)
 		(property "Description" "I2C Serial EEPROM, 64Kb (8192x8) with Unique Serial Number, TSSOP8"
-			(at 30.48 144.78 0)
+			(at 33.02 144.78 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6194,7 +6252,7 @@
 	)
 	(symbol
 		(lib_id "Memory_EEPROM:AT24CS64-XHM")
-		(at 64.77 144.78 0)
+		(at 73.66 144.78 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -6203,7 +6261,7 @@
 		(fields_autoplaced yes)
 		(uuid "abc0b37e-40f6-4355-b07c-75269ab848c8")
 		(property "Reference" "U6"
-			(at 66.9641 134.62 0)
+			(at 75.8541 134.62 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6212,7 +6270,7 @@
 			)
 		)
 		(property "Value" "AT24CS64-XHM"
-			(at 66.9641 137.16 0)
+			(at 75.8541 137.16 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6221,7 +6279,7 @@
 			)
 		)
 		(property "Footprint" "Package_SO:TSSOP-8_4.4x3mm_P0.65mm"
-			(at 64.77 144.78 0)
+			(at 73.66 144.78 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6230,7 +6288,7 @@
 			)
 		)
 		(property "Datasheet" "http://ww1.microchip.com/downloads/en/DeviceDoc/Atmel-8870-SEEPROM-AT24CS64-Datasheet.pdf"
-			(at 64.77 144.78 0)
+			(at 73.66 144.78 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6239,7 +6297,7 @@
 			)
 		)
 		(property "Description" "I2C Serial EEPROM, 64Kb (8192x8) with Unique Serial Number, TSSOP8"
-			(at 64.77 144.78 0)
+			(at 73.66 144.78 0)
 			(effects
 				(font
 					(size 1.27 1.27)

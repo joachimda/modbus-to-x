@@ -5,6 +5,5 @@ enum ModbusDataType {
     TEXT = 1,
     NUMBER = 2,
     DATE = 3,
-    VERSION = 4
 };
 #endif //MBDATATYPE_H

@@ -1,7 +1,8 @@
 #include <Arduino.h>
 #include <nvs_flash.h>
+
+#include "ArduinoJson.h"
 #include "commlink/CommLink.h"
-#include "AT24CDriver.h"
 #include "MqttLogger.h"
 #include "commlink/MqttSubscriptions.h"
 #include "modbus/ModbusManager.h"
@@ -16,8 +17,23 @@ MqttLogger mqttLogger([](const char *msg) {
     pubSubClient.publish(logTopic.c_str(), msg);
 });
 
-ModbusManager mb_manager(&logger);
-AT24CDriver eeprom;
+ModbusManager modbusManager(&logger);
+
+void setupEnvironment() {
+    if (IS_EMULATED) {
+        disableLoopWDT();
+        disableCore0WDT();
+        disableCore1WDT();
+        logger.useDebug(true);
+        Serial.begin(115200);
+        return;
+    }
+    if (IS_DEBUG) {
+        logger.useDebug(true);
+        Serial.begin(115200);
+        return;
+    }
+}
 
 void addSubscriptionHandlers() {
     const auto netReset = MQTT_ROOT_TOPIC + SUB_NETWORK_RESET;
@@ -29,7 +45,7 @@ void addSubscriptionHandlers() {
     const auto mbConfig = MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG;
     subscriptionHandler.addHandler(mbConfig, [](const String &message) {
         logger.logInformation("New MODBUS config received from MQTT message");
-        mb_manager.updateRegisterConfigurationFromJson(message, true);
+        modbusManager.updateRegisterConfigurationFromJson(message, true);
     });
 
     const auto echo = MQTT_ROOT_TOPIC + SUB_SYSTEM_ECHO;
@@ -40,49 +56,66 @@ void addSubscriptionHandlers() {
     const auto systemInfo = MQTT_ROOT_TOPIC + SUB_SYSTEM_INFO;
     subscriptionHandler.addHandler(systemInfo, [](const String &) {
         nvs_stats_t stats;
-        esp_err_t err = nvs_get_stats(nullptr, &stats);  // NULL = current NVS partition
+        const esp_err_t err = nvs_get_stats(nullptr, &stats);
+
+        String usedEntries, totalEntries, freeEntries = "";
 
         if (err == ESP_OK) {
-            logger.logInformation(("NVS Usage: Used="+String(stats.used_entries) + "  Total=" + String(stats.total_entries) + "  Free=" + String(stats.free_entries)).c_str());
+            usedEntries = String(stats.used_entries);
+            totalEntries = String(stats.total_entries);
+            freeEntries = String(stats.free_entries);
         } else {
             logger.logError(("Failed to get NVS stats: " + String(esp_err_to_name(err))).c_str());
         }
+        JsonDocument doc;
+
+        const auto nvsStats = doc["nvsStats"].to<JsonObject>();
+        nvsStats["usedEntries"] = usedEntries;
+        nvsStats["totalEntries"] = totalEntries;
+        nvsStats["freeEntries"] = freeEntries;
+        const auto systemStats = doc["systemStats"].to<JsonObject>();
+        systemStats["freeHeapSpace"] = ESP.getFreeHeap();
+        systemStats["freeSketchSpace"] = ESP.getFreeSketchSpace();
+        const auto communication = doc["commlink"].to<JsonObject>();
+        communication["mqttBroker"] = commLink.getMqttBroker();
+        communication["mqttConnectionState"] = commLink.getMQTTState();
+        communication["user"] = commLink.getMQTTUser();
+        const auto modbus = doc["modbus"].to<JsonObject>();
+        modbus["registerCount"] = ModbusManager::getRegisterCount();
+        auto userConfig = modbusManager.getUserConfig();
+        modbus["communicationMode"] = communicationModesBackwards.at(userConfig.communicationMode);
+        modbus["baudRate"] = userConfig.baudRate;
+
+        String out;
+        const auto payloadSize = serializeJson(doc, out);
+        logger.logDebug(("System Info payload size: " + String(payloadSize)).c_str());
+        logger.logInformation(out.c_str());
     });
+
     const auto registerList = MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG_LIST;
     subscriptionHandler.addHandler(registerList, [](const String &) {
-        const String json = mb_manager.getRegisterConfigurationAsJson();
+        const String json = modbusManager.getRegisterConfigurationAsJson();
         logger.logInformation(json.c_str());
     });
 
     const auto addRegister = MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG_ADD;
     subscriptionHandler.addHandler(addRegister, [](const String &message) {
         logger.logInformation("Additional MODBUS register configuration received");
-        mb_manager.updateRegisterConfigurationFromJson(message, true);
+        modbusManager.updateRegisterConfigurationFromJson(message, false);
     });
 }
 
 void setup() {
-    logger.useDebug(true);
+    setupEnvironment();
     logger.addTarget(&mqttLogger);
-
     logger.logDebug("setup started");
     addSubscriptionHandlers();
-
     commLink.begin();
-    mb_manager.initialize();
-    // AT24CDriver::begin();
+    modbusManager.initialize();
 }
 
 void loop() {
     // mb_manager.readRegisters();
-
-    // uint8_t numData = eeprom.readByte(0x0020);
-
     // commLink.mqttPublish("log", ("Datapoints available: " + String(numData)).c_str());
-
-    // constexpr uint8_t numDataPoints = sizeof(dataPoints) / sizeof(dataPoints[0]);
-    // eeprom.writeBuffer(0x0021, (uint8_t *) dataPoints, sizeof(dataPoints));
-    //
-    // eeprom.writeByte(0x0020, numData + numDataPoints);
-    delay(2000);
+    delay(500);
 }

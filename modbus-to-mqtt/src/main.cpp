@@ -20,18 +20,9 @@ MqttLogger mqttLogger([](const char *msg) {
 ModbusManager modbusManager(&logger);
 
 void setupEnvironment() {
-    if (IS_EMULATED) {
-        disableLoopWDT();
-        disableCore0WDT();
-        disableCore1WDT();
-        logger.useDebug(true);
-        Serial.begin(115200);
-        return;
-    }
     if (IS_DEBUG) {
         logger.useDebug(true);
         Serial.begin(115200);
-        return;
     }
 }
 

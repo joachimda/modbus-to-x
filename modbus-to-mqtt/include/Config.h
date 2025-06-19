@@ -69,10 +69,6 @@
  * System
  ****************************************************/
 
-#ifndef IS_EMULATED
-#define IS_EMULATED false
-#endif
-
 #ifndef IS_DEBUG
 #define IS_DEBUG false
 #endif

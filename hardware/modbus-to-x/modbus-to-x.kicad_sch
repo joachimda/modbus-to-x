@@ -4497,12 +4497,6 @@
 		(uuid "6e5c0cf4-5e12-4864-9673-51b17f686681")
 	)
 	(junction
-		(at 198.12 71.12)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "83e9cb8b-b1da-49b0-929a-e1303498f191")
-	)
-	(junction
 		(at 137.16 43.18)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -4603,6 +4597,12 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "f5e3a74a-af7e-433b-8e13-816de512743a")
+	)
+	(junction
+		(at 198.12 71.12)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "fcdb4d08-8bb6-4faa-a663-48f47aec0a59")
 	)
 	(no_connect
 		(at 270.51 86.36)
@@ -5088,7 +5088,7 @@
 	)
 	(wire
 		(pts
-			(xy 62.23 189.23) (xy 60.96 189.23)
+			(xy 62.23 188.595) (xy 60.96 188.595)
 		)
 		(stroke
 			(width 0)
@@ -5298,7 +5298,7 @@
 	)
 	(wire
 		(pts
-			(xy 60.96 189.23) (xy 60.96 187.96)
+			(xy 60.96 188.595) (xy 60.96 187.96)
 		)
 		(stroke
 			(width 0)
@@ -6587,7 +6587,7 @@
 	)
 	(global_label "SCL_BUS"
 		(shape passive)
-		(at 62.23 189.23 0)
+		(at 62.23 188.595 0)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -6597,7 +6597,7 @@
 		)
 		(uuid "7a8aca06-7621-42d2-9c38-7cfbce8e03b4")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 72.3891 189.23 0)
+			(at 72.3891 188.595 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6656,7 +6656,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric_Pad0.98x0.95mm_HandSolder"
 			(at 76.962 185.42 90)
 			(effects
 				(font
@@ -6665,7 +6665,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "~"
+		(property "Datasheet" "https://media.distrelec.com/Web/Downloads/_t/ds/RND_155T_Thin_Film_Resistors_eng_tds.pdf"
 			(at 78.74 185.42 0)
 			(effects
 				(font
@@ -6674,7 +6674,16 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Resistor"
+		(property "Description" "Resistor Thin film   2 KOhm      ±0.1%   SMD 0603 1/6W"
+			(at 78.74 185.42 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "PartNo" "RND 155TC0325B2001T5H"
 			(at 78.74 185.42 0)
 			(effects
 				(font
@@ -6734,7 +6743,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "~"
+		(property "Datasheet" "https://media.distrelec.com/Web/Downloads/_t/ds/RND_155T_Thin_Film_Resistors_eng_tds.pdf"
 			(at 60.96 184.15 0)
 			(effects
 				(font
@@ -6743,7 +6752,16 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Resistor"
+		(property "Description" "Resistor Thin film   10 KOhm     ±0.1%   SMD 0805 1/4W"
+			(at 60.96 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "PartNo" "RND 155TC0525B1002T5J"
 			(at 60.96 184.15 0)
 			(effects
 				(font
@@ -6822,7 +6840,7 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" "Cout"
+		(property "FriendlyName" "Cout10uf"
 			(at 44.196 30.48 0)
 			(effects
 				(font
@@ -7097,75 +7115,6 @@
 		)
 	)
 	(symbol
-		(lib_id "Device:R")
-		(at 198.12 67.31 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom no)
-		(on_board yes)
-		(dnp no)
-		(uuid "1afab9fa-1736-4672-9db7-ac81347d237a")
-		(property "Reference" "R2"
-			(at 199.898 67.056 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "10K"
-			(at 198.12 68.834 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
-			(at 196.342 67.31 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 198.12 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor"
-			(at 198.12 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "2"
-			(uuid "94b3f0e0-d17d-4d1b-8db3-43ea96e6f0bd")
-		)
-		(pin "1"
-			(uuid "c2e98841-7315-473c-8821-922640365a01")
-		)
-		(instances
-			(project "modbus-to-x"
-				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
-					(reference "R2")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Switch:SW_Push")
 		(at 200.66 100.33 0)
 		(unit 1)
@@ -7279,6 +7228,15 @@
 			)
 		)
 		(property "Description" "RF Module, ESP32-D0WD SoC, Wi-Fi 802.11b/g/n, Bluetooth, BLE, 32-bit, 2.7-3.6V, onboard antenna, SMD"
+			(at 255.27 71.12 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "PartNo" "M113DH2800PH3Q0 "
 			(at 255.27 71.12 0)
 			(effects
 				(font
@@ -7467,7 +7425,7 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" "Rfbb1"
+		(property "FriendlyName" "Rfbb_47k"
 			(at 122.936 53.213 90)
 			(effects
 				(font
@@ -7810,7 +7768,16 @@
 				(hide yes)
 			)
 		)
-		(property "Description" ""
+		(property "Description" "SIMPLE SWITCHER® Power Converter 40V 2A, 2.2MHz Step-Down Converter With 40µA IQ"
+			(at 73.66 40.64 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "PartNo" "LMR14020Q "
 			(at 73.66 40.64 0)
 			(effects
 				(font
@@ -7980,7 +7947,16 @@
 				(hide yes)
 			)
 		)
-		(property "ProductCode" "CL21A226MOCLRNC "
+		(property "PartNo" "CL21A226MOCLRNC "
+			(at 24.13 185.42 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Voltage" "16V"
 			(at 24.13 185.42 0)
 			(effects
 				(font
@@ -8050,7 +8026,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Unpolarized capacitor"
+		(property "Description" "Ceramic Capacitor 100pF, 50VDC, 0805, ±5 %"
 			(at 116.84 43.18 0)
 			(effects
 				(font
@@ -8059,7 +8035,7 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" "Cff2"
+		(property "FriendlyName" "Cff"
 			(at 118.618 41.91 0)
 			(effects
 				(font
@@ -8078,7 +8054,7 @@
 				(hide yes)
 			)
 		)
-		(property "ProductCode" "RND 1500805N101J500NT"
+		(property "PartNo" "RND 1500805N101J500NT"
 			(at 116.84 43.18 0)
 			(effects
 				(font
@@ -8157,7 +8133,7 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" "Cout"
+		(property "FriendlyName" "Cout22uf"
 			(at 152.146 38.1 0)
 			(effects
 				(font
@@ -8245,7 +8221,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Resistor"
+		(property "Description" "390 kOhms ±1% Chip Resistor Moisture Resistant Thick Film"
 			(at 120.65 44.45 0)
 			(effects
 				(font
@@ -8260,6 +8236,15 @@
 				(font
 					(size 1.27 1.27)
 				)
+			)
+		)
+		(property "PartNo" "RC0402FR-07390KL "
+			(at 120.65 44.45 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
 			)
 		)
 		(pin "2"
@@ -8332,7 +8317,7 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" "Cout"
+		(property "FriendlyName" "Cout10uf"
 			(at 139.446 38.1 0)
 			(effects
 				(font
@@ -8429,6 +8414,15 @@
 				(hide yes)
 			)
 		)
+		(property "PartNo" "MAX485"
+			(at 49.53 102.87 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "5"
 			(uuid "cc900836-5749-4822-8963-e1430f30ac54")
 		)
@@ -8517,7 +8511,7 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" "Cout"
+		(property "FriendlyName" "Cin0_1uf"
 			(at 55.626 22.86 0)
 			(effects
 				(font
@@ -8736,8 +8730,17 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Ferrite Bead"
+		(property "Description" "120 Ohms @ 100 MHz 1 Power Line Ferrite Bead 0402 (1005 Metric) 1.2A 90mOhm"
 			(at 136.144 177.546 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "FriendlyName" "Ferrite Bead"
+			(at 136.398 177.8 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9009,7 +9012,7 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" "Cout"
+		(property "FriendlyName" "Cout10uf"
 			(at 37.846 30.48 0)
 			(effects
 				(font
@@ -9171,8 +9174,17 @@
 				(hide yes)
 			)
 		)
-		(property "ProductCode" "CVNF100K12X"
+		(property "PartNo" "CVNF100K12X"
 			(at 224.79 104.14 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Voltage" "50V"
+			(at 224.79 104.14 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9231,7 +9243,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "~"
+		(property "Datasheet" "https://www.mouser.dk/datasheet/2/588/asset_pdf_5057771-3418946.pdf"
 			(at 82.55 189.23 0)
 			(effects
 				(font
@@ -9240,8 +9252,17 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Light emitting diode"
+		(property "Description" "LED White SMD"
 			(at 82.55 189.23 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "PartNo" "LW QH8G-Q2OO-3K5L-1"
+			(at 82.55 189.23 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9318,8 +9339,17 @@
 				(hide yes)
 			)
 		)
-		(property "ProductCode" "CVNF100K12X"
+		(property "PartNo" "CVNF100K12X"
 			(at 200.66 104.14 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Voltage" "50V"
+			(at 200.66 104.14 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9462,7 +9492,16 @@
 				(hide yes)
 			)
 		)
-		(property "ProductCode" "CL21A226MOCLRNC "
+		(property "PartNo" "CL21A226MOCLRNC "
+			(at 243.84 27.94 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Voltage" "16V"
 			(at 243.84 27.94 0)
 			(effects
 				(font
@@ -10000,7 +10039,16 @@
 				(hide yes)
 			)
 		)
-		(property "ProductCode" "CVNF100K12X"
+		(property "PartNo" "CVNF100K12X"
+			(at 248.92 27.94 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Voltage" "50V"
 			(at 248.92 27.94 0)
 			(effects
 				(font
@@ -10459,8 +10507,17 @@
 				(hide yes)
 			)
 		)
-		(property "ProductCode" "CVNF100K12X"
+		(property "PartNo" "CVNF100K12X"
 			(at 198.12 74.93 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Voltage" "50V"
+			(at 198.12 74.93 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10867,7 +10924,7 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" "Cout"
+		(property "FriendlyName" "Cout10uf"
 			(at 50.546 30.48 0)
 			(effects
 				(font
@@ -10999,6 +11056,84 @@
 		)
 	)
 	(symbol
+		(lib_id "Device:R")
+		(at 198.12 67.31 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board yes)
+		(dnp no)
+		(uuid "be014867-211a-459f-b14c-3a1ae1a49365")
+		(property "Reference" "R4"
+			(at 195.326 63.627 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "10K"
+			(at 198.12 68.834 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
+			(at 196.342 67.31 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://media.distrelec.com/Web/Downloads/_t/ds/RND_155T_Thin_Film_Resistors_eng_tds.pdf"
+			(at 198.12 67.31 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor Thin film   10 KOhm     ±0.1%   SMD 0805 1/4W"
+			(at 198.12 67.31 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "PartNo" "RND 155TC0525B1002T5J"
+			(at 198.12 67.31 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "20ce7769-e681-4996-8ce0-69c0696ba049")
+		)
+		(pin "1"
+			(uuid "e97adbd6-10fb-4355-8d8f-207d9ea3661b")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "R4")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:C_Polarized")
 		(at 29.21 31.75 0)
 		(unit 1)
@@ -11061,7 +11196,16 @@
 				(hide yes)
 			)
 		)
-		(property "ProductCode" "CSMK047/35"
+		(property "PartNo" "CSMK047/35"
+			(at 29.21 31.75 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "FriendlyName" "Cout47uf"
 			(at 29.21 31.75 0)
 			(effects
 				(font
@@ -11429,75 +11573,6 @@
 		)
 	)
 	(symbol
-		(lib_id "Device:R")
-		(at 57.15 184.15 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom no)
-		(on_board yes)
-		(dnp no)
-		(uuid "cb837084-ea86-4e9a-a645-0446178b4465")
-		(property "Reference" "R4"
-			(at 54.102 180.467 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "10K"
-			(at 57.15 185.674 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
-			(at 55.372 184.15 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 57.15 184.15 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor"
-			(at 57.15 184.15 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "2"
-			(uuid "b8fcdaf1-971e-45c9-af43-248849a4f5c1")
-		)
-		(pin "1"
-			(uuid "d53e1569-d397-41f3-b256-03e5570cf0ce")
-		)
-		(instances
-			(project "modbus-to-x"
-				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
-					(reference "R4")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Switch:SW_Push")
 		(at 224.79 100.33 0)
 		(unit 1)
@@ -11611,7 +11686,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Unpolarized capacitor"
+		(property "Description" "Ceramic Capacitor 100pF, 50VDC, 0805, ±5 %"
 			(at 111.76 43.18 0)
 			(effects
 				(font
@@ -11620,7 +11695,7 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" "Cff1"
+		(property "FriendlyName" "Cff"
 			(at 113.538 41.91 0)
 			(effects
 				(font
@@ -11639,7 +11714,7 @@
 				(hide yes)
 			)
 		)
-		(property "ProductCode" "RND 1500805N101J500NT"
+		(property "PartNo" "RND 1500805N101J500NT"
 			(at 111.76 43.18 0)
 			(effects
 				(font
@@ -11783,7 +11858,7 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" "Cout"
+		(property "FriendlyName" "Cout10uf"
 			(at 145.796 38.1 0)
 			(effects
 				(font
@@ -12003,7 +12078,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Unpolarized capacitor"
+		(property "Description" "Multilayer Ceramic Capacitors MLCC - SMD/SMT 16 V 0.1uF X5R 0402 20%"
 			(at 97.79 27.94 0)
 			(effects
 				(font
@@ -12108,7 +12183,7 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" "Rfbb2"
+		(property "FriendlyName" "Rfbb22k"
 			(at 122.936 60.833 90)
 			(effects
 				(font
@@ -12127,6 +12202,84 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "R9")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 57.15 184.15 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board yes)
+		(dnp no)
+		(uuid "e7beda7f-fd55-446a-b8c8-22f71cd8835c")
+		(property "Reference" "R13"
+			(at 53.086 180.34 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "10K"
+			(at 57.15 185.674 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
+			(at 55.372 184.15 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://media.distrelec.com/Web/Downloads/_t/ds/RND_155T_Thin_Film_Resistors_eng_tds.pdf"
+			(at 57.15 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor Thin film   10 KOhm     ±0.1%   SMD 0805 1/4W"
+			(at 57.15 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "PartNo" "RND 155TC0525B1002T5J"
+			(at 57.15 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "d3fcff20-67ce-43ec-b000-caebaea2e91a")
+		)
+		(pin "1"
+			(uuid "bc14c4f8-8bfa-4200-8fc0-854a330047c6")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "R13")
 					(unit 1)
 				)
 			)
@@ -12461,7 +12614,16 @@
 				(hide yes)
 			)
 		)
-		(property "ProductCode" "CL21A226MOCLRNC "
+		(property "PartNo" "CL21A226MOCLRNC "
+			(at 43.18 185.42 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Voltage" "16V"
 			(at 43.18 185.42 0)
 			(effects
 				(font
@@ -12539,7 +12701,7 @@
 				(hide yes)
 			)
 		)
-		(property "ProductCode" "1551206S4F1000T5E"
+		(property "PartNo" "1551206S4F1000T5E"
 			(at 63.5 97.79 90)
 			(effects
 				(font
@@ -12618,7 +12780,7 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" "Cout"
+		(property "FriendlyName" "Cout10uf"
 			(at 133.096 38.1 0)
 			(effects
 				(font

@@ -4825,6 +4825,12 @@
 		(uuid "aab9d323-3eed-4f93-a49a-483bdd44d9bf")
 	)
 	(junction
+		(at 115.57 153.67)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "ac2f7618-742d-4caf-ba4b-2b0cf5bb4ad9")
+	)
+	(junction
 		(at 93.98 27.94)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -4907,10 +4913,6 @@
 		(uuid "0c7c5961-28e6-418c-bf44-e04e7c7e126d")
 	)
 	(no_connect
-		(at 218.44 53.34)
-		(uuid "11a47a19-9250-4bd9-9f4e-507f0946c0f9")
-	)
-	(no_connect
 		(at 218.44 71.12)
 		(uuid "27f12f8c-cb16-4aef-833d-7f1d37c6cc15")
 	)
@@ -4979,20 +4981,12 @@
 		(uuid "9493863d-a08e-4560-8455-b24bddf125df")
 	)
 	(no_connect
-		(at 218.44 50.8)
-		(uuid "97d7e96d-99b6-413c-a094-01d7d6ef9fd1")
-	)
-	(no_connect
 		(at 269.24 73.66)
 		(uuid "9c9e24b0-1df2-441c-be54-c38e977a691a")
 	)
 	(no_connect
 		(at 269.24 33.02)
 		(uuid "a7544167-3bd7-449c-8d41-e2f96ca0131e")
-	)
-	(no_connect
-		(at 218.44 48.26)
-		(uuid "aab2df3d-a937-4925-bad1-df12bce566cd")
 	)
 	(no_connect
 		(at 269.24 71.12)
@@ -5131,6 +5125,16 @@
 			(type default)
 		)
 		(uuid "22267b0d-f7c5-40e0-8cda-e2eb79e6de45")
+	)
+	(wire
+		(pts
+			(xy 115.57 154.94) (xy 115.57 153.67)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "22c054b6-a9ed-4073-970b-21280cc665a9")
 	)
 	(wire
 		(pts
@@ -5704,6 +5708,16 @@
 	)
 	(wire
 		(pts
+			(xy 110.49 153.67) (xy 115.57 153.67)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a14c70bf-6127-4f73-a991-686a88b5297c")
+	)
+	(wire
+		(pts
 			(xy 41.91 27.94) (xy 48.26 27.94)
 		)
 		(stroke
@@ -5874,6 +5888,16 @@
 	)
 	(wire
 		(pts
+			(xy 115.57 153.67) (xy 120.65 153.67)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "bef11637-3dca-4a98-ab28-41e2ba7e9288")
+	)
+	(wire
+		(pts
 			(xy 55.88 102.87) (xy 52.07 102.87)
 		)
 		(stroke
@@ -5881,6 +5905,16 @@
 			(type default)
 		)
 		(uuid "c069b6f3-f1f0-45ec-b2c3-02a80e277382")
+	)
+	(wire
+		(pts
+			(xy 217.17 50.8) (xy 218.44 50.8)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c076b911-ea0d-4127-9d9d-5b9c50bbce1a")
 	)
 	(wire
 		(pts
@@ -6004,6 +6038,16 @@
 	)
 	(wire
 		(pts
+			(xy 217.17 48.26) (xy 218.44 48.26)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d2216f5a-60bc-41f6-a298-2555010b3341")
+	)
+	(wire
+		(pts
 			(xy 41.91 35.56) (xy 41.91 38.1)
 		)
 		(stroke
@@ -6061,6 +6105,16 @@
 			(type default)
 		)
 		(uuid "d93f6482-d064-48cc-be9d-6e120a504bc3")
+	)
+	(wire
+		(pts
+			(xy 217.17 53.34) (xy 218.44 53.34)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "da5bf4db-1107-4054-b965-89c872aac524")
 	)
 	(wire
 		(pts
@@ -6397,6 +6451,18 @@
 		(uuid 5fd73572-cce9-4d91-8412-06e8640832d9)
 	)
 	(rectangle
+		(start 104.775 128.27)
+		(end 130.175 160.655)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type none)
+		)
+		(uuid 67c7fdbe-ae4b-40e2-b1fd-f3496e738c13)
+	)
+	(rectangle
 		(start 189.865 13.335)
 		(end 283.845 113.665)
 		(stroke
@@ -6540,7 +6606,7 @@
 	)
 	(text "12V Input"
 		(exclude_from_sim no)
-		(at 157.48 170.18 0)
+		(at 154.686 171.196 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6658,6 +6724,16 @@
 		)
 		(uuid "d651e92c-dd75-432a-bd40-7bf0e84a4dfe")
 	)
+	(text "Status LEDs"
+		(exclude_from_sim no)
+		(at 117.094 130.302 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "d7ecb150-50ed-49dd-b5fa-6a0ef83c2082")
+	)
 	(text "RS485"
 		(exclude_from_sim no)
 		(at 52.07 73.66 0)
@@ -6677,6 +6753,17 @@
 			)
 		)
 		(uuid "fc7757c2-9a92-4bcc-9f95-97c85c16dea2")
+	)
+	(label "STAT_1"
+		(at 110.49 138.43 90)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "052d1066-7232-4371-97c2-a5e088af61ca")
 	)
 	(label "TX_{2}"
 		(at 20.32 109.22 0)
@@ -6876,6 +6963,28 @@
 		)
 		(uuid "75d749ed-1075-41f0-b418-d43ceec696e0")
 	)
+	(label "STAT_2"
+		(at 217.17 50.8 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "77e793c6-de54-4874-9b7e-d912e890f14a")
+	)
+	(label "STAT_3"
+		(at 120.65 138.43 90)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "780ad2dc-8800-4d2c-bd57-fac40ca199a7")
+	)
 	(label "SDA_BUS"
 		(at 96.52 143.51 180)
 		(fields_autoplaced yes)
@@ -6975,6 +7084,17 @@
 		)
 		(uuid "a4b7262e-3adc-48a4-8fbc-c3185c014261")
 	)
+	(label "STAT_3"
+		(at 217.17 53.34 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "a76b68a5-22a6-46f3-a5e5-691c17cfb9f8")
+	)
 	(label "VDD33"
 		(at 72.39 130.81 270)
 		(fields_autoplaced yes)
@@ -7019,6 +7139,17 @@
 		)
 		(uuid "bc7ab02a-e7e1-4d61-b783-be06fbad2e73")
 	)
+	(label "STAT_1"
+		(at 217.17 48.26 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "bcb99526-6db6-42a4-ae88-611f81463f4f")
+	)
 	(label "VDD33"
 		(at 41.91 80.01 0)
 		(fields_autoplaced yes)
@@ -7062,6 +7193,17 @@
 			(justify left bottom)
 		)
 		(uuid "e046e9f4-9b0e-4efd-ae79-74e904e6ee7b")
+	)
+	(label "STAT_2"
+		(at 115.57 138.43 90)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "e38af85d-e52a-4e01-bef8-30b50e664d54")
 	)
 	(label "VDD33"
 		(at 59.69 146.05 0)
@@ -7859,6 +8001,94 @@
 		)
 	)
 	(symbol
+		(lib_id "Device:LED")
+		(at 110.49 149.86 90)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "1ec8f8c5-6d7f-4905-b805-4f5a1d030014")
+		(property "Reference" "D4"
+			(at 107.696 147.574 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Value" "LED"
+			(at 105.918 150.368 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+		(property "Footprint" "LED_SMD:LED_0402_1005Metric_Pad0.77x0.64mm_HandSolder"
+			(at 110.49 149.86 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.mouser.dk/datasheet/2/588/asset_pdf_5057771-3418946.pdf"
+			(at 110.49 149.86 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "LED White SMD"
+			(at 110.49 149.86 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "PartNo" "LW QH8G-Q2OO-3K5L-1"
+			(at 110.49 149.86 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ProductCode" ""
+			(at 110.49 149.86 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "f4342bf8-5989-4b7c-beaf-1c0694c00396")
+		)
+		(pin "2"
+			(uuid "73f14fe3-d5f8-4c36-b01b-9a0b4855bdc9")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "D4")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:GND")
 		(at 22.86 137.16 0)
 		(unit 1)
@@ -7918,6 +8148,93 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "#PWR033")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 115.57 142.24 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "230c4562-a73a-4062-88c3-4a434e27abb3")
+		(property "Reference" "R17"
+			(at 113.284 144.018 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "2K"
+			(at 115.57 143.764 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric_Pad0.98x0.95mm_HandSolder"
+			(at 113.792 142.24 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://media.distrelec.com/Web/Downloads/_t/ds/RND_155T_Thin_Film_Resistors_eng_tds.pdf"
+			(at 115.57 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor Thin film   2 KOhm      ±0.1%   SMD 0603 1/6W"
+			(at 115.57 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "PartNo" "RND 155TC0325B2001T5H"
+			(at 115.57 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ProductCode" ""
+			(at 115.57 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "ac4cc826-afbe-40b2-a2e8-741a8c3998ab")
+		)
+		(pin "1"
+			(uuid "e01c9f56-0ff6-4909-888d-e721abdf9e6e")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "R17")
 					(unit 1)
 				)
 			)
@@ -8925,6 +9242,71 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "C8")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 115.57 154.94 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "4946ab9f-e8dd-4b37-a4dd-2309fecb8938")
+		(property "Reference" "#PWR041"
+			(at 115.57 161.29 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 115.57 159.004 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 115.57 154.94 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 115.57 154.94 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 115.57 154.94 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "31ae7533-2d24-4513-b112-ef066c61e09d")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "#PWR041")
 					(unit 1)
 				)
 			)
@@ -11237,6 +11619,94 @@
 		)
 	)
 	(symbol
+		(lib_id "Device:LED")
+		(at 115.57 149.86 90)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "94b71da9-4884-4687-a1c4-4f3bee7b8de4")
+		(property "Reference" "D5"
+			(at 112.776 147.574 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Value" "LED"
+			(at 111.506 150.114 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+		(property "Footprint" "LED_SMD:LED_0402_1005Metric_Pad0.77x0.64mm_HandSolder"
+			(at 115.57 149.86 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.mouser.dk/datasheet/2/588/asset_pdf_5057771-3418946.pdf"
+			(at 115.57 149.86 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "LED White SMD"
+			(at 115.57 149.86 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "PartNo" "LW QH8G-Q2OO-3K5L-1"
+			(at 115.57 149.86 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ProductCode" ""
+			(at 115.57 149.86 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "f4d58813-3081-4a51-b878-dd53f4703823")
+		)
+		(pin "2"
+			(uuid "34c58812-293a-40b5-965a-800f1d311319")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "D5")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Connector:Conn_01x03_Pin")
 		(at 121.92 184.15 0)
 		(unit 1)
@@ -12329,6 +12799,94 @@
 		)
 	)
 	(symbol
+		(lib_id "Device:LED")
+		(at 120.65 149.86 90)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "ac743274-9e58-437a-96e4-1b3a460b6412")
+		(property "Reference" "D6"
+			(at 117.856 147.574 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Value" "LED"
+			(at 115.316 151.638 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+		(property "Footprint" "LED_SMD:LED_0402_1005Metric_Pad0.77x0.64mm_HandSolder"
+			(at 120.65 149.86 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.mouser.dk/datasheet/2/588/asset_pdf_5057771-3418946.pdf"
+			(at 120.65 149.86 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "LED White SMD"
+			(at 120.65 149.86 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "PartNo" "LW QH8G-Q2OO-3K5L-1"
+			(at 120.65 149.86 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ProductCode" ""
+			(at 120.65 149.86 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "2f05b1d6-d8ff-4684-bdd5-9c42fe8e0485")
+		)
+		(pin "2"
+			(uuid "e142a215-93ab-45b3-a4e3-f81137c18113")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "D6")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:GND")
 		(at 53.34 60.96 0)
 		(unit 1)
@@ -12657,6 +13215,93 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "R11")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 110.49 142.24 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "b8c3dec5-a592-436e-88cb-2c458332b7b5")
+		(property "Reference" "R16"
+			(at 108.204 144.018 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "2K"
+			(at 110.49 143.764 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric_Pad0.98x0.95mm_HandSolder"
+			(at 108.712 142.24 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://media.distrelec.com/Web/Downloads/_t/ds/RND_155T_Thin_Film_Resistors_eng_tds.pdf"
+			(at 110.49 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor Thin film   2 KOhm      ±0.1%   SMD 0603 1/6W"
+			(at 110.49 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "PartNo" "RND 155TC0325B2001T5H"
+			(at 110.49 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ProductCode" ""
+			(at 110.49 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "b49a545d-b326-47f3-a255-cf9ad7e8b65d")
+		)
+		(pin "1"
+			(uuid "4be57982-1dba-4607-adbd-807d078817f7")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "R16")
 					(unit 1)
 				)
 			)
@@ -14384,6 +15029,93 @@
 			(project ""
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "D2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 120.65 142.24 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "f06f69ea-0703-4bc6-bb37-2652ef91618c")
+		(property "Reference" "R18"
+			(at 118.618 143.764 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "2K"
+			(at 120.65 143.764 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric_Pad0.98x0.95mm_HandSolder"
+			(at 118.872 142.24 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://media.distrelec.com/Web/Downloads/_t/ds/RND_155T_Thin_Film_Resistors_eng_tds.pdf"
+			(at 120.65 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor Thin film   2 KOhm      ±0.1%   SMD 0603 1/6W"
+			(at 120.65 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "PartNo" "RND 155TC0325B2001T5H"
+			(at 120.65 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ProductCode" ""
+			(at 120.65 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "a7ebfbd1-a6b9-48ea-8f12-f1ddf174ab22")
+		)
+		(pin "1"
+			(uuid "ffd8dbe8-8978-4d1c-92e2-a9fd5bd4e355")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "R18")
 					(unit 1)
 				)
 			)

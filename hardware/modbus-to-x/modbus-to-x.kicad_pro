@@ -52,7 +52,10 @@
         }
       },
       "diff_pair_dimensions": [],
-      "drc_exclusions": [],
+      "drc_exclusions": [
+        "lib_footprint_mismatch|110468500|94085800|54aa4bb2-fcde-4a33-b720-6cce5632a56d|00000000-0000-0000-0000-000000000000",
+        "lib_footprint_mismatch|89896999|113262800|a21fba2b-4932-4266-8b07-083272417809|00000000-0000-0000-0000-000000000000"
+      ],
       "meta": {
         "version": 2
       },
@@ -216,7 +219,11 @@
     "equivalence_files": []
   },
   "erc": {
-    "erc_exclusions": [],
+    "erc_exclusions": [
+      "lib_symbol_issues|2184400|279400|4c9f9668-c3d0-4355-966c-cb247e658870|00000000-0000-0000-0000-000000000000|||",
+      "lib_symbol_issues|762000|406400|411aa612-c60d-4aa6-a361-b73f174c3641|00000000-0000-0000-0000-000000000000|||",
+      "multiple_net_names|2235200|787400|49507a7d-1e67-4378-a398-793a985306bb|7eea0078-1342-4b38-8218-148e449dc107|/d5b026e9-d5a5-415b-84cb-4c68355c0f8f|/d5b026e9-d5a5-415b-84cb-4c68355c0f8f|/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+    ],
     "meta": {
       "version": 0
     },
@@ -466,7 +473,7 @@
       "gencad": "",
       "idf": "",
       "netlist": "",
-      "plot": "",
+      "plot": "manufactoring/",
       "pos_files": "",
       "specctra_dsn": "",
       "step": "",

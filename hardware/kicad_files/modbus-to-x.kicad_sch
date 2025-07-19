@@ -10630,7 +10630,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "ESP32-WROOM-32DM113DH6400PH3Q0"
+		(property "Datasheet" "https://www.espressif.com/sites/default/files/documentation/esp32-wroom-32d_esp32-wroom-32u_datasheet_en.pdf"
 			(at 218.948 23.622 0)
 			(effects
 				(font
@@ -13022,7 +13022,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://docs.rs-online.com/acc8/0900766b8140488f.pdf"
 			(at 245.11 138.43 0)
 			(effects
 				(font
@@ -13077,6 +13077,15 @@
 					(size 1.27 1.27)
 				)
 				(justify bottom)
+				(hide yes)
+			)
+		)
+		(property "PartNo" "SSQ-110-23-L-D"
+			(at 245.11 138.43 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
 				(hide yes)
 			)
 		)
@@ -16692,7 +16701,7 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" "Cout47uf"
+		(property "FriendlyName" "Cin_MAX3485"
 			(at 36.83 81.28 0)
 			(effects
 				(font
@@ -16923,7 +16932,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://media.distrelec.com/Web/Downloads/_t/ds/rnd_smd_resistors_eng_tds.pdf"
+		(property "Datasheet" "https://www.yageo.com/upload/media/product/products/datasheet/rchip/PYu-RC_Group_51_RoHS_L_12.pdf"
 			(at 55.88 99.06 0)
 			(effects
 				(font
@@ -16932,7 +16941,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Resistor Thick film  100 Ohm     ±1%     SMD 1206 1/4W"
+		(property "Description" "120 Ohms ±1% 0.25W, 1/4W Chip Resistor 1206 (3216 Metric) Moisture Resistant Thick Film"
 			(at 55.88 99.06 0)
 			(effects
 				(font
@@ -16941,17 +16950,8 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "RND 1551206S4F1000T5E"
+		(property "PartNo" "RC1206FR-13120RL"
 			(at 55.88 99.06 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "ProductCode" ""
-			(at 55.88 99.06 0)
 			(effects
 				(font
 					(size 1.27 1.27)

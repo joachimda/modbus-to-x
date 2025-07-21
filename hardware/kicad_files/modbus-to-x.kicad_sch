@@ -11821,7 +11821,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://elektronik-lavpris.dk/files/sup2/C1206C104K5RACTU.pdf"
+		(property "Datasheet" "https://content.kemet.com/datasheets/KEM_C1002_X7R_SMD.pdf"
 			(at 224.79 24.13 0)
 			(effects
 				(font
@@ -11830,7 +11830,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "SMD MLC Capacitor 100nF 50V 10% X7R 1206"
+		(property "Description" "0.1 µF ±10% 50V Ceramic Capacitor X7R 1206 (3216 Metric)"
 			(at 224.79 24.13 0)
 			(effects
 				(font
@@ -11839,7 +11839,7 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "CVNF100K12X"
+		(property "PartNo" "C1206C104K5RACTU"
 			(at 224.79 24.13 0)
 			(effects
 				(font
@@ -12284,7 +12284,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://elektronik-lavpris.dk/files/sup2/C1206C104K5RACTU.pdf"
+		(property "Datasheet" "https://content.kemet.com/datasheets/KEM_C1002_X7R_SMD.pdf"
 			(at 68.58 138.43 0)
 			(effects
 				(font
@@ -12293,7 +12293,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "SMD MLC Capacitor 100nF 50V 10% X7R 1206"
+		(property "Description" "0.1 µF ±10% 50V Ceramic Capacitor X7R 1206 (3216 Metric)"
 			(at 68.58 138.43 0)
 			(effects
 				(font
@@ -12302,7 +12302,7 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "CVNF100K12X"
+		(property "PartNo" "C1206C104K5RACTU"
 			(at 68.58 138.43 0)
 			(effects
 				(font
@@ -13662,7 +13662,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://elektronik-lavpris.dk/files/sup2/C1206C104K5RACTU.pdf"
+		(property "Datasheet" "https://content.kemet.com/datasheets/KEM_C1002_X7R_SMD.pdf"
 			(at 198.12 74.93 0)
 			(effects
 				(font
@@ -13671,7 +13671,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "SMD MLC Capacitor 100nF 50V 10% X7R 1206"
+		(property "Description" "0.1 µF ±10% 50V Ceramic Capacitor X7R 1206 (3216 Metric)"
 			(at 198.12 74.93 0)
 			(effects
 				(font
@@ -13680,7 +13680,7 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "CVNF100K12X"
+		(property "PartNo" "C1206C104K5RACTU"
 			(at 198.12 74.93 0)
 			(effects
 				(font
@@ -15385,7 +15385,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://elektronik-lavpris.dk/files/sup2/C1206C104K5RACTU.pdf"
+		(property "Datasheet" "https://content.kemet.com/datasheets/KEM_C1002_X7R_SMD.pdf"
 			(at 26.67 137.16 0)
 			(effects
 				(font
@@ -15394,7 +15394,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "SMD MLC Capacitor 100nF 50V 10% X7R 1206"
+		(property "Description" "0.1 µF ±10% 50V Ceramic Capacitor X7R 1206 (3216 Metric)"
 			(at 26.67 137.16 0)
 			(effects
 				(font
@@ -15403,7 +15403,7 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "CVNF100K12X"
+		(property "PartNo" "C1206C104K5RACTU"
 			(at 26.67 137.16 0)
 			(effects
 				(font
@@ -16798,7 +16798,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://elektronik-lavpris.dk/files/sup2/KJ-HT.pdf"
+		(property "Datasheet" "https://www.niccomp.com/wp-content/uploads/catalog/nace.pdf"
 			(at 36.83 81.28 0)
 			(effects
 				(font
@@ -16807,7 +16807,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "SMD El-Capacitor 1uF/50V 4x5,4mm"
+		(property "Description" "1 µF 50 V Aluminum Electrolytic Capacitors Radial, Can - SMD 19.9 Ohm 2000 Hrs @ 85°C"
 			(at 36.83 81.28 0)
 			(effects
 				(font
@@ -16825,7 +16825,7 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "CHS0001/50"
+		(property "PartNo" "NACE1R0M50V4X5.5TR15F"
 			(at 36.83 81.28 0)
 			(effects
 				(font
@@ -17249,7 +17249,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://elektronik-lavpris.dk/files/sup2/C1206C104K5RACTU.pdf"
+		(property "Datasheet" "https://content.kemet.com/datasheets/KEM_C1002_X7R_SMD.pdf"
 			(at 220.98 97.79 0)
 			(effects
 				(font
@@ -17258,7 +17258,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "SMD MLC Capacitor 100nF 50V 10% X7R 1206"
+		(property "Description" "0.1 µF ±10% 50V Ceramic Capacitor X7R 1206 (3216 Metric)"
 			(at 220.98 97.79 0)
 			(effects
 				(font
@@ -17267,7 +17267,7 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "CVNF100K12X"
+		(property "PartNo" "C1206C104K5RACTU"
 			(at 220.98 97.79 0)
 			(effects
 				(font
@@ -17345,7 +17345,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://elektronik-lavpris.dk/files/sup2/C1206C104K5RACTU.pdf"
+		(property "Datasheet" "https://content.kemet.com/datasheets/KEM_C1002_X7R_SMD.pdf"
 			(at 200.66 97.79 0)
 			(effects
 				(font
@@ -17354,7 +17354,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "SMD MLC Capacitor 100nF 50V 10% X7R 1206"
+		(property "Description" "0.1 µF ±10% 50V Ceramic Capacitor X7R 1206 (3216 Metric)"
 			(at 200.66 97.79 0)
 			(effects
 				(font
@@ -17363,7 +17363,7 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "CVNF100K12X"
+		(property "PartNo" "C1206C104K5RACTU"
 			(at 200.66 97.79 0)
 			(effects
 				(font

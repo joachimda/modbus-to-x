@@ -1,4 +1,6 @@
 (sym_lib_table
   (version 7)
-  (lib (name "Library")(type "KiCad")(uri "${KIPRJMOD}/lib/symbols/ESP32-WROOM-32D_M113DH2800PH3Q.kicad_sym")(options "")(descr ""))
+  (lib (name "ESP32-WROOM-32D-N16")(type "KiCad")(uri "${KIPRJMOD}/lib/symbols/ESP32-WROOM-32D_M113DH2800PH3Q.kicad_sym")(options "")(descr ""))
+  (lib (name "LMR14020QDPRRQ1")(type "KiCad")(uri "${KIPRJMOD}/lib/symbols/LMR14020QDPRRQ1.kicad_sym")(options "")(descr ""))
+  (lib (name "SSQ-110-X-X-D")(type "KiCad")(uri "${KIPRJMOD}/lib/symbols/SSQ-110-X-X-D.kicad_sym")(options "")(descr ""))
 )

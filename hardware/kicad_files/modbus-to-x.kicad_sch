@@ -9764,7 +9764,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://www.te.com/commerce/DocumentDelivery/DDEController?Action=srchrtrv&DocNm=1825910&DocType=Customer+Drawing&DocLang=English"
+		(property "Datasheet" "https://www.ckswitches.com/media/1471/pts645.pdf"
 			(at 205.74 96.52 0)
 			(effects
 				(font
@@ -9774,7 +9774,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "SWITCH TACTILE SPST-NO 0.05A 24V"
+		(property "Description" "Tactile Switch SPST-NO Top Actuated Surface Mount"
 			(at 200.66 104.14 0)
 			(effects
 				(font
@@ -9783,93 +9783,12 @@
 				(hide yes)
 			)
 		)
-		(property "Digi-Key_PN" "450-1804-ND"
-			(at 205.74 93.98 0)
+		(property "PartNo" "PTS645SK43SMTR92"
+			(at 200.66 104.14 0)
 			(effects
 				(font
-					(size 1.524 1.524)
+					(size 1.27 1.27)
 				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "MPN" "1825910-7"
-			(at 205.74 91.44 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Category" "Switches"
-			(at 205.74 88.9 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Family" "Tactile Switches"
-			(at 205.74 86.36 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "DK_Datasheet_Link" "https://www.te.com/commerce/DocumentDelivery/DDEController?Action=srchrtrv&DocNm=1825910&DocType=Customer+Drawing&DocLang=English"
-			(at 205.74 83.82 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "DK_Detail_Page" "/product-detail/en/te-connectivity-alcoswitch-switches/1825910-7/450-1804-ND/1731414"
-			(at 205.74 81.28 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Description_1" "SWITCH TACTILE SPST-NO 0.05A 24V"
-			(at 205.74 78.74 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Manufacturer" "TE Connectivity ALCOSWITCH Switches"
-			(at 205.74 76.2 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Status" "Active"
-			(at 205.74 73.66 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-				(justify left)
 				(hide yes)
 			)
 		)
@@ -9995,7 +9914,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "LMR14020SQDPRTQ1"
+		(property "Datasheet" "LMR14020QDPRRQ1"
 			(at 76.2 40.64 0)
 			(effects
 				(font
@@ -10005,7 +9924,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "SIMPLE SWITCHER® Power Converter 40V 2A, 2.2MHz Step-Down Converter With 40µA IQ"
+		(property "Description" "Buck Switching Regulator IC Positive Adjustable 0.8V 1 Output 2A 10-WDFN Exposed Pad"
 			(at 76.2 40.64 0)
 			(effects
 				(font
@@ -14775,7 +14694,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://elektronik-lavpris.dk/files/sup2/CSM.pdf"
+		(property "Datasheet" "https://industrial.panasonic.com/cdbs/www-data/pdf/RDD0000/ABA0000C1221.pdf"
 			(at 31.75 31.75 0)
 			(effects
 				(font
@@ -14784,7 +14703,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "SMD El-Capacitor 47uF/35V 6,3x5,4mm"
+		(property "Description" "47 µF 35 V Aluminum - Polymer Capacitors Radial, Can - SMD 60mOhm 10000 Hrs @ 105°C"
 			(at 31.75 31.75 0)
 			(effects
 				(font
@@ -14802,7 +14721,7 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "CSMK047/35"
+		(property "PartNo" "EEH-ZA1V470P"
 			(at 31.75 31.75 0)
 			(effects
 				(font
@@ -17506,7 +17425,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://www.te.com/commerce/DocumentDelivery/DDEController?Action=srchrtrv&DocNm=1825910&DocType=Customer+Drawing&DocLang=English"
+		(property "Datasheet" "https://www.ckswitches.com/media/1471/pts645.pdf"
 			(at 226.06 96.52 0)
 			(effects
 				(font
@@ -17516,7 +17435,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "SWITCH TACTILE SPST-NO 0.05A 24V"
+		(property "Description" "Tactile Switch SPST-NO Top Actuated Surface Mount"
 			(at 220.98 104.14 0)
 			(effects
 				(font
@@ -17525,93 +17444,12 @@
 				(hide yes)
 			)
 		)
-		(property "Digi-Key_PN" "450-1804-ND"
-			(at 226.06 93.98 0)
+		(property "PartNo" "PTS645SK43SMTR92 LFS"
+			(at 220.98 104.14 0)
 			(effects
 				(font
-					(size 1.524 1.524)
+					(size 1.27 1.27)
 				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "MPN" "1825910-7"
-			(at 226.06 91.44 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Category" "Switches"
-			(at 226.06 88.9 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Family" "Tactile Switches"
-			(at 226.06 86.36 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "DK_Datasheet_Link" "https://www.te.com/commerce/DocumentDelivery/DDEController?Action=srchrtrv&DocNm=1825910&DocType=Customer+Drawing&DocLang=English"
-			(at 226.06 83.82 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "DK_Detail_Page" "/product-detail/en/te-connectivity-alcoswitch-switches/1825910-7/450-1804-ND/1731414"
-			(at 226.06 81.28 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Description_1" "SWITCH TACTILE SPST-NO 0.05A 24V"
-			(at 226.06 78.74 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Manufacturer" "TE Connectivity ALCOSWITCH Switches"
-			(at 226.06 76.2 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-		(property "Status" "Active"
-			(at 226.06 73.66 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-				(justify left)
 				(hide yes)
 			)
 		)

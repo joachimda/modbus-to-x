@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <nvs_flash.h>
-
 #include "ArduinoJson.h"
 #include "commlink/CommLink.h"
 #include "MqttLogger.h"
@@ -18,9 +17,11 @@ MqttLogger mqttLogger([](const char *msg) {
 });
 
 ModbusManager modbusManager(&logger);
+MBXServer
 
 void setupEnvironment() {
-    if (IS_DEBUG) {
+    //if (IS_DEBUG) {
+    if (true) {
         logger.useDebug(true);
         Serial.begin(115200);
     }

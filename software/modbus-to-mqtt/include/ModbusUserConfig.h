@@ -26,6 +26,4 @@ static const std::map<uint32_t, String> communicationModesBackwards = {
     {SERIAL_8O2,"8O2"}
 };
 
-
-
 #endif //MODBUSUSERCONFIG_H

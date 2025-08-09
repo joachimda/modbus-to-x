@@ -1,9 +1,12 @@
 #include <Arduino.h>
 #include <nvs_flash.h>
 #include "ArduinoJson.h"
+// #include "MBXServer.h"
 #include "commlink/CommLink.h"
 #include "MqttLogger.h"
+#include "SerialLogger.h"
 #include "commlink/MqttSubscriptions.h"
+#include "esp_spi_flash.h"
 #include "modbus/ModbusManager.h"
 
 Logger logger;
@@ -12,19 +15,19 @@ WiFiClient wifiClient;
 PubSubClient pubSubClient(wifiClient);
 CommLink commLink(&subscriptionHandler, &pubSubClient, &logger);
 MqttLogger mqttLogger([](const char *msg) {
-    const auto logTopic = MQTT_ROOT_TOPIC + PUB_SYSTEM_LOG;
-    pubSubClient.publish(logTopic.c_str(), msg);
+     const auto logTopic = MQTT_ROOT_TOPIC + PUB_SYSTEM_LOG;
+     pubSubClient.publish(logTopic.c_str(), msg);
 });
+SerialLogger serialLogger(Serial);
 
 ModbusManager modbusManager(&logger);
-MBXServer
+// MBXServer mbxServer;
 
 void setupEnvironment() {
-    //if (IS_DEBUG) {
-    if (true) {
-        logger.useDebug(true);
-        Serial.begin(115200);
-    }
+// #ifdef IS_DEBUG
+    logger.useDebug(true);
+    Serial.begin(115200);
+// #endif
 }
 
 void addSubscriptionHandlers() {
@@ -73,7 +76,7 @@ void addSubscriptionHandlers() {
         communication["mqttConnectionState"] = commLink.getMQTTState();
         communication["user"] = commLink.getMQTTUser();
         const auto modbus = doc["modbus"].to<JsonObject>();
-        modbus["registerCount"] = ModbusManager::getRegisterCount();
+        modbus["registerCount"] = modbusManager.getRegisterCount();
         auto userConfig = modbusManager.getUserConfig();
         modbus["communicationMode"] = communicationModesBackwards.at(userConfig.communicationMode);
         modbus["baudRate"] = userConfig.baudRate;
@@ -100,13 +103,27 @@ void addSubscriptionHandlers() {
 void setup() {
     setupEnvironment();
     logger.addTarget(&mqttLogger);
+    logger.addTarget(&serialLogger);
     logger.logDebug("setup started");
+    logger.logInformation(("Chip Flash size: " + String(ESP.getFlashChipSize())).c_str());
+    logger.logInformation(("ESP-IDF Chip Flash size.: " + String(spi_flash_get_chip_size())).c_str());
+    logger.logInformation(("Chip Flash Speed.: " + String(ESP.getFlashChipSpeed())).c_str());
+    logger.logInformation(("Chip Flash Mode: " + String(ESP.getFlashChipMode())).c_str());
+
+    logger.logInformation(("CPU Freq: " + String(ESP.getCpuFreqMHz())+ "MHz").c_str());
+    logger.logInformation(("CPU Cores: " + String(ESP.getChipCores())).c_str());
+    logger.logInformation(("Chip Model: " + String(ESP.getChipModel())).c_str());
+    logger.logInformation(("Chip Rev.: " + String(ESP.getChipRevision())).c_str());
+    logger.logInformation(("Heap Size: " + String(ESP.getHeapSize())).c_str());
+    logger.logInformation(("Free Sketch Space: " + String(ESP.getFreeSketchSpace())).c_str());
+
     addSubscriptionHandlers();
     commLink.begin();
-    modbusManager.initialize();
+    // modbusManager.initialize();
 }
 
 void loop() {
+    // mbxServer.begin();
     // mb_manager.readRegisters();
     // commLink.mqttPublish("log", ("Datapoints available: " + String(numData)).c_str());
     delay(500);

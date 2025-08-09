@@ -33,8 +33,9 @@ bool CommLink::begin() {
     _logger->logInformation(
         ("Connecting to MQTT broker [" + String(broker) + ":" + String(LOCAL_MQTT_PORT) + "]").c_str());
     _mqttClient->setServer(broker, atoi(LOCAL_MQTT_PORT));
-    if (!ensureMQTTConnection())
+    if (!ensureMQTTConnection()) {
         _logger->logError("MQTT connection failed");
+    }
     _mqttClient->setCallback(handleMqttMessage);
     return startMqttTask();
 }
@@ -46,7 +47,7 @@ void CommLink::wifiSetup() {
     WiFiManagerParameter p_mqtt_port("port", "MQTT Broker Port", LOCAL_MQTT_PORT, 6);
     WiFiManagerParameter p_mqtt_user("user", "MQTT Username", LOCAL_MQTT_USER, 32);
     WiFiManagerParameter p_mqtt_pass("pass", "MQTT Password", LOCAL_MQTT_PASSWORD, 32);
-    WiFiManagerParameter p_modbus_mode("modbus_mode", "MODBUS Mode",DEFAULT_MODBUS_MODE , 3);
+    WiFiManagerParameter p_modbus_mode("modbus_mode", "MODBUS Mode",DEFAULT_MODBUS_MODE, 3);
     WiFiManagerParameter p_modbus_baud("modbus_baud", "MODBUS Baud Rate", String(DEFAULT_MODBUS_BAUD_RATE).c_str(), 6);
     wm.addParameter(&p_mqtt_broker);
     wm.addParameter(&p_mqtt_port);
@@ -109,7 +110,6 @@ void CommLink::saveUserConfig() {
     preferences.putString("modbus_mode", LOCAL_MODBUS_MODE);
     preferences.putULong("modbus_baud", LOCAL_MODBUS_BAUD);
     preferences.end();
-
 }
 
 bool CommLink::ensureMQTTConnection() const {
@@ -128,7 +128,7 @@ bool CommLink::ensureMQTTConnection() const {
         setLedColor(false, false, false);
     }
 
-    for (const auto& topic : _subscriptionHandler->getHandlerTopics()) {
+    for (const auto &topic: _subscriptionHandler->getHandlerTopics()) {
         _mqttClient->subscribe(topic.c_str());
         _logger->logInformation(("MQTT subscribe to: " + topic).c_str());
     }
@@ -195,16 +195,16 @@ void CommLink::networkReset() {
 }
 
 void CommLink::setupLED() {
-    pinMode(RGB_LED_RED_PIN, OUTPUT);
-    pinMode(RGB_LED_GREEN_PIN, OUTPUT);
-    pinMode(RGB_LED_BLUE_PIN, OUTPUT);
+    pinMode(LED_A_PIN, OUTPUT);
+    pinMode(LED_B_PIN, OUTPUT);
+    pinMode(LED_C_PIN, OUTPUT);
     setLedColor(false, false, false);
 }
 
 void CommLink::setLedColor(const bool red, const bool green, const bool blue) {
-    digitalWrite(RGB_LED_RED_PIN, red ? HIGH : LOW);
-    digitalWrite(RGB_LED_GREEN_PIN, green ? HIGH : LOW);
-    digitalWrite(RGB_LED_BLUE_PIN, blue ? HIGH : LOW);
+    digitalWrite(11, red ? HIGH : LOW);
+    digitalWrite(LED_B_PIN, green ? HIGH : LOW);
+    digitalWrite(LED_C_PIN, blue ? HIGH : LOW);
 }
 
 
@@ -248,7 +248,7 @@ void CommLink::checkResetButton() {
     }
 }
 
-char * CommLink::getMqttBroker() {
+char *CommLink::getMqttBroker() {
     return LOCAL_MQTT_BROKER;
 }
 

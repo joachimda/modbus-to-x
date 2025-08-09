@@ -20,7 +20,7 @@ public:
 
     void loadRegisterConfig();
 
-    static uint16_t getRegisterCount();
+    uint16_t getRegisterCount();
 
     void updateRegisterConfigurationFromJson(const String& registerConfigJson, bool clearExisting);
 
@@ -35,7 +35,7 @@ private:
 
     static void postTransmissionHandler();
 
-    void saveRegisters() const;
+    void saveRegisters();
 
     std::vector<ModbusRegister> _modbusRegisters;
     ModbusMaster node;

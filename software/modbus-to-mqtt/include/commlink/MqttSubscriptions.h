@@ -1,5 +1,6 @@
 #ifndef MQTTSUBSCRIPTIONS_H
 #define MQTTSUBSCRIPTIONS_H
+#include <WString.h>
 
 
 static String MQTT_ROOT_TOPIC = "default_topic";

@@ -1,5 +1,4 @@
 #pragma once
-
 #include <Arduino.h>
 #ifndef AT24CDRIVER_H
 #define AT24CDRIVER_H

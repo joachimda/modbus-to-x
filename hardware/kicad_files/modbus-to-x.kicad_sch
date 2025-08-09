@@ -7535,7 +7535,7 @@
 		)
 		(uuid "02cfa6c7-e22c-4cf2-aa29-850bbdfe78ed")
 	)
-	(label "STAT_1"
+	(label "LED_C"
 		(at 110.49 138.43 90)
 		(fields_autoplaced yes)
 		(effects
@@ -7623,7 +7623,7 @@
 		)
 		(uuid "2408a27f-b557-4363-b54a-6ccc2a3faacc")
 	)
-	(label "STAT_1"
+	(label "LED_C"
 		(at 232.41 46.99 180)
 		(fields_autoplaced yes)
 		(effects
@@ -7876,7 +7876,7 @@
 		)
 		(uuid "77a90002-6267-4efe-a774-50048e29bfa2")
 	)
-	(label "STAT_3"
+	(label "LED_A"
 		(at 120.65 138.43 90)
 		(fields_autoplaced yes)
 		(effects
@@ -8085,7 +8085,7 @@
 		)
 		(uuid "be4d9a20-321a-4473-bea2-bbaad9f1abbb")
 	)
-	(label "STAT_3"
+	(label "LED_A"
 		(at 232.41 52.07 180)
 		(fields_autoplaced yes)
 		(effects
@@ -8129,7 +8129,7 @@
 		)
 		(uuid "d291022f-8df4-4933-b0b9-458953cb06f3")
 	)
-	(label "STAT_2"
+	(label "LED_B"
 		(at 232.41 49.53 180)
 		(fields_autoplaced yes)
 		(effects
@@ -8162,7 +8162,7 @@
 		)
 		(uuid "e052efd9-a7c8-4ccb-8c17-fdb360fd3f96")
 	)
-	(label "STAT_2"
+	(label "LED_B"
 		(at 115.57 138.43 90)
 		(fields_autoplaced yes)
 		(effects

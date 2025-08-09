@@ -55,7 +55,7 @@ void ModbusManager::initialize() {
     digitalWrite(RS485_DE_PIN, LOW);
     digitalWrite(RS485_RE_PIN, LOW);
 
-    Serial1.begin(userConfig.baudRate, userConfig.communicationMode, RX, TX);
+    Serial1.begin(userConfig.baudRate, userConfig.communicationMode, RX2, TX2);
     node.begin(MODBUS_SLAVE_ID, Serial1);
     
     node.preTransmission(preTransmissionHandler);
@@ -88,7 +88,7 @@ void ModbusManager::readRegisters() {
 
 void ModbusManager::clearRegisters() {
     _modbusRegisters.clear();
-    Preferences preferences;
+    // Preferences preferences;
     preferences.begin(MODBUS_PREFS_NAMESPACE, false);
     preferences.putUShort(REG_COUNT_KEY, 0);
     preferences.end();
@@ -160,7 +160,7 @@ void ModbusManager::postTransmissionHandler() {
 }
 
 void ModbusManager::loadRegisterConfig() {
-    Preferences preferences;
+    // Preferences preferences;
     preferences.begin(MODBUS_PREFS_NAMESPACE, true);
     const uint16_t count = preferences.getUShort(REG_COUNT_KEY, 0);
     _logger->logDebug(("ModbusManager::loadRegisterConfig - Found " + String(count) + " registers").c_str());
@@ -172,7 +172,7 @@ void ModbusManager::loadRegisterConfig() {
 }
 
 uint16_t ModbusManager::getRegisterCount() {
-    Preferences preferences;
+    // Preferences preferences;
     preferences.begin(MODBUS_PREFS_NAMESPACE, true);
     const uint16_t count = preferences.getUShort(REG_COUNT_KEY, 0);
     preferences.end();
@@ -185,8 +185,8 @@ void ModbusManager::addRegister(const ModbusRegister &reg) {
     saveRegisters();
 }
 
-void ModbusManager::saveRegisters() const {
-    Preferences preferences;
+void ModbusManager::saveRegisters()  {
+    // Preferences preferences;
     preferences.begin(MODBUS_PREFS_NAMESPACE, false);
     const uint16_t count = _modbusRegisters.size();
     preferences.putUShort(REG_COUNT_KEY, count);

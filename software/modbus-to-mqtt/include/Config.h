@@ -12,9 +12,17 @@
 #define RS485_RE_PIN 33
 #endif
 
-#define RGB_LED_RED_PIN 2
-#define RGB_LED_GREEN_PIN 16
-#define RGB_LED_BLUE_PIN 4
+#ifndef LED_A_PIN
+#define LED_A_PIN 2
+#endif
+
+#ifndef LED_B_PIN
+#define LED_B_PIN 14
+#endif
+#ifndef LED_C_PIN
+#define LED_C_PIN 14
+#endif
+
 #define RESET_BUTTON_PIN 13
 #define RESET_HOLD_TIME_MS 3000
 
@@ -70,7 +78,7 @@
  ****************************************************/
 
 #ifndef IS_DEBUG
-#define IS_DEBUG false
+#define IS_DEBUG true
 #endif
 
 #endif

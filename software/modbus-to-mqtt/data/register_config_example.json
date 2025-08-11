@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "device": {
+    "name": "VentilationUnit",
+    "slaveId": 1
+  },
+  "serial": {
+    "baud": 9600,
+    "format": "8N1"
+  },
+  "modbus": {
+    "timeoutMs": 200,
+    "retries": 1
+  },
+  "registers": [
+    {
+      "address": 0,
+      "numOfRegisters": 2,
+      "scale": 0.1,
+      "registerType": "HOLDING_REGISTER",
+      "dataType": "NUMBER",
+      "name": "Voltage"
+    },
+    {
+      "address": 2,
+      "numOfRegisters": 2,
+      "scale": 1.0,
+      "registerType": "INPUT_REGISTER",
+      "dataType": "NUMBER",
+      "name": "Current"
+    },
+    {
+      "address": 10,
+      "numOfRegisters": 8,
+      "scale": 1.0,
+      "registerType": "HOLDING_REGISTER",
+      "dataType": "TEXT",
+      "name": "Model"
+    }
+  ]
+}

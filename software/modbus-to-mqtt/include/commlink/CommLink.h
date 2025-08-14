@@ -5,7 +5,6 @@
 #include <WiFiClient.h>
 #include <commlink/MqttSubscriptionHandler.h>
 #include <Preferences.h>
-#include "WiFiManager.h"
 
 class CommLink {
 public:
@@ -53,7 +52,6 @@ private:
     Logger *_logger;
     TaskHandle_t _mqttTaskHandle;
     MqttSubscriptionHandler *_subscriptionHandler;
-    WiFiManager wm;
     Preferences preferences;
 };
 

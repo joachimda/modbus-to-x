@@ -25,7 +25,7 @@ public:
 
     static void setupLED();
 
-    static void setLedColor(bool red, bool green, bool blue);
+    //static void setLedColor(bool red, bool green, bool blue);
 
     void checkResetButton();
 

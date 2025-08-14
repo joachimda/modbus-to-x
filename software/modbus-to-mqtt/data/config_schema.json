@@ -246,7 +246,7 @@
                   "minimum": 100,
                   "default": 10000
                 },
-                "deadband":{
+                "deadBand":{
                   "type": "number",
                   "default": 0.0
                 },

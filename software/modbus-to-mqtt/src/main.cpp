@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include "ArduinoJson.h"
 #include <nvs_flash.h>
-// #include "MBXServer.h"
+#include "MBXServer.h"
 #include "commlink/CommLink.h"
 #include "MqttLogger.h"
 #include "SerialLogger.h"
@@ -21,7 +21,7 @@ MqttLogger mqttLogger([](const char *msg) {
 SerialLogger serialLogger(Serial);
 
 ModbusManager modbusManager(&logger);
-// MBXServer mbxServer;
+MBXServer mbxServer;
 
 void setupEnvironment() {
     logger.useDebug(true);
@@ -100,28 +100,16 @@ void addSubscriptionHandlers() {
 
 void setup() {
     setupEnvironment();
-    logger.addTarget(&mqttLogger);
     logger.addTarget(&serialLogger);
     logger.logDebug("setup started");
-    logger.logInformation(("Chip Flash size: " + String(ESP.getFlashChipSize())).c_str());
-    logger.logInformation(("ESP-IDF Chip Flash size.: " + String(spi_flash_get_chip_size())).c_str());
-    logger.logInformation(("Chip Flash Speed.: " + String(ESP.getFlashChipSpeed())).c_str());
-    logger.logInformation(("Chip Flash Mode: " + String(ESP.getFlashChipMode())).c_str());
-
-    logger.logInformation(("CPU Freq: " + String(ESP.getCpuFreqMHz())+ "MHz").c_str());
-    logger.logInformation(("CPU Cores: " + String(ESP.getChipCores())).c_str());
-    logger.logInformation(("Chip Model: " + String(ESP.getChipModel())).c_str());
-    logger.logInformation(("Chip Rev.: " + String(ESP.getChipRevision())).c_str());
-    logger.logInformation(("Heap Size: " + String(ESP.getHeapSize())).c_str());
-    logger.logInformation(("Free Sketch Space: " + String(ESP.getFreeSketchSpace())).c_str());
-
-    addSubscriptionHandlers();
+    //addSubscriptionHandlers();
     commLink.begin();
-    // modbusManager.initialize();
+    mbxServer.begin();
+
+    //modbusManager.initialize();
 }
 
 void loop() {
-    // mbxServer.begin();
     // mb_manager.readRegisters();
     // commLink.mqttPublish("log", ("Datapoints available: " + String(numData)).c_str());
     delay(500);

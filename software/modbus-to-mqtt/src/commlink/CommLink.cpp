@@ -25,10 +25,11 @@ void handleMqttMessage(char *topic, const byte *payload, const unsigned int leng
 
 bool CommLink::begin() {
     setupLED();
-    checkResetButton();
+    //checkResetButton();
     wifiSetup();
 
     _mqttClient->setBufferSize(MQTT_BUFFER_SIZE);
+   /*
     const char *broker = {LOCAL_MQTT_BROKER};
     _logger->logInformation(
         ("Connecting to MQTT broker [" + String(broker) + ":" + String(LOCAL_MQTT_PORT) + "]").c_str());
@@ -38,6 +39,8 @@ bool CommLink::begin() {
     }
     _mqttClient->setCallback(handleMqttMessage);
     return startMqttTask();
+    */
+   return true;
 }
 
 void CommLink::wifiSetup() {
@@ -118,14 +121,14 @@ bool CommLink::ensureMQTTConnection() const {
     const bool connected = _mqttClient->connect(clientId.c_str(), LOCAL_MQTT_USER, LOCAL_MQTT_PASSWORD);
     if (!connected) {
         for (int i = 0; i < 3; i++) {
-            setLedColor(true, false, false);
+            //setLedColor(true, false, false);
             delay(250);
-            setLedColor(false, false, false);
+            //setLedColor(false, false, false);
             delay(250);
             _logger->logError(("MQTT connect failed, rc=" + String(_mqttClient->state())).c_str());
         }
     } else {
-        setLedColor(false, false, false);
+        //setLedColor(false, false, false);
     }
 
     for (const auto &topic: _subscriptionHandler->getHandlerTopics()) {
@@ -198,15 +201,8 @@ void CommLink::setupLED() {
     pinMode(LED_A_PIN, OUTPUT);
     pinMode(LED_B_PIN, OUTPUT);
     pinMode(LED_C_PIN, OUTPUT);
-    setLedColor(false, false, false);
+    //setLedColor(false, false, false);
 }
-
-void CommLink::setLedColor(const bool red, const bool green, const bool blue) {
-    digitalWrite(11, red ? HIGH : LOW);
-    digitalWrite(LED_B_PIN, green ? HIGH : LOW);
-    digitalWrite(LED_C_PIN, blue ? HIGH : LOW);
-}
-
 
 void CommLink::checkResetButton() {
     pinMode(RESET_BUTTON_PIN, INPUT);
@@ -220,15 +216,15 @@ void CommLink::checkResetButton() {
             const unsigned long heldTime = millis() - pressStart;
 
             if (heldTime / 200 % 2 == 0) {
-                setLedColor(false, false, true);
+                //setLedColor(false, false, true);
             } else {
-                setLedColor(false, false, false);
+                //setLedColor(false, false, false);
             }
 
             if (heldTime >= RESET_HOLD_TIME_MS) {
                 _logger->logInformation("CommLink::checkResetButton - Reset confirmed: clearing settings");
 
-                setLedColor(true, false, false);
+                //setLedColor(true, false, false);
 
                 preferences.begin(MQTT_PREFS_NAMESPACE, false);
                 preferences.clear();
@@ -242,9 +238,9 @@ void CommLink::checkResetButton() {
         }
 
         _logger->logWarning("Reset cancelled");
-        setLedColor(false, true, false);
+        //setLedColor(false, true, false);
         delay(500);
-        setLedColor(false, false, false);
+        //setLedColor(false, false, false);
     }
 }
 

@@ -36,19 +36,19 @@ String MBXServer::readConfig() {
 }
 
 void MBXServer::configureRoutes() {
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/", WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(SPIFFS, "/index.html", "text/html");
     });
 
-    server.on("/config", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/config", WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(SPIFFS, "/modbus_config.json", "application/json");
     });
-    server.on("/upload", HTTP_POST, [](AsyncWebServerRequest *request) {
+    server.on("/upload", WebRequestMethod::HTTP_POST, [](AsyncWebServerRequest *request) {
         request->send(200, "text/plain", "Upload successful");
     }, handleUpload);
 
 
-    server.on("/download", HTTP_GET, [this](AsyncWebServerRequest *request) {
+    server.on("/download", WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request) {
         if (SPIFFS.exists("/config.json")) {
             request->send(SPIFFS, "/config.json", "application/json");
         } else {

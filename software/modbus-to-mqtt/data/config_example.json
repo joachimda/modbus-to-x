@@ -30,7 +30,7 @@
           "unit": "V",
           "access": "r",
           "pollMs": 1000,
-          "deadband": 0.1,
+          "deadBand": 0.1,
           "precision": 2
         },
         {

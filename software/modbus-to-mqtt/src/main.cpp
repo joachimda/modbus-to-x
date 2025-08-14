@@ -1,6 +1,6 @@
 #include <Arduino.h>
-#include <nvs_flash.h>
 #include "ArduinoJson.h"
+#include <nvs_flash.h>
 // #include "MBXServer.h"
 #include "commlink/CommLink.h"
 #include "MqttLogger.h"
@@ -24,10 +24,8 @@ ModbusManager modbusManager(&logger);
 // MBXServer mbxServer;
 
 void setupEnvironment() {
-// #ifdef IS_DEBUG
     logger.useDebug(true);
     Serial.begin(115200);
-// #endif
 }
 
 void addSubscriptionHandlers() {

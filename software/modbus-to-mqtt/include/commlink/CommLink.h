@@ -3,9 +3,9 @@
 
 #include <PubSubClient.h>
 #include <WiFiClient.h>
-#include <WiFiManager.h>
 #include <commlink/MqttSubscriptionHandler.h>
 #include <Preferences.h>
+#include "WiFiManager.h"
 
 class CommLink {
 public:
@@ -43,7 +43,6 @@ private:
     void loadMQTTConfig();
 
     void saveUserConfig();
-
     char LOCAL_MQTT_BROKER[150] = "";
     char LOCAL_MQTT_PORT[6] = "";
     char LOCAL_MQTT_USER[32] = "";

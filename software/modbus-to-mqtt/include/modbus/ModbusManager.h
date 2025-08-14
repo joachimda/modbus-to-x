@@ -1,10 +1,10 @@
 #ifndef MODBUSMANAGER_H
 #define MODBUSMANAGER_H
-#include <ModbusMaster.h>
 #include <vector>
 #include "ModbusRegister.h"
 #include "ModbusUserConfig.h"
 #include "commlink/CommLink.h"
+#include "ModbusMaster.h"
 
 class ModbusManager {
 public:

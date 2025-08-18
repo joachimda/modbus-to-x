@@ -24,8 +24,6 @@ public:
 
     static void setupLED();
 
-    //static void setLedColor(bool red, bool green, bool blue);
-
     void checkResetButton();
 
     char* getMqttBroker();
@@ -33,7 +31,8 @@ public:
     int getMQTTState() const;
 
     char *getMQTTUser();
-
+    void overrideUserConfig(const char *user, const char *pass, const char *server, const char *port, const char *mode,
+                        uint32_t baud);
 private:
     [[noreturn]] static void processMQTTAsync(void *parameter);
 

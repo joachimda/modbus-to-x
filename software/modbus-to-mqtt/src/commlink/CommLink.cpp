@@ -2,7 +2,9 @@
 #include "commlink/CommLink.h"
 #include "Config.h"
 #include "ESPAsyncWebServer.h"
-#include "ESPAsyncWiFiManager.h"
+#include "Helpers.h"
+#include "wifiManagement/AsyncWiFiManagerParameter.h"
+#include "wifiManagement/AsyncWiFiManager.h"
 
 static CommLink *s_activeCommLink = nullptr;
 static constexpr auto DEFAULT_MQTT_BROKER_PORT = "1883";
@@ -31,9 +33,7 @@ void handleMqttMessage(char *topic, const byte *payload, const unsigned int leng
 
 bool CommLink::begin() {
     setupLED();
-    //checkResetButton();
     wifiSetup();
-
     _mqttClient->setBufferSize(MQTT_BUFFER_SIZE);
 
     const char *broker = {LOCAL_MQTT_BROKER};
@@ -45,8 +45,6 @@ bool CommLink::begin() {
     }
     _mqttClient->setCallback(handleMqttMessage);
     return startMqttTask();
-
-   return true;
 }
 
 void CommLink::wifiSetup() {
@@ -54,7 +52,7 @@ void CommLink::wifiSetup() {
 
     AsyncWebServer server(80);
     DNSServer dns;
-    AsyncWiFiManager wm(&server, &dns);
+    AsyncWiFiManager wm(&server, &dns, _logger);
     AsyncWiFiManagerParameter p_mqtt_broker("server", "MQTT Broker domain/IP", LOCAL_MQTT_BROKER, 150);
     AsyncWiFiManagerParameter p_mqtt_port("port", "MQTT Broker Port", LOCAL_MQTT_PORT, 6);
     AsyncWiFiManagerParameter p_mqtt_user("user", "MQTT Username", LOCAL_MQTT_USER, 32);
@@ -122,6 +120,17 @@ void CommLink::saveUserConfig() {
     preferences.putULong("modbus_baud", LOCAL_MODBUS_BAUD);
     preferences.end();
 }
+void CommLink::overrideUserConfig(const char* user, const char* pass, const char* server, const char* port, const char* mode, const uint32_t baud) {
+    preferences.begin(MQTT_PREFS_NAMESPACE, false);
+    preferences.putString("server", server);
+    preferences.putString("port", port);
+    preferences.putString("user", user);
+    preferences.putString("pass", pass);
+    preferences.putString("modbus_mode", mode);
+    preferences.putULong("modbus_baud", baud);
+    preferences.end();
+}
+
 
 bool CommLink::ensureMQTTConnection() const {
     String clientId = MQTT_CLIENT_PREFIX;
@@ -201,7 +210,7 @@ void CommLink::onMqttMessage(const String &topic, const uint8_t *payload, const 
 void CommLink::networkReset() {
     AsyncWebServer server(80);
     DNSServer dns;
-    AsyncWiFiManager wm(&server, &dns);
+    AsyncWiFiManager wm(&server, &dns, _logger);
     wm.resetSettings();
     _logger->logDebug("CommLink::networkReset - WifiManager preferences purged successfully");
     _logger->logDebug("CommLink::networkReset - Sending restart signal");

@@ -77,8 +77,7 @@
  * System
  ****************************************************/
 
-#ifndef IS_DEBUG
-#define IS_DEBUG true
+#ifndef SERIAL_OUTPUT_BAUD
+#define SERIAL_OUTPUT_BAUD 115200
 #endif
-
 #endif

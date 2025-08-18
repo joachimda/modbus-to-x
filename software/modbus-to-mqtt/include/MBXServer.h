@@ -3,24 +3,26 @@
 
 #include <SPIFFS.h>
 #include "ESPAsyncWebServer.h"
+#include "Logger.h"
 
+static const int serverPort = 80;
 class MBXServer {
 public:
-    MBXServer();
+    explicit MBXServer(Logger * logger);
 
     void begin();
 
     void configureRoutes();
 
 private:
+    Logger * _logger;
     AsyncWebServer server;
 
-    static String readConfig();
+    void ensureConfigFile();
+    String readConfig();
 
-    static void writeConfig(const String &json);
-
-    static void handleUpload(AsyncWebServerRequest *request, String fn, size_t index,
-                  uint8_t *data, size_t len, bool final);
+    static void handleUpload(AsyncWebServerRequest *r, const String& fn, size_t index,
+                             uint8_t *data, size_t len, bool final);
 };
 
 #endif

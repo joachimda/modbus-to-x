@@ -1,13 +1,14 @@
 #include <Arduino.h>
 #include "ArduinoJson.h"
 #include <nvs_flash.h>
-#include "MBXServer.h"
 #include "commlink/CommLink.h"
 #include "MqttLogger.h"
 #include "SerialLogger.h"
 #include "commlink/MqttSubscriptions.h"
 #include "esp_spi_flash.h"
 #include "modbus/ModbusManager.h"
+#include "MBXServer.h"
+#include "Config.h"
 
 Logger logger;
 MqttSubscriptionHandler subscriptionHandler(&logger);
@@ -19,13 +20,12 @@ MqttLogger mqttLogger([](const char *msg) {
      pubSubClient.publish(logTopic.c_str(), msg);
 });
 SerialLogger serialLogger(Serial);
-
 ModbusManager modbusManager(&logger);
-MBXServer mbxServer;
+MBXServer mbxServer(&logger);
 
 void setupEnvironment() {
     logger.useDebug(true);
-    Serial.begin(115200);
+    Serial.begin(SERIAL_OUTPUT_BAUD);
 }
 
 void addSubscriptionHandlers() {
@@ -101,8 +101,11 @@ void addSubscriptionHandlers() {
 void setup() {
     setupEnvironment();
     logger.addTarget(&serialLogger);
+    logger.addTarget(&mqttLogger);
     logger.logDebug("setup started");
-    //addSubscriptionHandlers();
+    addSubscriptionHandlers();
+    commLink.overrideUserConfig("espuser","test", "10.159.188.206","1883", "8N1", 9600);
+
     commLink.begin();
     mbxServer.begin();
 

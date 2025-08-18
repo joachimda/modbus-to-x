@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Modbus To X</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f9f9f9; }
+        h1 { color: #1fa3ec; }
+        .info-box {
+            background: #fff;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        }
+        .btn {
+            display: inline-block;
+            background: #1fa3ec;
+            color: #fff;
+            padding: 12px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            text-decoration: none;
+        }
+        .btn:hover { background: #1486b5; }
+    </style>
+</head>
+<body>
+<h1>Modbus To X</h1>
+<div class="info-box">
+    <h2>Device Information</h2>
+    <p><strong>Firmware:</strong> v1.0.0</p>
+    <p><strong>Chip ID:</strong> <span id="chipId">Loading...</span></p>
+    <p><strong>WiFi SSID:</strong> <span id="ssid">Loading...</span></p>
+</div>
+
+<a href="/configure" class="btn">Configure Devices &amp; Modbus</a>
+
+<script>
+    // Fetch system info from the MQTT-to-X API if exposed later.
+    // Placeholder for now (static content could be injected at build time).
+    document.getElementById("chipId").textContent = "<?=CHIP_ID?>";
+    document.getElementById("ssid").textContent = "<?=SSID?>";
+</script>
+</body>
+</html>

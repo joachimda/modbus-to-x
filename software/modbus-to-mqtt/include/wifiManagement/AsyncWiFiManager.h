@@ -19,55 +19,37 @@
 #include "WifiResult.h"
 #include "Logger.h"
 
-typedef int16_t wifi_ssid_count_t;
+using wifi_ssid_count_t = int16_t;
 
 #define WIFI_MANAGER_MAX_PARAMS 10
+static const long AUTO_CONNECT_RETRY_DELAY_MS = 1000;
 
-class AsyncWiFiManager
-{
+class AsyncWiFiManager {
 public:
     AsyncWiFiManager(AsyncWebServer *server, DNSServer *dns, Logger *logger);
     void scan(boolean async = false);
     auto scanModal() -> String;
-    void loop();
-    void safeLoop();
-    void criticalLoop();
-    static auto buildInfoHtml() -> String;
 
     auto autoConnect(char const *apName,
-                        char const *apPassword = nullptr,
-                        unsigned long maxConnectRetries = 1,
-                        unsigned long retryDelayMs = 1000) -> boolean;
-
-    // if you want to always start the config portal, without trying to connect first
-    auto startConfigPortal(char const *apName, char const *apPassword = nullptr) -> boolean;
-    void startConfigPortalModeless(char const *apName, char const *apPassword);
-
-    // get the AP name of the config portal, so it can be used in the callback
-    auto getConfigPortalSSID() -> String;
+                     char const *apPassword = nullptr,
+                     unsigned long retryDelayMs = AUTO_CONNECT_RETRY_DELAY_MS) -> boolean;
 
     void resetSettings();
 
-    // defaults to not showing anything under 8% signal quality if called
-    void setMinimumSignalQuality(unsigned int quality = 8);
-    // sets a custom ip /gateway /subnet configuration
+    // Sets a custom ip /gateway /subnet configuration
     void setAPStaticIPConfig(const IPAddress& ip, const IPAddress& gw, const IPAddress& sn);
-    // sets config for a static IP
+
+    // Sets config for a static IP
     void setSTAStaticIPConfig(const IPAddress& ip,
                               const IPAddress& gw,
                               const IPAddress& sn,
                               const IPAddress& dns1 = (uint32_t)0x00000000,
                               const IPAddress& dns2 = (uint32_t)0x00000000);
-    // called when AP mode and config portal is started
-    void setAPCallback(std::function<void(AsyncWiFiManager *)>);
-    // called when settings have been changed and connection was successful
-    void setSaveConfigCallback(std::function<void()> func);
+
     void addParameter(AsyncWiFiManagerParameter *p);
+
     // if this is set, it will exit after config, even if connection is unsuccessful
     void setBreakAfterConfig(boolean shouldBreak);
-
-    // if this is true, remove duplicated Access Points - default true
-    void setRemoveDuplicateAPs(boolean removeDuplicates);
 
     auto getConfiguredSTASSID() -> String{
         return _ssid;
@@ -77,12 +59,14 @@ public:
     }
 
 private:
+
+    auto startConfigPortal(char const *apName, char const *apPassword = nullptr) -> boolean;
+
     AsyncWebServer *server;
     DNSServer *dnsServer;
     boolean _modeless;
     unsigned long scanNow{};
     boolean shouldScan = true;
-    boolean needInfo = true;
     String pager;
     wl_status_t wifiStatus;
     const char *_apName = "no-net";
@@ -104,22 +88,20 @@ private:
 
     unsigned int _paramsCount = 0;
     unsigned int _minimumQuality = 0;
-    boolean _removeDuplicateAPs = true;
     boolean _shouldBreakAfterConfig = false;
 
     const char *_customHeadElement = "";
 
-    uint8_t status = WL_IDLE_STATUS;
+    uint8_t WIFI_STATUS = WL_IDLE_STATUS;
     auto connectWifi(const String& ssid, const String& pass) -> uint8_t;
     auto waitForConnectResult() -> uint8_t;
-    void setInfo();
     void copySSIDInfo(wifi_ssid_count_t n);
     auto buildSsidListHtml() -> String;
     void setupConfigPortal();
     void handleRoot(AsyncWebServerRequest *);
     void handleConfigureWifi(AsyncWebServerRequest *request, boolean scan);
     void handleWifiSaveForm(AsyncWebServerRequest *request);
-    void handleBuildInfoHtml(AsyncWebServerRequest *);
+
     void handleReset(AsyncWebServerRequest *);
     void handleNotFound(AsyncWebServerRequest *);
     auto tryRedirectToCaptivePortal(AsyncWebServerRequest *request) -> boolean;
@@ -129,7 +111,6 @@ private:
     static auto convertIpAddressToString(const IPAddress& ip) -> String;
 
     boolean connect{};
-    boolean _debug = true;
 
     WiFiResult *wifiSSIDs;
     wifi_ssid_count_t wifiSSIDCount{};
@@ -150,7 +131,7 @@ private:
 
     Logger *logger;
 
-   static bool accessPointFilter(AsyncWebServerRequest *request);
+    static auto accessPointFilter(AsyncWebServerRequest *request) -> bool;
 };
 
 #endif //MODBUS_TO_MQTT_ASYNCWIFIMANAGER_H

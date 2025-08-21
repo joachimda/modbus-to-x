@@ -7,5 +7,6 @@ public:
     constexpr static const auto DOWNLOAD_CFG_EX = "/download/config_example";
     constexpr static const auto CONFIGURE = "/configure";
     constexpr static const auto UPLOAD = "/upload";
+    constexpr static const auto RESET_NETWORK = "/reset";
 };
 #endif

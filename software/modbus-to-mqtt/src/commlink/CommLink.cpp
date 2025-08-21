@@ -3,17 +3,19 @@
 #include "Config.h"
 #include "ESPAsyncWebServer.h"
 #include "Helpers.h"
-#include "wifiManagement/AsyncWiFiManagerParameter.h"
 #include "wifiManagement/AsyncWiFiManager.h"
+#include <atomic>
+
+static std::atomic<bool> s_mqttEnabled{false};
 
 static CommLink *s_activeCommLink = nullptr;
 static constexpr auto DEFAULT_MQTT_BROKER_PORT = "1883";
 static constexpr auto DEFAULT_MQTT_BROKER_IP = "0.0.0.0";
 
 static constexpr auto MQTT_CLIENT_PREFIX = "MODBUS_CLIENT-";
-static constexpr auto WIFI_CONNECT_TIMEOUT = 10000;
 static constexpr auto MQTT_TASK_STACK = 4096;
 static constexpr auto MQTT_TASK_LOOP_DELAY_MS = 100;
+static constexpr auto RND_SEED = 0xffff;
 
 CommLink::CommLink(MqttSubscriptionHandler *subscriptionHandler, PubSubClient *mqttClient, Logger *logger)
     : _mqttClient(mqttClient),
@@ -21,17 +23,16 @@ CommLink::CommLink(MqttSubscriptionHandler *subscriptionHandler, PubSubClient *m
       _mqttTaskHandle(nullptr),
       _subscriptionHandler(subscriptionHandler){
     s_activeCommLink = this;
-    s_activeCommLink = this;
 }
 
 void handleMqttMessage(char *topic, const byte *payload, const unsigned int length) {
-    if (s_activeCommLink) {
+    if (s_activeCommLink != nullptr) {
         const auto topicStr = String(topic);
         s_activeCommLink->onMqttMessage(topicStr, payload, length);
     }
 }
 
-bool CommLink::begin() {
+auto CommLink::begin() -> bool {
     setupLED();
     wifiSetup();
     _mqttClient->setBufferSize(MQTT_BUFFER_SIZE);
@@ -48,6 +49,7 @@ bool CommLink::begin() {
 }
 
 void CommLink::wifiSetup() {
+    /*
     loadMQTTConfig();
 
     AsyncWebServer server(80);
@@ -63,7 +65,6 @@ void CommLink::wifiSetup() {
     wm.addParameter(&p_mqtt_user);
     wm.addParameter(&p_mqtt_pass);
     wm.addParameter(&p_modbus_mode);
-
     const unsigned long startAttemptTime = millis();
     while (!wm.autoConnect(DEFAULT_AP_SSID, DEFAULT_AP_PASS)) {
         if (millis() - startAttemptTime > WIFI_CONNECT_TIMEOUT) {
@@ -76,8 +77,9 @@ void CommLink::wifiSetup() {
     strcpy(LOCAL_MQTT_PORT, p_mqtt_port.getValue());
     strcpy(LOCAL_MQTT_USER, p_mqtt_user.getValue());
     strcpy(LOCAL_MQTT_PASSWORD, p_mqtt_pass.getValue());
-
     saveUserConfig();
+    */
+
 }
 
 void CommLink::loadMQTTConfig() {
@@ -132,16 +134,14 @@ void CommLink::overrideUserConfig(const char* user, const char* pass, const char
 }
 
 
-bool CommLink::ensureMQTTConnection() const {
+auto CommLink::ensureMQTTConnection() const -> bool {
     String clientId = MQTT_CLIENT_PREFIX;
-    clientId += String(random(0xffff), HEX);
+    clientId += String(random(RND_SEED), HEX);
     const bool connected = _mqttClient->connect(clientId.c_str(), LOCAL_MQTT_USER, LOCAL_MQTT_PASSWORD);
     if (!connected) {
         for (int i = 0; i < 3; i++) {
             //setLedColor(true, false, false);
-            delay(250);
-            //setLedColor(false, false, false);
-            delay(250);
+            delay(500);
             _logger->logError(("MQTT connect failed, rc=" + String(_mqttClient->state())).c_str());
         }
     } else {
@@ -161,6 +161,12 @@ bool CommLink::ensureMQTTConnection() const {
     constexpr TickType_t delayTicks = MQTT_TASK_LOOP_DELAY_MS / portTICK_PERIOD_MS;
     static unsigned long lastReconnectAttempt = 0;
     while (true) {
+
+        if (!CommLink::isMQTTEnabled()) {
+            vTaskDelay(delayTicks);
+            continue;
+        }
+
         if (!commLink->_mqttClient->connected()) {
             commLink->_logger->logError("MQTT disconnected, attempting reconnect");
             const unsigned long now = millis();
@@ -275,3 +281,12 @@ int CommLink::getMQTTState() const {
 char *CommLink::getMQTTUser() {
     return LOCAL_MQTT_USER;
 }
+
+void CommLink::setMQTTEnabled(bool enabled) {
+    s_mqttEnabled.store(enabled, std::memory_order_release);
+}
+bool CommLink::isMQTTEnabled() {
+    return s_mqttEnabled.load(std::memory_order_acquire);
+}
+
+

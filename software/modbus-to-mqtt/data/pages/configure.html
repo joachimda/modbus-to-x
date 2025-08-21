@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/html">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Modbus To X – Configuration</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="../style.css">
+</head>
+<body data-page="configure">
+<h1>Modbus To X</h1>
+<p class="sub">Serial &amp; Modbus Configuration</p>
+
+<div class="card">
+    <div class="toolbar">
+        <button id="btnLoad" class="btn">Reload from device</button>
+        <a class="btn secondary" href="/download/config" target="_blank">Download current</a>
+        <a class="btn secondary" href="/download/config_example" target="_blank">Download example</a>
+        <button id="btnSave" class="btn">Save to device</button>
+    </div>
+    <div id="WIFI_STATUS" class="WIFI_STATUS"></div>
+</div>
+
+<div class="card">
+    <h3>RS485 Configuration</h3>
+    <div class="row">
+        <div>
+            <label for="bus1_baud">Baud</label>
+            <select id="bus1_baud"></select>
+
+            <label for="bus1_format">Serial format</label>
+            <select id="bus1_format"></select>
+
+            <label for="bus1_term">Termination</label>
+            <select id="bus1_term">
+                <option value="120R">120R</option>
+            </select>
+
+            <div class="switch">
+                <input type="checkbox" id="bus1_bias" />
+                <label for="bus1_bias">Enable bias</label>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Add Device</h3>
+    <div class="row">
+        <div>
+            <label for="dev_name">Name</label>
+            <input type="text" id="dev_name" placeholder="VentilationUnit" />
+
+            <label for="dev_slave">Slave ID (1–247)</label>
+            <input type="text" id="dev_slave" placeholder="1" />
+
+            <label for="dev_order">Default Byte Order</label>
+            <select id="dev_order">
+                <option value="ABCD">ABCD</option>
+                <option value="DCBA">DCBA</option>
+            </select>
+
+            <input type="hidden" id="dev_bus" value="1" />
+        </div>
+        <div>
+            <p class="sub">Fill in device basics, then add one or more datapoints below. When ready, click “Add Device to JSON.”</p>
+            <button id="btnAddDevice" class="btn">Add Device to JSON</button>
+        </div>
+    </div>
+
+    <h4 style="margin-top:14px">Datapoints</h4>
+    <div class="toolbar">
+        <button id="btnAddDpRow" class="btn secondary">Add datapoint row</button>
+        <button id="btnClearDpRows" class="btn danger">Clear all rows</button>
+    </div>
+
+    <div style="overflow:auto; margin-top:10px">
+        <table id="dpTable" style="width:100%; border-collapse:collapse">
+            <thead>
+            <tr style="text-align:left">
+                <th>Name</th>
+                <th>Address</th>
+                <th>No. of Registers</th>
+                <th>Scale</th>
+                <th>Register Type</th>
+                <th>Data Type</th>
+                <th>Unit</th>
+                <th>Access</th>
+                <th>Poll(ms)</th>
+                <th>DeadBand</th>
+                <th>Precision</th>
+                <th></th>
+            </tr>
+            </thead>
+            <tbody id="dpBody"></tbody>
+        </table>
+    </div>
+
+    <details id="advJson" class="card" data-pref="advJsonOpen">
+        <summary>
+            <h3 style="display:inline">Advanced: Full JSON</h3>
+            <span class="sub"> — only needed for power users</span>
+        </summary>
+
+        <div class="toolbar" style="margin-top:10px">
+            <button id="btnApply" class="btn secondary">Apply editor changes</button>
+            <button id="btnFormat" class="btn secondary">Format JSON</button>
+        </div>
+
+        <p class="sub">Edit full configuration (devices, datapoints, etc.). Be careful—invalid JSON will be rejected on save.</p>
+        <label for="jsonBox"></label><textarea id="jsonBox" spellcheck="false"></textarea>
+    </details>
+</div>
+<script src="/app.js" defer></script>
+</body>
+</html>

@@ -29,4 +29,4 @@ private:
     Logger *_logger;
 };
 
-#endif //TOPICHANDLERSTRUCT_H
+#endif

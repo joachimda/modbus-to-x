@@ -10,15 +10,15 @@ class CommLink {
 public:
     explicit CommLink(MqttSubscriptionHandler *subscriptionHandler, PubSubClient *mqttClient, Logger *logger);
 
-    bool begin();
+    auto begin() -> bool;
 
-    bool ensureMQTTConnection() const;
+    auto ensureMQTTConnection() const -> bool;
 
-    bool mqttPublish(const char *topic, const char *payload) const;
+    auto mqttPublish(const char *topic, const char *payload) const -> bool;
 
     void onMqttMessage(const String& topic, const uint8_t *payload, size_t length) const;
 
-    bool startMqttTask();
+    auto startMqttTask() -> bool;
 
     void networkReset();
 
@@ -26,13 +26,17 @@ public:
 
     void checkResetButton();
 
-    char* getMqttBroker();
+    auto getMqttBroker() -> char*;
 
-    int getMQTTState() const;
+    auto getMQTTState() const -> int;
 
-    char *getMQTTUser();
+    auto getMQTTUser() -> char *;
+
     void overrideUserConfig(const char *user, const char *pass, const char *server, const char *port, const char *mode,
                         uint32_t baud);
+    static void setMQTTEnabled(bool enabled);
+    static auto isMQTTEnabled() -> bool;
+
 private:
     [[noreturn]] static void processMQTTAsync(void *parameter);
 

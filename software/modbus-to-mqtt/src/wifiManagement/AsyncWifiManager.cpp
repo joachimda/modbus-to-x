@@ -23,6 +23,7 @@ static const size_t min_password_len = 8;
 static const size_t max_password_len = 63;
 static const uint32_t ap_startup_delay_ms = 500;
 static const uint32_t persistent_connect_delay_ms = 100;
+static const auto conn_status_check_interval_ms = 100UL;
 
 
 AsyncWiFiManager::AsyncWiFiManager(AsyncWebServer *server, DNSServer *dns, Logger *logger)
@@ -63,16 +64,10 @@ void AsyncWiFiManager::setupConfigPortal()
         WiFi.softAPConfig(_ap_static_ip, _ap_static_gw, _ap_static_sn);
     }
 
-    if (_apPassword != nullptr)
-    {
-        WiFi.softAP(_apName, _apPassword); // password option
-    }
-    else
-    {
-        WiFi.softAP(_apName);
-    }
+    WiFi.softAP(_apName, _apPassword);
 
     delay(ap_startup_delay_ms); // without delay I've seen the IP address blank
+
     logger->logInformation(("AP IP address: " +
                             convertIpAddressToString(WiFi.softAPIP())).c_str());
 
@@ -83,35 +78,32 @@ void AsyncWiFiManager::setupConfigPortal()
         logger->logError("Could not start Captive DNS Server!");
     }
 
-    setInfo();
+    /*
     server->on("/",
                std::bind(&AsyncWiFiManager::handleRoot, this, std::placeholders::_1))
             .setFilter(accessPointFilter);
     server->on("/wifi",
                std::bind(&AsyncWiFiManager::handleConfigureWifi, this, std::placeholders::_1, true))
             .setFilter(accessPointFilter);
-    server->on("/0wifi",
-               std::bind(&AsyncWiFiManager::handleConfigureWifi, this, std::placeholders::_1, false))
-            .setFilter(accessPointFilter);
-    server->on("/wifisave",
-               std::bind(&AsyncWiFiManager::handleWifiSaveForm, this, std::placeholders::_1))
-            .setFilter(accessPointFilter);
-    server->on("/i",
-               std::bind(&AsyncWiFiManager::handleBuildInfoHtml, this, std::placeholders::_1))
-            .setFilter(accessPointFilter);
+
     server->on("/r",
                std::bind(&AsyncWiFiManager::handleReset, this, std::placeholders::_1))
+            .setFilter(accessPointFilter);
+
+            */
+
+    server->on("/wifisave",
+               std::bind(&AsyncWiFiManager::handleWifiSaveForm, this, std::placeholders::_1))
             .setFilter(accessPointFilter);
     server->onNotFound(std::bind(&AsyncWiFiManager::handleNotFound, this, std::placeholders::_1));
     server->begin();
     logger->logInformation("HTTP server started");
 }
 auto AsyncWiFiManager::autoConnect(char const *apName,
-                                      char const *apPassword,
-                                      unsigned long maxConnectRetries,
-                                      unsigned long retryDelayMs) -> boolean
+                                   char const *apPassword,
+                                   unsigned long retryDelayMs) -> boolean
 {
-    // attempt to connect; should it fail, fall back to AP
+    unsigned long maxConnectRetries = 1;
     WiFiClass::mode(WIFI_STA);
     for (unsigned long tryNumber = 0; tryNumber < maxConnectRetries; tryNumber++)
     {
@@ -136,7 +128,7 @@ auto AsyncWiFiManager::autoConnect(char const *apName,
                                             convertIpAddressToString(WiFi.localIP())).c_str());
                     return true;
                 }
-                unsigned long thisDelay = std::min(restDelayMs, 100UL);
+                unsigned long thisDelay = std::min(restDelayMs, conn_status_check_interval_ms);
                 delay(thisDelay);
                 restDelayMs -= thisDelay;
             }
@@ -264,129 +256,27 @@ void AsyncWiFiManager::copySSIDInfo(wifi_ssid_count_t n)
         }
 
         // remove duplicates ( must be RSSI sorted )
-        if (_removeDuplicateAPs)
+        String c_ssid;
+        for (int i = 0; i < n; i++)
         {
-            String c_ssid;
-            for (int i = 0; i < n; i++)
+            if (wifiSSIDs[i].duplicate)
             {
-                if (wifiSSIDs[i].duplicate)
+                continue;
+            }
+            c_ssid = wifiSSIDs[i].SSID;
+            for (int j = i + 1; j < n; j++)
+            {
+                if (c_ssid == wifiSSIDs[j].SSID)
                 {
-                    continue;
-                }
-                c_ssid = wifiSSIDs[i].SSID;
-                for (int j = i + 1; j < n; j++)
-                {
-                    if (c_ssid == wifiSSIDs[j].SSID)
-                    {
-                        logger->logInformation(("DUP AP: " + wifiSSIDs[j].SSID).c_str());
-                        wifiSSIDs[j].duplicate = true; // set dup aps to NULL
-                    }
+                    logger->logInformation(("DUP AP: " + wifiSSIDs[j].SSID).c_str());
+                    wifiSSIDs[j].duplicate = true; // set dup aps to NULL
                 }
             }
         }
     }
 }
 
-void AsyncWiFiManager::startConfigPortalModeless(char const *apName, char const *apPassword)
-{
-    _modeless = true;
-    _apName = apName;
-    _apPassword = apPassword;
-
-    WiFiClass::mode(WIFI_AP_STA);
-    logger->logInformation("SET AP STA");
-
-    if (connectWifi("", "") == WL_CONNECTED)
-    {
-        logger->logInformation(("IP Address: " +
-                                convertIpAddressToString(WiFi.localIP())).c_str());
-        if (_saveCallback != nullptr)
-        {
-            _saveCallback();
-        }
-    }
-
-    if (_apCallback != nullptr)
-    {
-        _apCallback(this);
-    }
-
-    connect = false;
-    setupConfigPortal();
-    scanNow = 0;
-}
-
-void AsyncWiFiManager::loop()
-{
-    safeLoop();
-    criticalLoop();
-}
-
-void AsyncWiFiManager::setInfo()
-{
-    if (needInfo)
-    {
-        pager = buildInfoHtml();
-        wifiStatus = WiFiClass::status();
-        needInfo = false;
-    }
-}
-
-void AsyncWiFiManager::criticalLoop()
-{
-    if (_modeless)
-    {
-        if (scanNow == 0 || millis() - scanNow >= 60000)
-        {
-            scanNow = millis();
-            scan(true);
-        }
-
-        wifi_ssid_count_t n = WiFi.scanComplete();
-        if (n >= 0)
-        {
-            copySSIDInfo(n);
-            WiFi.scanDelete();
-        }
-
-        if (connect)
-        {
-            connect = false;
-            logger->logInformation("Connecting to new AP");
-
-            if (connectWifi(_ssid, _pass) != WL_CONNECTED)
-            {
-                logger->logInformation("Failed to connect");
-            }
-            else
-            {
-                if (_saveCallback != nullptr)
-                {
-                    _saveCallback();
-                }
-
-                return;
-            }
-
-            if (_shouldBreakAfterConfig)
-            {
-                // flag set to exit after config after trying to connect
-                // notify that configuration has changed and any optional parameters should be saved
-                if (_saveCallback != nullptr)
-                {
-                    _saveCallback();
-                }
-            }
-        }
-    }
-}
-
-void AsyncWiFiManager::safeLoop()
-{
-    dnsServer->processNextRequest();
-}
-
-boolean AsyncWiFiManager::startConfigPortal(char const *apName, char const *apPassword)
+auto AsyncWiFiManager::startConfigPortal(char const *apName, char const *apPassword) -> boolean
 {
     WiFiClass::mode(WIFI_AP_STA);
     logger->logInformation("SET AP STA");
@@ -456,10 +346,9 @@ boolean AsyncWiFiManager::startConfigPortal(char const *apName, char const *apPa
                 }
                 break;
             }
-            else
-            {
-                if(_tryConnectDuringConfigPortal)
-                    logger->logError("Failed to connect");
+
+            if(_tryConnectDuringConfigPortal) {
+                logger->logError("Failed to connect");
             }
 
             if (_shouldBreakAfterConfig)
@@ -518,8 +407,6 @@ auto AsyncWiFiManager::connectWifi(const String& ssid, const String& pass) -> ui
 
     uint8_t connRes = waitForConnectResult();
     logger->logInformation(("Connection result: " + String(connRes)).c_str());
-    needInfo = true;
-    setInfo();
     return connRes;
 }
 
@@ -549,12 +436,6 @@ auto AsyncWiFiManager::waitForConnectResult() -> uint8_t
         delay(persistent_connect_delay_ms);
     }
     return WifiSTA_Status;
-
-}
-
-auto AsyncWiFiManager::getConfigPortalSSID() -> String
-{
-    return _apName;
 }
 
 void AsyncWiFiManager::resetSettings()
@@ -588,11 +469,6 @@ void AsyncWiFiManager::setSTAStaticIPConfig(const IPAddress& ip,
     _sta_static_sn = sn;
     _sta_static_dns1 = dns1;
     _sta_static_dns2 = dns2;
-}
-
-void AsyncWiFiManager::setMinimumSignalQuality(unsigned int quality)
-{
-    _minimumQuality = quality;
 }
 
 void AsyncWiFiManager::setBreakAfterConfig(boolean shouldBreak)
@@ -684,7 +560,7 @@ void AsyncWiFiManager::handleConfigureWifi(AsyncWebServerRequest *request, boole
     {
         page += "<br/>";
     }
-    if (_sta_static_ip)
+    if (_sta_static_ip != 0U)
     {
         String item = FPSTR(HTTP_FORM_PARAM);
         item.replace("{i}", "ip");
@@ -746,7 +622,6 @@ void AsyncWiFiManager::handleWifiSaveForm(AsyncWebServerRequest *request)
 {
     logger->logInformation("WiFi save");
 
-    needInfo = true;
     _ssid = request->arg("s").c_str();
     _pass = request->arg("p").c_str();
 
@@ -804,67 +679,11 @@ void AsyncWiFiManager::handleWifiSaveForm(AsyncWebServerRequest *request)
     page += FPSTR(HTTP_SAVED);
     page += FPSTR(HTTP_END);
 
-    request->send(200, "text/html", page);
+    request->send(HttpResponseCodes::OK,HttpMediaTypes::HTML, page);
 
-    logger->logInformation("Sent wifi save page");
+    logger->logDebug("Sent wifi save page");
 
     connect = true;
-}
-
-auto AsyncWiFiManager::buildInfoHtml() -> String
-{
-    String page;
-    page += F("<dt>Chip ID</dt><dd>");
-    page += Helpers::CalculateChipId();
-    page += F("</dd>");
-    page += F("<dt>IDE Flash Size</dt><dd>");
-    page += ESP.getFlashChipSize();
-    page += F(" bytes</dd>");
-    page += F("<dt>Soft AP IP</dt><dd>");
-    page += WiFi.softAPIP().toString();
-    page += F("</dd>");
-    page += F("<dt>Soft AP MAC</dt><dd>");
-    page += WiFi.softAPmacAddress();
-    page += F("</dd>");
-    page += F("<dt>Station SSID</dt><dd>");
-    page += WiFi.SSID();
-    page += F("</dd>");
-    page += F("<dt>Station IP</dt><dd>");
-    page += WiFi.localIP().toString();
-    page += F("</dd>");
-    page += F("<dt>Station MAC</dt><dd>");
-    page += WiFi.macAddress();
-    page += F("</dd>");
-    page += F("</dl>");
-    return page;
-}
-
-void AsyncWiFiManager::handleBuildInfoHtml(AsyncWebServerRequest *request)
-{
-    logger->logInformation("Info");
-    String page = FPSTR(WFM_HTTP_HEAD);
-    page.replace("{v}", "Info");
-    page += FPSTR(HTTP_SCRIPT);
-    page += FPSTR(HTTP_STYLE);
-    page += _customHeadElement;
-    if (connect)
-    {
-        page += F("<meta http-equiv=\"refresh\" content=\"5; url=/i\">");
-    }
-    page += FPSTR(HTTP_HEAD_END);
-    page += F("<dl>");
-    if (connect)
-    {
-        page += F("<dt>Trying to connect</dt><dd>");
-        page += wifiStatus;
-        page += F("</dd>");
-    }
-    page += pager;
-    page += FPSTR(HTTP_END);
-
-    request->send(HttpResponseCodes::OK, HttpMediaTypes::HTML, page);
-
-    logger->logInformation("Sent info page");
 }
 
 void AsyncWiFiManager::handleReset(AsyncWebServerRequest *request)
@@ -910,7 +729,7 @@ void AsyncWiFiManager::handleNotFound(AsyncWebServerRequest *request)
     {
         message += " " + request->argName(i) + ": " + request->arg(i) + "\n";
     }
-    AsyncWebServerResponse *response = request->beginResponse(404, "text/plain", message);
+    AsyncWebServerResponse *response = request->beginResponse(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT, message);
     response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     response->addHeader("Pragma", "no-cache");
     response->addHeader("Expires", "-1");
@@ -933,24 +752,6 @@ boolean AsyncWiFiManager::tryRedirectToCaptivePortal(AsyncWebServerRequest *requ
         return true;
     }
     return false;
-}
-
-// start up config portal callback
-void AsyncWiFiManager::setAPCallback(std::function<void(AsyncWiFiManager *)> func)
-{
-    _apCallback = std::move(func);
-}
-
-// start up save config callback
-void AsyncWiFiManager::setSaveConfigCallback(std::function<void()> func)
-{
-    _saveCallback = std::move(func);
-}
-
-// if this is true, remove duplicated Access Points - default true
-void AsyncWiFiManager::setRemoveDuplicateAPs(boolean removeDuplicates)
-{
-    _removeDuplicateAPs = removeDuplicates;
 }
 
 unsigned int AsyncWiFiManager::getRSSIasQuality(int RSSI)

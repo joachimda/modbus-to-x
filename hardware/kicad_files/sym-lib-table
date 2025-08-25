@@ -4,4 +4,5 @@
   (lib (name "LMR14020QDPRRQ1")(type "KiCad")(uri "${KIPRJMOD}/lib/symbols/LMR14020QDPRRQ1.kicad_sym")(options "")(descr ""))
   (lib (name "SSQ-110-X-X-D")(type "KiCad")(uri "${KIPRJMOD}/lib/symbols/SSQ-110-X-X-D.kicad_sym")(options "")(descr ""))
   (lib (name "KEYSTONE_5029")(type "KiCad")(uri "${KIPRJMOD}/lib/symbols/KEYSTONE_5029.kicad_sym")(options "")(descr ""))
+  (lib (name "FH12-24S-0.5SH_55")(type "KiCad")(uri "${KIPRJMOD}/lib/symbols/FH12-24S-0.5SH_55.kicad_sym")(options "")(descr ""))
 )

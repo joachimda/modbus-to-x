@@ -51,20 +51,9 @@ public:
     // if this is set, it will exit after config, even if connection is unsuccessful
     void setBreakAfterConfig(boolean shouldBreak);
 
-    auto getConfiguredSTASSID() -> String{
-        return _ssid;
-    }
-    auto getConfiguredSTAPassword() -> String{
-        return _pass;
-    }
-
 private:
-
-    auto startConfigPortal(char const *apName, char const *apPassword = nullptr) -> boolean;
-
     AsyncWebServer *server;
     DNSServer *dnsServer;
-    boolean _modeless;
     unsigned long scanNow{};
     boolean shouldScan = true;
     String pager;
@@ -76,7 +65,6 @@ private:
     unsigned long _configPortalTimeout = 0;
     unsigned long _connectTimeout = 0;
     unsigned long _configPortalStart = 0;
-
     IPAddress _ap_static_ip;
     IPAddress _ap_static_gw;
     IPAddress _ap_static_sn;
@@ -85,43 +73,33 @@ private:
     IPAddress _sta_static_sn;
     IPAddress _sta_static_dns1 = (uint32_t)0x00000000;
     IPAddress _sta_static_dns2 = (uint32_t)0x00000000;
-
     unsigned int _paramsCount = 0;
     unsigned int _minimumQuality = 0;
     boolean _shouldBreakAfterConfig = false;
-
     const char *_customHeadElement = "";
-
-    uint8_t WIFI_STATUS = WL_IDLE_STATUS;
+    auto startConfigPortal(char const *apName, char const *apPassword = nullptr) -> boolean;
     auto connectWifi(const String& ssid, const String& pass) -> uint8_t;
     auto waitForConnectResult() -> uint8_t;
     void copySSIDInfo(wifi_ssid_count_t n);
     auto buildSsidListHtml() -> String;
     void setupConfigPortal();
-    void handleRoot(AsyncWebServerRequest *);
     void handleConfigureWifi(AsyncWebServerRequest *request, boolean scan);
     void handleWifiSaveForm(AsyncWebServerRequest *request);
-
-    void handleReset(AsyncWebServerRequest *);
     void handleNotFound(AsyncWebServerRequest *);
     auto tryRedirectToCaptivePortal(AsyncWebServerRequest *request) -> boolean;
-    const byte DNS_PORT = 53;
     static auto getRSSIasQuality(int RSSI) -> unsigned int;
     auto isIpAddress(const String& str) -> boolean;
     static auto convertIpAddressToString(const IPAddress& ip) -> String;
-
     boolean connect{};
-
     WiFiResult *wifiSSIDs;
     wifi_ssid_count_t wifiSSIDCount{};
     boolean wifiSsidScan;
-
     boolean _tryConnectDuringConfigPortal = true;
-
     std::function<void(AsyncWiFiManager *)> _apCallback;
     std::function<void()> _saveCallback;
-
     AsyncWiFiManagerParameter *_params[WIFI_MANAGER_MAX_PARAMS]{};
+    Logger *logger;
+    static auto accessPointFilter(AsyncWebServerRequest *request) -> bool;
 
     template <class T>
     auto optionalIPFromString(T *obj, const char *s) -> decltype(obj->fromString(s))
@@ -129,9 +107,7 @@ private:
         return obj->fromString(s);
     }
 
-    Logger *logger;
 
-    static auto accessPointFilter(AsyncWebServerRequest *request) -> bool;
 };
 
 #endif //MODBUS_TO_MQTT_ASYNCWIFIMANAGER_H

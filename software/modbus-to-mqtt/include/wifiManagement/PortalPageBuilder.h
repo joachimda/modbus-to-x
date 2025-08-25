@@ -17,8 +17,6 @@ const char HTTP_SAVED[] PROGMEM = "<div>Credentials Saved<br />Trying to connect
 const char HTTP_END[] PROGMEM = "</div></body></html>";
 
 class PortalPageBuilder {
-public:
 
-static String buildRoot(const char *apName);
 };
 #endif

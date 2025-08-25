@@ -2,7 +2,7 @@
 #include "Logger.h"
 #include "constants/HttpResponseCodes.h"
 #include "constants/HttpMediaTypes.h"
-#include "constants/ApiRoutes.h"
+#include "constants/Routes.h"
 #include "wifiManagement/AsyncWiFiManager.h"
 #include "Config.h"
 #include <ESPAsyncWebServer.h>
@@ -30,8 +30,9 @@ void MBXServer::ensureConfigFile() {
         return;
     }
 
-    if (!SPIFFS.exists("/config.json")) {
-        File file = SPIFFS.open("/config.json", FILE_WRITE);
+    if (!SPIFFS.exists("/conf/config.json")) {
+        _logger->logWarning("MBXServer::ensureConfigFile - Config file not found. Creating new one");
+        File file = SPIFFS.open("/conf/config.json", FILE_WRITE);
         if (!file) {
             return;
         }
@@ -91,64 +92,77 @@ auto MBXServer::readConfig() -> String {
     return json;
 }
 
-void MBXServer::configureRoutes() {
+void MBXServer::configurePageRoutes() {
 
-    _logger->logDebug("MBXServer::configureRoutes - begin");
+    _logger->logDebug("MBXServer::configurePageRoutes - begin");
     server->serveStatic("/", SPIFFS, "/")
             .setDefaultFile("/index.html")
-            .setCacheControl("no-store");         // keep dev iteration simple
+            .setCacheControl("no-store");
 
-    server->on(ApiRoutes::ROOT, WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(SPIFFS, "/index.html", HttpMediaTypes::HTML);
+    server->on(Routes::ROOT, WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *req) {
+        req->send(SPIFFS, "/index.html", HttpMediaTypes::HTML);
     });
 
-    server->on(ApiRoutes::CONFIGURE, WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(SPIFFS, "/pages/configure.html", HttpMediaTypes::HTML);
+    server->on(Routes::CONFIGURE, WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *req) {
+        req->send(SPIFFS, "/pages/configure.html", HttpMediaTypes::HTML);
     });
 
-    server->on(ApiRoutes::UPLOAD, WebRequestMethod::HTTP_POST, [](AsyncWebServerRequest *request) {
-        request->send(HttpResponseCodes::OK, HttpMediaTypes::PLAIN_TEXT, "Upload OK");
+    server->on(Routes::UPLOAD, WebRequestMethod::HTTP_POST, [](AsyncWebServerRequest *req) {
+        req->send(HttpResponseCodes::OK, HttpMediaTypes::PLAIN_TEXT, "Upload OK");
     }, handleUpload);
 
-    server->on(ApiRoutes::DOWNLOAD_CFG, WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *req) {
-        if (SPIFFS.exists("/config.json")) {
-            req->send(SPIFFS, "/config.json", HttpMediaTypes::JSON);
+    server->on(Routes::DOWNLOAD_CFG, WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *req) {
+        if (SPIFFS.exists("/conf/config.json")) {
+            req->send(SPIFFS, "/conf/config.json", HttpMediaTypes::JSON);
         } else {
-            req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT,"No config file found!");
+            req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT,"config.json not found!");
         }
     });
 
-    server->on(ApiRoutes::DOWNLOAD_CFG_EX,WebRequestMethod::HTTP_GET,[](AsyncWebServerRequest *req) {
+    server->on(Routes::DOWNLOAD_CFG_EX, WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *req) {
         if(!SPIFFS.begin(true)) {
-            req->send(HttpResponseCodes::SERVER_ERROR, HttpMediaTypes::PLAIN_TEXT,"Filesystem Error");
-            return; }
-        if (SPIFFS.exists("/config_example.json")) {
-            req->send(SPIFFS, "/config_example.json", HttpMediaTypes::JSON);
+            req->send(HttpResponseCodes::SERVER_ERROR, HttpMediaTypes::PLAIN_TEXT,"System Error");
+            return;
+        }
+        if (SPIFFS.exists("/conf/example.json")) {
+            req->send(SPIFFS, "/conf/example.json", HttpMediaTypes::JSON);
         } else {
             req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT,"No config file found!");
         }
     });
 
-    server->on(ApiRoutes::RESET_NETWORK,WebRequestMethod::HTTP_GET,[](AsyncWebServerRequest *req) {
-                handleNetworkReset();
-            })
-            .setFilter(accessPointFilter);
+    server->on(Routes::RESET_NETWORK, WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *req) {
+        if(!SPIFFS.begin(true)) {
+            req->send(HttpResponseCodes::SERVER_ERROR, HttpMediaTypes::PLAIN_TEXT, "System Error");
+            return;
+        }
+        if (SPIFFS.exists("/pages/reset_result.html")) {
+            req->send(SPIFFS, "/pages/reset_result.html", HttpMediaTypes::HTML);
+            handleNetworkReset();
+        } else {
+            req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT,"Page not found");
+        }
+    }).setFilter(accessPointFilter);
 
-    _logger->logDebug("MBXServer::configureRoutes - end");
+    _logger->logDebug("MBXServer::configurePageRoutes - end");
+}
+
+void MBXServer::configureApiRoutes() {
+    _logger->logDebug("MBXServer::configureApiRoutes - begin");
+    _logger->logDebug("MBXServer::configureApiRoutes - end");
 }
 
 void MBXServer::begin() {
 
     _logger->logDebug("MBXServer::begin - begin");
-
-    configureRoutes();
-    networkBootstrap();
-
     if (!SPIFFS.begin(true)) {
         _logger->logError("An error occurred while mounting SPIFFS");
         return;
     }
 
+    ensureConfigFile();
+    configurePageRoutes();
+    networkBootstrap();
     server->begin();
     _logger->logInformation("Web server started successfully");
     _logger->logDebug("MBXServer::begin - end");

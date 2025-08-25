@@ -10,16 +10,13 @@ static const int serverPort = 80;
 class MBXServer {
 public:
     explicit MBXServer(AsyncWebServer * server, Logger * logger);
-
     void begin();
-
-    void configureRoutes();
-
 private:
     Logger * _logger;
     AsyncWebServer * server;
     DNSServer * dns;
     void networkBootstrap();
+    void configurePageRoutes();
 
     void ensureConfigFile();
     String readConfig();
@@ -30,6 +27,8 @@ private:
     static void handleNetworkReset();
 
     static bool accessPointFilter(AsyncWebServerRequest *request);
+
+    void configureApiRoutes();
 };
 
 #endif

@@ -24,6 +24,10 @@ static const size_t max_password_len = 63;
 static const uint32_t ap_startup_delay_ms = 500;
 static const uint32_t persistent_connect_delay_ms = 100;
 static const auto conn_status_check_interval_ms = 100UL;
+static const auto ssid_scan_interval_ms = 10000;
+static const auto ip_octet_max = 0xFF;
+static const auto dns_port = 53;
+
 
 
 AsyncWiFiManager::AsyncWiFiManager(AsyncWebServer *server, DNSServer *dns, Logger *logger)
@@ -31,7 +35,6 @@ AsyncWiFiManager::AsyncWiFiManager(AsyncWebServer *server, DNSServer *dns, Logge
 {
     wifiSSIDs = nullptr;
     wifiSsidScan = true;
-    _modeless = false;
     shouldScan = true;
 }
 
@@ -73,7 +76,7 @@ void AsyncWiFiManager::setupConfigPortal()
 
     // set up the DNS server redirecting all the domains to the apIP
     dnsServer->setErrorReplyCode(DNSReplyCode::NoError);
-    if (!dnsServer->start(DNS_PORT, "*", WiFi.softAPIP()))
+    if (!dnsServer->start(dns_port, "*", WiFi.softAPIP()))
     {
         logger->logError("Could not start Captive DNS Server!");
     }
@@ -85,11 +88,6 @@ void AsyncWiFiManager::setupConfigPortal()
     server->on("/wifi",
                std::bind(&AsyncWiFiManager::handleConfigureWifi, this, std::placeholders::_1, true))
             .setFilter(accessPointFilter);
-
-    server->on("/r",
-               std::bind(&AsyncWiFiManager::handleReset, this, std::placeholders::_1))
-            .setFilter(accessPointFilter);
-
             */
 
     server->on("/wifisave",
@@ -296,7 +294,7 @@ auto AsyncWiFiManager::startConfigPortal(char const *apName, char const *apPassw
     while (_configPortalTimeout == 0 || millis() - _configPortalStart < _configPortalTimeout)
     {
         dnsServer->processNextRequest();
-        if (scanNow == 0 || millis() - scanNow >= 10000)
+        if (scanNow == 0 || millis() - scanNow >= ssid_scan_interval_ms)
         {
             logger->logInformation("About to scan");
             shouldScan = true; // since we are modal, we can scan every time
@@ -311,7 +309,6 @@ auto AsyncWiFiManager::startConfigPortal(char const *apName, char const *apPassw
             scanNow = millis();
         }
 
-        // attempts to reconnect were successful
         if (WiFiClass::status() == WL_CONNECTED)
         {
             // connected
@@ -474,23 +471,6 @@ void AsyncWiFiManager::setSTAStaticIPConfig(const IPAddress& ip,
 void AsyncWiFiManager::setBreakAfterConfig(boolean shouldBreak)
 {
     _shouldBreakAfterConfig = shouldBreak;
-}
-
-void AsyncWiFiManager::handleRoot(AsyncWebServerRequest *request)
-{
-    logger->logDebug("Handle root");
-
-    shouldScan = true;
-    scanNow = 0;
-
-    if (tryRedirectToCaptivePortal(request))
-    {
-        // if captive portal redirect instead of displaying the page
-        return;
-    }
-    String page = PortalPageBuilder::buildRoot(_apName);
-
-    request->send(HttpResponseCodes::OK, HttpMediaTypes::HTML, page);
 }
 
 void AsyncWiFiManager::handleConfigureWifi(AsyncWebServerRequest *request, boolean scan)
@@ -686,26 +666,6 @@ void AsyncWiFiManager::handleWifiSaveForm(AsyncWebServerRequest *request)
     connect = true;
 }
 
-void AsyncWiFiManager::handleReset(AsyncWebServerRequest *request)
-{
-    logger->logInformation("Reset");
-
-    String page = FPSTR(WFM_HTTP_HEAD);
-    page.replace("{v}", "Info");
-    page += FPSTR(HTTP_SCRIPT);
-    page += FPSTR(HTTP_STYLE);
-    page += _customHeadElement;
-    page += FPSTR(HTTP_HEAD_END);
-    page += F("Module will reset in a few seconds");
-    page += FPSTR(HTTP_END);
-    request->send(HttpResponseCodes::OK, HttpMediaTypes::HTML, page);
-
-    logger->logInformation("Sent reset page");
-    delay(5000);
-    ESP.restart();
-    delay(2000);
-}
-
 void AsyncWiFiManager::handleNotFound(AsyncWebServerRequest *request)
 {
     logger->logError("Handle not found");
@@ -738,7 +698,7 @@ void AsyncWiFiManager::handleNotFound(AsyncWebServerRequest *request)
 
 /** Redirect to captive portal if we got a request for another domain.
  * Return true in that case so the page handler do not try to handle the request again. */
-boolean AsyncWiFiManager::tryRedirectToCaptivePortal(AsyncWebServerRequest *request)
+auto AsyncWiFiManager::tryRedirectToCaptivePortal(AsyncWebServerRequest *request) -> boolean
 {
     logger->logInformation(("tryRedirectToCaptivePortal - Request.Host: " +
                             request->host()).c_str());
@@ -754,7 +714,7 @@ boolean AsyncWiFiManager::tryRedirectToCaptivePortal(AsyncWebServerRequest *requ
     return false;
 }
 
-unsigned int AsyncWiFiManager::getRSSIasQuality(int RSSI)
+auto AsyncWiFiManager::getRSSIasQuality(int RSSI) -> unsigned int
 {
     unsigned int quality = 0;
 
@@ -795,9 +755,9 @@ auto AsyncWiFiManager::convertIpAddressToString(const IPAddress& ip) -> String
     String res = "";
     for (int i = 0; i < 3; i++)
     {
-        res += String((ip >> (8 * i)) & 0xFF) + ".";
+        res += String((ip >> (8 * i)) & ip_octet_max) + ".";
     }
-    res += String(((ip >> 8 * 3)) & 0xFF);
+    res += String(((ip >> 8 * 3)) & ip_octet_max);
     return res;
 }
 

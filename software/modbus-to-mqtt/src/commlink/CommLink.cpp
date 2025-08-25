@@ -230,46 +230,6 @@ void CommLink::setupLED() {
     //setLedColor(false, false, false);
 }
 
-void CommLink::checkResetButton() {
-    pinMode(RESET_BUTTON_PIN, INPUT);
-
-    if (digitalRead(RESET_BUTTON_PIN) == HIGH) {
-        _logger->logInformation("CommLink::checkResetButton - Reset Button press detected");
-
-        const unsigned long pressStart = millis();
-
-        while (digitalRead(RESET_BUTTON_PIN) == HIGH) {
-            const unsigned long heldTime = millis() - pressStart;
-
-            if (heldTime / 200 % 2 == 0) {
-                //setLedColor(false, false, true);
-            } else {
-                //setLedColor(false, false, false);
-            }
-
-            if (heldTime >= RESET_HOLD_TIME_MS) {
-                _logger->logInformation("CommLink::checkResetButton - Reset confirmed: clearing settings");
-
-                //setLedColor(true, false, false);
-
-                preferences.begin(MQTT_PREFS_NAMESPACE, false);
-                preferences.clear();
-                preferences.end();
-                networkReset();
-
-                delay(1000);
-                ESP.restart();
-            }
-            delay(50);
-        }
-
-        _logger->logWarning("Reset cancelled");
-        //setLedColor(false, true, false);
-        delay(500);
-        //setLedColor(false, false, false);
-    }
-}
-
 char *CommLink::getMqttBroker() {
     return LOCAL_MQTT_BROKER;
 }

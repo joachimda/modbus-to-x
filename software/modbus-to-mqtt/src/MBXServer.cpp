@@ -12,7 +12,7 @@
 static constexpr auto WIFI_CONNECT_DELAY_MS = 100;
 static constexpr auto WIFI_CONNECT_TIMEOUT = 10000;
 
-MBXServer::MBXServer(AsyncWebServer * server, Logger * logger) : server(server), _logger(logger) {}
+MBXServer::MBXServer(AsyncWebServer * server, DNSServer * dnsServer, Logger * logger) : server(server), dns(dnsServer), _logger(logger)  {}
 
 void MBXServer::networkBootstrap() {
     AsyncWiFiManager wm(server, dns, _logger);

@@ -9,7 +9,7 @@
 static const int serverPort = 80;
 class MBXServer {
 public:
-    explicit MBXServer(AsyncWebServer * server, Logger * logger);
+    explicit MBXServer(AsyncWebServer * server, DNSServer * dns, Logger * logger);
     void begin();
 private:
     Logger * _logger;

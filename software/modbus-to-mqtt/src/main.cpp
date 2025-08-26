@@ -22,7 +22,8 @@ MqttLogger mqttLogger([](const char *msg) {
 SerialLogger serialLogger(Serial);
 ModbusManager modbusManager(&logger);
 AsyncWebServer server(80);
-MBXServer mbxServer(&server, &logger);
+DNSServer dns;
+MBXServer mbxServer(&server, &dns, &logger);
 
 void setupEnvironment() {
     logger.useDebug(true);

@@ -14,6 +14,8 @@ public:
      * */
     constexpr static const auto GET_SYSTEM_INFO = "/api/info";
     constexpr static const auto PUT_GET_CONFIG = "/api/upload";
+    constexpr static const auto GET_SSID_LIST = "/api/ssids";
+
 
 };
 #endif

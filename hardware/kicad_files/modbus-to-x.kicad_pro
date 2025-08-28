@@ -58,7 +58,15 @@
           "width": 0.0
         }
       ],
-      "drc_exclusions": [],
+      "drc_exclusions": [
+        "lib_footprint_mismatch|114549700|96180100|54aa4bb2-fcde-4a33-b720-6cce5632a56d|00000000-0000-0000-0000-000000000000",
+        "lib_footprint_mismatch|83989600|106691500|58c33975-edbf-48e2-bed5-8521832532b6|00000000-0000-0000-0000-000000000000",
+        "lib_footprint_mismatch|88478700|94148100|931b68e3-bfa8-43f3-ac61-5b49447cca6d|00000000-0000-0000-0000-000000000000",
+        "lib_footprint_mismatch|93975700|117713100|0019c346-f23d-4e33-959b-05423dc67615|00000000-0000-0000-0000-000000000000",
+        "lib_footprint_mismatch|93978199|115357100|a21fba2b-4932-4266-8b07-083272417809|00000000-0000-0000-0000-000000000000",
+        "lib_footprint_mismatch|96007700|94148100|8b187353-e34d-4d9b-9fa2-ae47866d2b96|00000000-0000-0000-0000-000000000000",
+        "lib_footprint_mismatch|97078800|115683100|a052e65a-0d58-4f0e-8e65-a13794fa9b58|00000000-0000-0000-0000-000000000000"
+      ],
       "meta": {
         "version": 2
       },
@@ -229,10 +237,7 @@
     "equivalence_files": []
   },
   "erc": {
-    "erc_exclusions": [
-      "lib_symbol_issues|2184400|279400|4c9f9668-c3d0-4355-966c-cb247e658870|00000000-0000-0000-0000-000000000000|||",
-      "lib_symbol_issues|762000|406400|411aa612-c60d-4aa6-a361-b73f174c3641|00000000-0000-0000-0000-000000000000|||"
-    ],
+    "erc_exclusions": [],
     "meta": {
       "version": 0
     },
@@ -493,7 +498,7 @@
   },
   "schematic": {
     "annotate_start_num": 0,
-    "bom_export_filename": "..\\own_stock_bom.csv",
+    "bom_export_filename": "..\\modbus-to-x-bom.csv",
     "bom_fmt_presets": [],
     "bom_fmt_settings": {
       "field_delimiter": ";",
@@ -515,7 +520,7 @@
           "show": true
         },
         {
-          "group_by": false,
+          "group_by": true,
           "label": "Value",
           "name": "Value",
           "show": true
@@ -557,7 +562,7 @@
           "show": false
         },
         {
-          "group_by": false,
+          "group_by": true,
           "label": "PartNo",
           "name": "PartNo",
           "show": true
@@ -572,146 +577,20 @@
           "group_by": false,
           "label": "ProductCode",
           "name": "ProductCode",
-          "show": false
+          "show": true
         },
         {
           "group_by": false,
           "label": "Voltage",
           "name": "Voltage",
-          "show": true
-        },
-        {
-          "group_by": false,
-          "label": "Family",
-          "name": "Family",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "Category",
-          "name": "Category",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "MANUFACTURER",
-          "name": "MANUFACTURER",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "MAXIMUM_PACKAGE_HEIGHT",
-          "name": "MAXIMUM_PACKAGE_HEIGHT",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "MPN",
-          "name": "MPN",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "Manufacturer",
-          "name": "Manufacturer",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "PARTREV",
-          "name": "PARTREV",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "PROD_ID",
-          "name": "PROD_ID",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "DK_Datasheet_Link",
-          "name": "DK_Datasheet_Link",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "Description_1",
-          "name": "Description_1",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "STANDARD",
-          "name": "STANDARD",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "Status",
-          "name": "Status",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "Digi-Key_PN",
-          "name": "Digi-Key_PN",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "DK_Detail_Page",
-          "name": "DK_Detail_Page",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "Height",
-          "name": "Height",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "Arrow Price/Stock",
-          "name": "Arrow Price/Stock",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "Manufacturer_Name",
-          "name": "Manufacturer_Name",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "Manufacturer_Part_Number",
-          "name": "Manufacturer_Part_Number",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "Mouser Part Number",
-          "name": "Mouser Part Number",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "Arrow Part Number",
-          "name": "Arrow Part Number",
-          "show": false
-        },
-        {
-          "group_by": false,
-          "label": "Mouser Price/Stock",
-          "name": "Mouser Price/Stock",
           "show": false
         }
       ],
       "filter_string": "",
-      "group_symbols": false,
+      "group_symbols": true,
       "name": "",
       "sort_asc": true,
-      "sort_field": "ProductCode"
+      "sort_field": "Voltage"
     },
     "connection_grid_size": 50.0,
     "drawing": {
@@ -741,14 +620,6 @@
       "version": 1
     },
     "net_format_name": "",
-    "ngspice": {
-      "fix_include_paths": true,
-      "meta": {
-        "version": 0
-      },
-      "model_mode": 4,
-      "workbook_filename": ""
-    },
     "page_layout_descr_file": "",
     "plot_directory": "",
     "spice_current_sheet_as_root": false,

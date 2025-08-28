@@ -4,32 +4,16 @@
 #include "constants/HttpMediaTypes.h"
 #include "constants/Routes.h"
 #include "wifiManagement/AsyncWiFiManager.h"
-#include "Config.h"
+#include "MBXServerHandlers.h"
+#include "wifiManagement/NetworkPortal.h"
 #include <ESPAsyncWebServer.h>
-#include <cstdint>
-#include <WiFi.h>
 
 static constexpr auto WIFI_CONNECT_DELAY_MS = 100;
 static constexpr auto WIFI_CONNECT_TIMEOUT = 10000;
 
-MBXServer::MBXServer(AsyncWebServer * server, DNSServer * dnsServer, Logger * logger) : server(server), dns(dnsServer), _logger(logger)  {}
+MBXServer::MBXServer(AsyncWebServer * server, DNSServer * dnsServer, Logger * logger) : server(server), _dns(dnsServer), _logger(logger)  {}
 
-void MBXServer::networkBootstrap() {
-    AsyncWiFiManager wm(server, dns, _logger);
-    const unsigned long firstAttempt = millis();
-    while (!wm.autoConnect(DEFAULT_AP_SSID, DEFAULT_AP_PASS)) {
-        if (millis() - firstAttempt > WIFI_CONNECT_TIMEOUT) {
-            ESP.restart();
-        }
-        delay(WIFI_CONNECT_DELAY_MS);
-    }
-}
 void MBXServer::ensureConfigFile() {
-    if (!SPIFFS.begin(true)) {
-        _logger->logError("MBXServer::ensureConfigFile - File System error");
-        return;
-    }
-
     if (!SPIFFS.exists("/conf/config.json")) {
         _logger->logWarning("MBXServer::ensureConfigFile - Config file not found. Creating new one");
         File file = SPIFFS.open("/conf/config.json", FILE_WRITE);
@@ -39,27 +23,6 @@ void MBXServer::ensureConfigFile() {
 
         file.print("{}");
         file.close();
-    }
-}
-
-void MBXServer::handleNetworkReset() {
-    WiFiClass::mode(WIFI_AP_STA);
-    WiFi.persistent(true);
-    WiFi.disconnect(true, true);
-    WiFi.persistent(false);
-}
-
-void MBXServer::handleUpload(AsyncWebServerRequest *r, const String& fn, size_t index, uint8_t *data, size_t len, bool final) {
-
-    static File uploadFile;
-    if (index == 0U) {
-        uploadFile = SPIFFS.open("/config.json", FILE_WRITE);
-    }
-    if (uploadFile) {
-        uploadFile.write(data, len);
-    }
-    if (final && uploadFile) {
-        uploadFile.close();
     }
 }
 
@@ -92,6 +55,28 @@ auto MBXServer::readConfig() -> String {
     return json;
 }
 
+void MBXServer::configureAccessPointRoutes(NetworkPortal * portal) {
+    _logger->logDebug("MBXServer::configureAccessPointRoutes - begin");
+
+    server->serveStatic("/", SPIFFS, "/")
+            .setDefaultFile("/")
+            .setCacheControl("no-store");
+
+    server->on(Routes::ROOT, WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *req) {
+        serveSPIFFSFile(req, "/pages/configure_network.html", nullptr, HttpMediaTypes::HTML);
+    });
+
+    server->on(Routes::GET_SSID_LIST, WebRequestMethod::HTTP_GET, [portal](AsyncWebServerRequest *req) {
+        req->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, MBXServerHandlers::getSsidListAsJson(portal->getSsidList()));
+    });
+
+    server->on(Routes::RESET_NETWORK, WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *req) {
+        serveSPIFFSFile(req, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML);
+    }).setFilter(accessPointFilter);
+
+    _logger->logDebug("MBXServer::configureAccessPointRoutes - end");
+}
+
 void MBXServer::configurePageRoutes() {
 
     _logger->logDebug("MBXServer::configurePageRoutes - begin");
@@ -109,51 +94,24 @@ void MBXServer::configurePageRoutes() {
 
     server->on(Routes::UPLOAD, WebRequestMethod::HTTP_POST, [](AsyncWebServerRequest *req) {
         req->send(HttpResponseCodes::OK, HttpMediaTypes::PLAIN_TEXT, "Upload OK");
-    }, handleUpload);
+    }, MBXServerHandlers::handleUpload);;
 
     server->on(Routes::DOWNLOAD_CFG, WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *req) {
-        if (SPIFFS.exists("/conf/config.json")) {
-            req->send(SPIFFS, "/conf/config.json", HttpMediaTypes::JSON);
-        } else {
-            req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT,"config.json not found!");
-        }
+        serveSPIFFSFile(req, "/conf/config.json", nullptr, HttpMediaTypes::JSON);
     });
 
     server->on(Routes::DOWNLOAD_CFG_EX, WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *req) {
-        if(!SPIFFS.begin(true)) {
-            req->send(HttpResponseCodes::SERVER_ERROR, HttpMediaTypes::PLAIN_TEXT,"System Error");
-            return;
-        }
-        if (SPIFFS.exists("/conf/example.json")) {
-            req->send(SPIFFS, "/conf/example.json", HttpMediaTypes::JSON);
-        } else {
-            req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT,"No config file found!");
-        }
+        serveSPIFFSFile(req, "/conf/example.json", nullptr, HttpMediaTypes::JSON);
     });
 
     server->on(Routes::RESET_NETWORK, WebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *req) {
-        if(!SPIFFS.begin(true)) {
-            req->send(HttpResponseCodes::SERVER_ERROR, HttpMediaTypes::PLAIN_TEXT, "System Error");
-            return;
-        }
-        if (SPIFFS.exists("/pages/reset_result.html")) {
-            req->send(SPIFFS, "/pages/reset_result.html", HttpMediaTypes::HTML);
-            handleNetworkReset();
-        } else {
-            req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT,"Page not found");
-        }
+       serveSPIFFSFile(req, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset,HttpMediaTypes::HTML);
     }).setFilter(accessPointFilter);
 
     _logger->logDebug("MBXServer::configurePageRoutes - end");
 }
 
-void MBXServer::configureApiRoutes() {
-    _logger->logDebug("MBXServer::configureApiRoutes - begin");
-    _logger->logDebug("MBXServer::configureApiRoutes - end");
-}
-
 void MBXServer::begin() {
-
     _logger->logDebug("MBXServer::begin - begin");
     if (!SPIFFS.begin(true)) {
         _logger->logError("An error occurred while mounting SPIFFS");
@@ -161,13 +119,99 @@ void MBXServer::begin() {
     }
 
     ensureConfigFile();
-    configurePageRoutes();
-    networkBootstrap();
-    server->begin();
+
+    if(tryConnectWithStoredCreds()) {
+        configurePageRoutes();
+        server->begin();
+    }
+    else {
+        NetworkPortal portal(_logger, _dns);
+        configureAccessPointRoutes(&portal);
+        server->begin();
+        portal.begin();
+    }
+
     _logger->logInformation("Web server started successfully");
     _logger->logDebug("MBXServer::begin - end");
 }
 auto MBXServer::accessPointFilter(AsyncWebServerRequest *request) -> bool {
 
-    return WiFi.localIP() != request->client()->localIP();
+    esp_netif_t* sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (sta_netif == nullptr) {
+        return true; // if unknown, let route be visible (same behavior as "not equal")
+    }
+    esp_netif_ip_info_t sta_ip{};
+    if (esp_netif_get_ip_info(sta_netif, &sta_ip) != ESP_OK) {
+        return true;
+    }
+    IPAddress staAddr(sta_ip.ip.addr);
+    return staAddr != request->client()->localIP();
+}
+
+auto MBXServer::tryConnectWithStoredCreds() -> bool{
+    wifi_mode_t mode{};
+    esp_err_t e = esp_wifi_get_mode(&mode);
+    if (e == ESP_ERR_WIFI_NOT_INIT) {
+        // Netif/event loop (idempotent)
+        ESP_ERROR_CHECK(esp_netif_init());
+        (void)esp_event_loop_create_default();
+        if (esp_netif_get_handle_from_ifkey("WIFI_STA_DEF") == nullptr) {
+            ESP_ERROR_CHECK(esp_netif_create_default_wifi_sta() ? ESP_OK : ESP_FAIL);
+        }
+        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    }
+
+    // Check if stored STA config exists
+    wifi_config_t sta_cfg{};
+    if (esp_wifi_get_config(WIFI_IF_STA, &sta_cfg) != ESP_OK || sta_cfg.sta.ssid[0] == '\0') {
+        _logger->logInformation("No stored WiFi credentials; starting AP portal");
+        return false;
+    }
+
+    // Start driver if not started
+    wifi_bandwidth_t bw{};
+    e = esp_wifi_get_bandwidth(WIFI_IF_STA, &bw);
+    if (e == ESP_ERR_WIFI_NOT_STARTED || e == ESP_ERR_WIFI_NOT_INIT) {
+        ESP_ERROR_CHECK(esp_wifi_start());
+    }
+
+    // Ensure STA mode
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    // Apply stored config (safe to reapply)
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta_cfg));
+
+    // Connect and wait for IP
+    ESP_ERROR_CHECK(esp_wifi_connect());
+
+    const unsigned long start = millis();
+    esp_netif_t* sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    esp_netif_ip_info_t ip{};
+    while ((millis() - start) < WIFI_CONNECT_TIMEOUT) {
+        if (sta_netif && esp_netif_get_ip_info(sta_netif, &ip) == ESP_OK &&
+            ip.ip.addr != 0) {
+            _logger->logInformation("Connected to WiFi using stored credentials");
+            return true;
+        }
+        delay(WIFI_CONNECT_DELAY_MS);
+    }
+    _logger->logWarning("Failed to connect with stored credentials; starting AP portal");
+    return false;
+}
+
+void MBXServer::serveSPIFFSFile(AsyncWebServerRequest* reqPtr, const char* path, std::function<void()> onServed, const char* contentType ){
+
+    if (SPIFFS.exists(path)) {
+        Serial.println("Serving file: " + String(path));
+        reqPtr->send(SPIFFS, path, contentType);
+        if (onServed) {
+            Serial.println("Calling onServed");
+            onServed();
+            Serial.println("onServed called");
+        }
+    } else {
+        Serial.println("File not found: " + String(path));
+        reqPtr->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT,"Page not found");
+    }
 }

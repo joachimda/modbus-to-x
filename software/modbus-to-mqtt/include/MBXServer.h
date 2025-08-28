@@ -5,6 +5,7 @@
 #include <DNSServer.h>
 #include "ESPAsyncWebServer.h"
 #include "Logger.h"
+#include "wifiManagement/NetworkPortal.h"
 
 static const int serverPort = 80;
 class MBXServer {
@@ -14,21 +15,19 @@ public:
 private:
     Logger * _logger;
     AsyncWebServer * server;
-    DNSServer * dns;
-    void networkBootstrap();
+    DNSServer * _dns;
     void configurePageRoutes();
-
     void ensureConfigFile();
-    String readConfig();
+    auto readConfig() -> String;
 
-    static void handleUpload(AsyncWebServerRequest *r, const String& fn, size_t index,
-                             uint8_t *data, size_t len, bool final);
+    static auto accessPointFilter(AsyncWebServerRequest *request) -> bool;
 
-    static void handleNetworkReset();
+    void configureAccessPointRoutes(NetworkPortal * portal);
 
-    static bool accessPointFilter(AsyncWebServerRequest *request);
+    auto tryConnectWithStoredCreds() -> bool;
 
-    void configureApiRoutes();
+    static void serveSPIFFSFile(AsyncWebServerRequest *reqPtr, const char *path, std::function<void()> onServed,
+                         const char *contentType);
 };
 
 #endif

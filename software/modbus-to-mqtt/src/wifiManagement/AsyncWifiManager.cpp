@@ -28,8 +28,6 @@ static const auto ssid_scan_interval_ms = 10000;
 static const auto ip_octet_max = 0xFF;
 static const auto dns_port = 53;
 
-
-
 AsyncWiFiManager::AsyncWiFiManager(AsyncWebServer *server, DNSServer *dns, Logger *logger)
         : server(server), dnsServer(dns), logger(logger)
 {
@@ -48,7 +46,7 @@ void AsyncWiFiManager::addParameter(AsyncWiFiManagerParameter *p)
 
 void AsyncWiFiManager::setupConfigPortal()
 {
-    server->reset();
+    //server->reset();
     _configPortalStart = millis();
 
     logger->logInformation(("Configuring access point: " + String(_apName)).c_str());
@@ -88,14 +86,16 @@ void AsyncWiFiManager::setupConfigPortal()
     server->on("/wifi",
                std::bind(&AsyncWiFiManager::handleConfigureWifi, this, std::placeholders::_1, true))
             .setFilter(accessPointFilter);
-            */
 
     server->on("/wifisave",
                std::bind(&AsyncWiFiManager::handleWifiSaveForm, this, std::placeholders::_1))
             .setFilter(accessPointFilter);
     server->onNotFound(std::bind(&AsyncWiFiManager::handleNotFound, this, std::placeholders::_1));
     server->begin();
+
     logger->logInformation("HTTP server started");
+            */
+
 }
 auto AsyncWiFiManager::autoConnect(char const *apName,
                                    char const *apPassword,
@@ -300,7 +300,7 @@ auto AsyncWiFiManager::startConfigPortal(char const *apName, char const *apPassw
             shouldScan = true; // since we are modal, we can scan every time
 
             WiFi.disconnect(false);
-            scanModal();
+            //scanModal();
             if (_tryConnectDuringConfigPortal)
             {
                 WiFi.begin(); // try to reconnect to AP
@@ -706,8 +706,8 @@ auto AsyncWiFiManager::tryRedirectToCaptivePortal(AsyncWebServerRequest *request
     if (!isIpAddress(request->host()))
     {
         logger->logInformation("Request redirected to captive portal");
-        AsyncWebServerResponse *response = request->beginResponse(302, "text/plain", "");
-        response->addHeader("Location", String("http://") + convertIpAddressToString(request->client()->localIP()));
+        AsyncWebServerResponse *response = request->beginResponse(HttpResponseCodes::REDIRECT, "text/plain", "");
+        response->addHeader("Location", String("http://") + convertIpAddressToString(request->client()->localIP()) + "/pages/configure_network.html");
         request->send(response);
         return true;
     }

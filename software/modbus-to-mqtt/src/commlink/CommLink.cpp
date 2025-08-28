@@ -53,8 +53,8 @@ void CommLink::wifiSetup() {
     loadMQTTConfig();
 
     AsyncWebServer server(80);
-    DNSServer dns;
-    AsyncWiFiManager wm(&server, &dns, _logger);
+    DNSServer _dns;
+    AsyncWiFiManager wm(&server, &_dns, _logger);
     AsyncWiFiManagerParameter p_mqtt_broker("server", "MQTT Broker domain/IP", LOCAL_MQTT_BROKER, 150);
     AsyncWiFiManagerParameter p_mqtt_port("port", "MQTT Broker Port", LOCAL_MQTT_PORT, 6);
     AsyncWiFiManagerParameter p_mqtt_user("user", "MQTT Username", LOCAL_MQTT_USER, 32);

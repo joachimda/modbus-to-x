@@ -50,6 +50,7 @@ public:
 
     // if this is set, it will exit after config, even if connection is unsuccessful
     void setBreakAfterConfig(boolean shouldBreak);
+    auto startConfigPortal(char const *apName, char const *apPassword = nullptr) -> boolean;
 
 private:
     AsyncWebServer *server;
@@ -77,7 +78,6 @@ private:
     unsigned int _minimumQuality = 0;
     boolean _shouldBreakAfterConfig = false;
     const char *_customHeadElement = "";
-    auto startConfigPortal(char const *apName, char const *apPassword = nullptr) -> boolean;
     auto connectWifi(const String& ssid, const String& pass) -> uint8_t;
     auto waitForConnectResult() -> uint8_t;
     void copySSIDInfo(wifi_ssid_count_t n);

@@ -117,6 +117,7 @@ void MBXServerHandlers::getSsidListAsJson(AsyncWebServerRequest *req) {
 }
 
 void MBXServerHandlers::handleNetworkReset() {
+    Serial.println("MBXServerHandlers::handleNetworkReset called");
     WiFi.persistent(true);
     WiFi.disconnect(true, true);
     WiFi.persistent(false);

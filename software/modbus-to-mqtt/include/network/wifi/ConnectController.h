@@ -2,7 +2,6 @@
 #define MODBUS_TO_MQTT_CONNECTCONTROLLER_H
 #pragma once
 #include <WiFi.h>
-#include <Preferences.h>
 #include <Arduino.h>
 #include <esp_wifi.h>
 
@@ -29,16 +28,16 @@ public:
     void begin(const String &hostname = "modbus-to-x") {
         Serial.printf("WiFiConnectController::begin(%s) called\n", hostname.c_str());
         _hostname = hostname;
-        WiFi.persistent(false); // we'll decide when to persist
+        WiFi.persistent(false);
         WiFiClass::mode(WIFI_STA);
-        WiFi.disconnect(true, true);
+        WiFi.disconnect(true, false);
         _status = {};
         _status.state = WifiConnState::Idle;
 
         WiFi.onEvent([this](WiFiEvent_t e, WiFiEventInfo_t info) {
             this->onEvent(e, info);
         });
-        Serial.println("WiFiConnectController::begin(%s) ended\n");
+        Serial.println("WiFiConnectController::begin() ended\n");
     }
 
     void reset() {
@@ -84,10 +83,9 @@ public:
             if (st.dns1.length()) { (void) dns1.fromString(st.dns1); } // leave 0.0.0.0 if parse fails
             if (st.dns2.length()) { (void) dns2.fromString(st.dns2); } // leave 0.0.0.0 if parse fails
             WiFi.config(ip, gw, mask, dns1, dns2);
-        }
-        else {
+        } else {
             Serial.println("WiFiConnectController::connect - Using DHCP config");
-            WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE); // DHCP
+            WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
         }
 
         if (_hostname.length()) {
@@ -97,25 +95,24 @@ public:
         uint8_t bssid[6];
         const bool useBssid = parseBssid(bssidStr, bssid);
 
-        Serial.printf("WiFiConnectController::connect - Wi-Fi Persist 0/1: %d", save);
-        Serial.println();
+        Serial.printf("WiFiConnectController::connect - Wi-Fi Persist 0/1: %d\n", save);
         WiFi.persistent(save);
 
-        // Kick it off
-        // If you know the channel, you can pass it as the 3rd param (0 = unknown)
         const int staChan = channel ? channel : 0;
         const bool ok = useBssid
                             ? WiFi.begin(ssid.c_str(), pass.c_str(), staChan, bssid)
                             : WiFi.begin(ssid.c_str(), pass.c_str(), staChan);
-
-        _saveCreds = save;
-        _pass = pass; // keep only in RAM while connecting
+        WiFi.persistent(false);
 
         if (!ok) {
             fail("BEGIN_FAILED");
             return true;
         }
-
+        _persistRequested = save;
+        if (save) {
+            _persistSsid = ssid;
+            _persistPass = pass;
+        }
         Serial.printf("WiFiConnectController::connect - WiFi.begin(%s, ******) returned OK", ssid.c_str());
         Serial.println();
         Serial.println("WiFiConnectController::connect - SSID Stored in NVS: " + String(WiFi.SSID()));
@@ -151,9 +148,15 @@ private:
                 _status.ip = WiFi.localIP().toString();
                 _status.hasIp = true;
                 WiFi.setAutoReconnect(true);
-                Serial.println("WiFiConnectController::onEvent - Event: ARDUINO_EVENT_WIFI_STA_GOT_IP - SSID Stored in NVS: " + String(WiFi.SSID()));
-                if (_saveCreds) persistCreds(_status.ssid, _pass);
-                _pass = ""; // scrub
+                Serial.println(
+                    "WiFiConnectController::onEvent - Event: ARDUINO_EVENT_WIFI_STA_GOT_IP - SSID Stored in NVS: " +
+                    String(WiFi.SSID()));
+                if (_persistRequested && _persistSsid.length()) {
+                    writePlainCredsToNvs(_persistSsid, _persistPass);
+                    _persistRequested = false;
+                    _persistSsid = "";
+                    _persistPass = "";
+                }
                 break;
             }
             case ARDUINO_EVENT_WIFI_STA_DISCONNECTED: {
@@ -192,26 +195,28 @@ private:
         Serial.printf("WiFiConnectController::fail(%s) called\n", reason.c_str());
         _status.state = WifiConnState::Failed;
         _status.reason = reason;
-        _pass = "";
     }
 
-    void persistCreds(const String &ssid, const String &pass) {
-        Serial.printf("WiFiConnectController::persistCreds(%s, %s) called\n", ssid.c_str(), pass.c_str());
-        Preferences prefs;
-        if (prefs.begin("wifi", false)) {
-            prefs.putString("ssid", ssid);
-            prefs.putString("pass", pass);
-            prefs.end();
-        }
+    void writePlainCredsToNvs(const String &ssid, const String &pass) {
+        Serial.printf("WiFiConnectController::writePlainCredsToNvs(%s, ******) called\n", ssid.c_str());
+        wifi_config_t cfg{};
+        memset(&cfg, 0, sizeof(cfg));
+        strncpy((char *) cfg.sta.ssid, ssid.c_str(), sizeof(cfg.sta.ssid));
+        strncpy((char *) cfg.sta.password, pass.c_str(), sizeof(cfg.sta.password));
+        cfg.sta.bssid_set = 0; // do NOT lock to a BSSID
+        esp_wifi_set_storage(WIFI_STORAGE_FLASH);
+        esp_wifi_set_config(WIFI_IF_STA, &cfg);
+        esp_wifi_set_storage(WIFI_STORAGE_RAM);
+        Serial.printf("WiFiConnectController::writePlainCredsToNvs(%s, ******) ended\n", ssid.c_str());
     }
 
 private:
     WifiStatus _status;
     String _hostname;
-    String _pass;
-    bool _saveCreds = false;
     uint32_t _timeoutMs = 35000;
     uint32_t _deadline = 0;
+    bool _persistRequested = false;
+    String _persistSsid, _persistPass;
 };
 
 #endif //MODBUS_TO_MQTT_CONNECTCONTROLLER_H

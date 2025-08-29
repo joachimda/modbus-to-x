@@ -34,7 +34,7 @@ void NetworkPortal::begin() {
     setAPMode();
 
     if (!waitForApIp()) {
-        _logger->logWarning("AP IP not ready, continuing");
+        _logger->logWarning("NetworkPortal::begin - AP not ready, continuing");
     }
     configureDnsServer();
 
@@ -51,7 +51,8 @@ void NetworkPortal::begin() {
             WiFi.scanNetworks(true, false, true, SCAN_DWELL_MS, 0); // async, no hidden, passive, dwell, all channels
             lastScanTime = millis();
             lastScanStart.store(lastScanTime, std::memory_order_release);
-            _logger->logDebug("NetworkPortal::scanNetworksAsync - scan started (running)");
+            _logger->logDebug("NetworkPortal::begin - Async Scan Initiated)");
+            _logger->logDebug(("NetworkPortal::begin - SSID stored in NVS: " + String(WiFi.SSID())).c_str());
             }
 
         if (!_scanSuspended && millis() - lastScanPoll >= SCAN_POLL_INTERVAL_MS) {
@@ -109,22 +110,17 @@ void NetworkPortal::configureDnsServer() const {
 }
 
 void NetworkPortal::scanNetworksAsync() {
-
     const int16_t status = WiFi.scanComplete();
-
     if (status == WIFI_SCAN_RUNNING) {
         return;
     }
-
     if (status == WIFI_SCAN_FAILED) {
         WiFi.scanDelete();
         return;
     }
-
     if (status < 0) {
         return;
     }
-
     const auto results = std::make_shared<std::vector<WiFiResult>>();
     results->reserve(static_cast<size_t>(status));
     for (int16_t i = 0; i < status; ++i) {

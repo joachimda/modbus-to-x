@@ -11,7 +11,7 @@
 
 static constexpr auto WIFI_CONNECT_DELAY_MS = 100;
 static constexpr auto WIFI_CONNECT_TIMEOUT = 10000;
-static WiFiConnectController g_wifi; // global/singleton
+static WiFiConnectController g_wifi;
 
 MBXServer::MBXServer(AsyncWebServer *server, DNSServer *dnsServer, Logger *logger) : server(server), _dns(dnsServer),
     _logger(logger) {
@@ -122,20 +122,27 @@ auto MBXServer::accessPointFilter(AsyncWebServerRequest *request) -> bool {
     const IPAddress dest = request->client()->localIP();
     return dest == WiFi.softAPIP();
 }
-
 auto MBXServer::tryConnectWithStoredCreds() const -> bool {
+
     _logger->logDebug("MBXServer::tryConnectWithStoredCreds - begin");
     _logger->logDebug(("MBXServer::tryConnectWithStoredCreds - #1 SSID Stored in NVS: " + String(WiFi.SSID())).c_str());
 
-    WiFi.persistent(false);
-    // Ensure STA mode for this attempt
     if (WiFiClass::getMode() != WIFI_MODE_STA) {
         WiFiClass::mode(WIFI_MODE_STA);
-        delay(10);
+        delay(300);
     }
-    _logger->logDebug(("MBXServer::tryConnectWithStoredCreds - #2 SSID Stored in NVS: " + String(WiFi.SSID())).c_str());
-    WiFi.begin();
 
+    wifi_config_t cfg{};
+    if (esp_wifi_get_config(WIFI_IF_STA, &cfg) == ESP_OK) {
+        Serial.printf("NVS STA SSID='%s'\n", reinterpret_cast<char*>(cfg.sta.ssid));
+    } else {
+        Serial.println("esp_wifi_get_config failed");
+    }
+
+    _logger->logDebug(("MBXServer::tryConnectWithStoredCreds - #2 SSID Stored in NVS: " + String(WiFi.SSID())).c_str());
+    auto stat = WiFi.begin();
+
+    _logger->logDebug(("MBXServer::tryConnectWithStoredCreds - Got status: " + String(stat)).c_str());
     const unsigned long start = millis();
     while (millis() - start < WIFI_CONNECT_TIMEOUT) {
         if (WiFiClass::status() == WL_CONNECTED) {
@@ -143,6 +150,7 @@ auto MBXServer::tryConnectWithStoredCreds() const -> bool {
                                      " " + WiFi.localIP().toString()).c_str());
             return true;
         }
+        _logger->logDebug("MBXServer::tryConnectWithStoredCreds() - looping connect check");
         delay(WIFI_CONNECT_DELAY_MS);
     }
     _logger->logInformation("MBXServer::tryConnectWithStoredCreds() - No connection with stored credentials; starting AP portal");

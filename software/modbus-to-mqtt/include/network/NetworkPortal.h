@@ -14,7 +14,8 @@ public:
     void begin();
 
     std::shared_ptr<const std::vector<WiFiResult>> getLatestScanResultsSnapshot() const;
-    void stop();
+
+    static void stop();
     void suspendScanning(bool on);
 private:
     Logger *_logger;

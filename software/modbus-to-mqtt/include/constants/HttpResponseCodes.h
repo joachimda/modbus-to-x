@@ -3,10 +3,10 @@
 
 class HttpResponseCodes {
 public:
-    static const int OK = 200;
-    static const int SERVER_ERROR = 500;
-    static const int NOT_FOUND = 404;
-    static const int REDIRECT = 302;
+    static constexpr int OK = 200;
+    static constexpr int SERVER_ERROR = 500;
+    static constexpr int NOT_FOUND = 404;
+    static constexpr int REDIRECT = 302;
 };
 
 #endif

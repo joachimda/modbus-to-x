@@ -1,8 +1,11 @@
 #include <Arduino.h>
 #include <esp_event.h>
+#include <esp_wifi.h>
 
 #include "ArduinoJson.h"
 #include <nvs_flash.h>
+#include <WiFi.h>
+
 #include "commlink/CommLink.h"
 #include "MqttLogger.h"
 #include "SerialLogger.h"
@@ -105,7 +108,9 @@ void setup() {
     setupEnvironment();
     logger.addTarget(&serialLogger);
     logger.addTarget(&mqttLogger);
-    logger.logDebug("setup started");
+    logger.logDebug("main::setup() - System initiating");
+
+    logger.logDebug(("SSID stored in NVS: " + String(WiFi.SSID())).c_str());
     //addSubscriptionHandlers();
     //commLink.overrideUserConfig("espuser","test", "10.159.188.206","1883", "8N1", 9600);
 

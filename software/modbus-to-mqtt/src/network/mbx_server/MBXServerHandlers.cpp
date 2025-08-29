@@ -6,7 +6,6 @@
 #include "network/NetworkPortal.h"
 
 namespace {
-    // Atomic pointer to the active portal (published once at startup)
     std::atomic<NetworkPortal*> g_portal{nullptr};
 }
 
@@ -21,10 +20,8 @@ void MBXServerHandlers::getSsidListAsJson(AsyncWebServerRequest *req) {
         return;
     }
 
-    // Take an immutable snapshot; safe to read without locks
     auto snap = portal->getLatestScanResultsSnapshot();
 
-    // Serialize to JSON with minimal allocations
     String out;
     out.reserve(snap ? (snap->size() * 64 + 2) : 2);
     out += "[";
@@ -33,12 +30,11 @@ void MBXServerHandlers::getSsidListAsJson(AsyncWebServerRequest *req) {
         for (size_t i = 0; i < snap->size(); ++i) {
             const auto& ap = (*snap)[i];
 
-            // Escape SSID minimally: backslash and quote; replace control chars
             String escSsid;
             escSsid.reserve(ap.SSID.length() + 4);
             for (char c : ap.SSID) {
                 if (c == '\\' || c == '\"') { escSsid += '\\'; escSsid += c; }
-                else if ((uint8_t)c < 0x20) { escSsid += ' '; }
+                else if (static_cast<uint8_t>(c) < 0x20) { escSsid += ' '; }
                 else { escSsid += c; }
             }
 

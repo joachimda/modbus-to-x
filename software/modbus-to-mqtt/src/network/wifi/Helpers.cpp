@@ -12,6 +12,8 @@
  **************************************************************/
 
 #include "network/wifi/Helpers.h"
+
+#include <array>
 static constexpr auto mac_len = 6;
 static auto hexCharArray = "0123456789ABCDEF";
 static constexpr auto hex_radix = 16;

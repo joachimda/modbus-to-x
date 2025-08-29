@@ -88,37 +88,18 @@ void NetworkPortal::setAPMode() const {
     _logger->logInformation(ok ? "AP started" : "AP start FAILED");
     delay(AP_STARTUP_DELAY_MS);
 
-    WiFi.setSleep(false); // improve scan reliability while AP is active
+    WiFi.setSleep(false);
 }
 
 void NetworkPortal::configureDnsServer() const {
     if (!_dns) return;
-    IPAddress apIP = WiFi.softAPIP();
+    const IPAddress apIP = WiFi.softAPIP();
     const bool ok = _dns->start(DNS_PORT, "*", apIP);
     if (!ok) {
         _logger->logWarning("DNS start failed");
     } else {
         _logger->logInformation(("DNS started on 53, redirecting to " + apIP.toString()).c_str());
     }
-}
-
-bool NetworkPortal::initWiFiStaOnce(const std::string &ssid, const std::string &pass, uint32_t timeout_ms) const {
-    if (ssid.empty()) return false;
-    _logger->logInformation(("STA connect to: " + ssid).c_str());
-    WiFi.begin(ssid.c_str(), pass.c_str());
-
-    const uint32_t start = millis();
-    do {
-        const wl_status_t st = WiFiClass::status();
-        if (st == WL_CONNECTED) {
-            _logger->logInformation(("STA connected: " + WiFi.localIP().toString()).c_str());
-            return true;
-        }
-        delay(100);
-    } while (millis() - start < timeout_ms);
-
-    _logger->logWarning("STA connect timeout");
-    return false;
 }
 
 void NetworkPortal::scanNetworksAsync() {

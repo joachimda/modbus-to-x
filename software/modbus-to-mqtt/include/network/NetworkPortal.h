@@ -21,7 +21,6 @@ private:
 
     static bool waitForApIp();
     void configureDnsServer() const;
-    bool initWiFiStaOnce(const std::string &ssid, const std::string &pass, uint32_t timeout_ms) const;
     void scanNetworksAsync();
     static uint8_t rssiToSignal(int8_t rssi);
     void setAPMode() const;

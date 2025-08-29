@@ -95,8 +95,7 @@ void MBXServer::configurePageRoutes() const {
 }
 
 auto MBXServer::accessPointFilter(AsyncWebServerRequest *request) -> bool {
-    // True when the HTTP connection is to our AP interface,
-    // i.e., client connected to this AP.
+    // True when the HTTP connection is to this AP interface,
     const IPAddress dest = request->client()->localIP();
     return dest == WiFi.softAPIP();
 }
@@ -109,7 +108,6 @@ auto MBXServer::tryConnectWithStoredCreds() const -> bool {
         delay(10);
     }
 
-    // Try the last stored credentials (no-arg begin() does that on ESP32 Arduino)
     WiFi.begin();
 
     const unsigned long start = millis();
@@ -156,12 +154,12 @@ void MBXServer::ensureConfigFile() const {
 }
 
 auto MBXServer::safeWriteFile(FS& fs, const char* path, const String& content) -> bool {
-    String tmp = String(path) + ".tmp";
+    const String tmp = String(path) + ".tmp";
     File f = fs.open(tmp, FILE_WRITE);
     if (!f) {
         return false;
     }
-    size_t n = f.print(content);
+    const size_t n = f.print(content);
 
     f.flush(); f.close();
     if (n != content.length()) {

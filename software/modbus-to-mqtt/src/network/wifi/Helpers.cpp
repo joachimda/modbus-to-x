@@ -11,12 +11,12 @@
     - removal of multi-device compatibility
  **************************************************************/
 
-#include "Helpers.h"
-static const auto mac_len = 6;
+#include "network/wifi/Helpers.h"
+static constexpr auto mac_len = 6;
 static auto hexCharArray = "0123456789ABCDEF";
-static const auto hex_radix = 16;
-static const auto hexUpper = 0xFF;
-static const auto bits = 8;
+static constexpr auto hex_radix = 16;
+static constexpr auto hexUpper = 0xFF;
+static constexpr auto bits = 8;
 
 /**
 * convert char array (hex values) to readable string by separator
@@ -53,9 +53,4 @@ auto Helpers::CalculateChipId() -> String
         bytes[i] = static_cast<uint8_t>((mac >> (bits * (sizeof(bytes) - 1 - i))) & hexUpper);
     }
     return byteToHexString(bytes.data());
-}
-
-// Unit Test Seam
-__attribute__((weak)) auto Helpers::getEfuseMac() -> uint64_t {
-    return ESP.getEfuseMac();
 }

@@ -14,15 +14,16 @@
 
 #include <DNSServer.h>
 #include <WiFiType.h>
-#include "ESPAsyncWebServer.h"
+
 #include "AsyncWiFiManagerParameter.h"
+#include "ESPAsyncWebServer.h"
 #include "WifiResult.h"
 #include "Logger.h"
 
 using wifi_ssid_count_t = int16_t;
 
 #define WIFI_MANAGER_MAX_PARAMS 10
-static const long AUTO_CONNECT_RETRY_DELAY_MS = 1000;
+static constexpr long AUTO_CONNECT_RETRY_DELAY_MS = 1000;
 
 class AsyncWiFiManager {
 public:
@@ -43,8 +44,8 @@ public:
     void setSTAStaticIPConfig(const IPAddress& ip,
                               const IPAddress& gw,
                               const IPAddress& sn,
-                              const IPAddress& dns1 = (uint32_t)0x00000000,
-                              const IPAddress& dns2 = (uint32_t)0x00000000);
+                              const IPAddress& dns1 = static_cast<uint32_t>(0x00000000),
+                              const IPAddress& dns2 = static_cast<uint32_t>(0x00000000));
 
     void addParameter(AsyncWiFiManagerParameter *p);
 

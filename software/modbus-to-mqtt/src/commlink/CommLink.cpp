@@ -2,8 +2,8 @@
 #include "commlink/CommLink.h"
 #include "Config.h"
 #include "ESPAsyncWebServer.h"
-#include "Helpers.h"
-#include "wifiManagement/AsyncWiFiManager.h"
+#include "../../include/network/wifi/Helpers.h"
+#include "../../include/network/wifi/AsyncWiFiManager.h"
 #include <atomic>
 
 static std::atomic<bool> s_mqttEnabled{false};

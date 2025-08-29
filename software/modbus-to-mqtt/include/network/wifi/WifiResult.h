@@ -12,17 +12,16 @@
 #ifndef MODBUS_TO_MQTT_WIFIRESULT_H
 #define MODBUS_TO_MQTT_WIFIRESULT_H
 
-#include <cstdint>
 #include <WString.h>
 
 class WiFiResult {
 public:
-    bool duplicate;
+    bool duplicate{};
     String SSID;
-    uint8_t encryptionType;
-    int32_t RSSI;
-    uint8_t *BSSID;
-    int32_t channel;
+    uint8_t encryptionType{};
+    int32_t RSSI{};
+    uint8_t *BSSID{};
+    int32_t channel{};
 
     WiFiResult() = default;
 };

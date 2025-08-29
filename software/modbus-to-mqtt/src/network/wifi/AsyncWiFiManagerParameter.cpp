@@ -8,9 +8,8 @@
    Modified by joachimda (2025)
    Changes include: simplification to accommodate custom use
  **************************************************************/
+#include "network/wifi/AsyncWiFiManagerParameter.h"
 #include <cstring>
-#include "wifiManagement/AsyncWiFiManagerParameter.h"
-
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "OCUnusedGlobalDeclarationInspection"
 AsyncWiFiManagerParameter::AsyncWiFiManagerParameter(const char *custom)

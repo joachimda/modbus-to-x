@@ -13,20 +13,21 @@
  **************************************************************/
 
 #include <utility>
-#include "wifiManagement/AsyncWiFiManager.h"
-#include "Helpers.h"
-#include "wifiManagement/PortalPageBuilder.h"
+#include <WiFi.h>
+
 #include "constants/HttpResponseCodes.h"
 #include "constants/HttpMediaTypes.h"
+#include "network/PortalPageBuilder.h"
+#include "network/wifi/AsyncWiFiManager.h"
 
-static const size_t min_password_len = 8;
-static const size_t max_password_len = 63;
-static const uint32_t ap_startup_delay_ms = 500;
-static const uint32_t persistent_connect_delay_ms = 100;
-static const auto conn_status_check_interval_ms = 100UL;
-static const auto ssid_scan_interval_ms = 10000;
-static const auto ip_octet_max = 0xFF;
-static const auto dns_port = 53;
+static constexpr size_t min_password_len = 8;
+static constexpr size_t max_password_len = 63;
+static constexpr uint32_t AP_STARTUP_DELAY_MS = 500;
+static constexpr uint32_t persistent_connect_delay_ms = 100;
+static constexpr auto conn_status_check_interval_ms = 100UL;
+static constexpr auto ssid_scan_interval_ms = 10000;
+static constexpr auto ip_octet_max = 0xFF;
+static constexpr auto DNS_PORT = 53;
 
 AsyncWiFiManager::AsyncWiFiManager(AsyncWebServer *server, DNSServer *dns, Logger *logger)
         : server(server), dnsServer(dns), logger(logger)
@@ -67,14 +68,14 @@ void AsyncWiFiManager::setupConfigPortal()
 
     WiFi.softAP(_apName, _apPassword);
 
-    delay(ap_startup_delay_ms); // without delay I've seen the IP address blank
+    delay(AP_STARTUP_DELAY_MS); // without delay I've seen the IP address blank
 
     logger->logInformation(("AP IP address: " +
                             convertIpAddressToString(WiFi.softAPIP())).c_str());
 
     // set up the DNS server redirecting all the domains to the apIP
     dnsServer->setErrorReplyCode(DNSReplyCode::NoError);
-    if (!dnsServer->start(dns_port, "*", WiFi.softAPIP()))
+    if (!dnsServer->start(DNS_PORT, "*", WiFi.softAPIP()))
     {
         logger->logError("Could not start Captive DNS Server!");
     }
@@ -99,9 +100,9 @@ void AsyncWiFiManager::setupConfigPortal()
 }
 auto AsyncWiFiManager::autoConnect(char const *apName,
                                    char const *apPassword,
-                                   unsigned long retryDelayMs) -> boolean
+                                   const unsigned long retryDelayMs) -> boolean
 {
-    unsigned long maxConnectRetries = 1;
+    constexpr unsigned long maxConnectRetries = 1;
     WiFiClass::mode(WIFI_STA);
     for (unsigned long tryNumber = 0; tryNumber < maxConnectRetries; tryNumber++)
     {
@@ -116,7 +117,6 @@ auto AsyncWiFiManager::autoConnect(char const *apName,
 
         if (tryNumber + 1 < maxConnectRetries)
         {
-            // we might connect during the delay
             unsigned long restDelayMs = retryDelayMs;
             while (restDelayMs != 0)
             {
@@ -300,7 +300,7 @@ auto AsyncWiFiManager::startConfigPortal(char const *apName, char const *apPassw
             shouldScan = true; // since we are modal, we can scan every time
 
             WiFi.disconnect(false);
-            //scanModal();
+            scanModal();
             if (_tryConnectDuringConfigPortal)
             {
                 WiFi.begin(); // try to reconnect to AP

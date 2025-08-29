@@ -11,7 +11,6 @@
 #ifndef Helpers_h
 #define Helpers_h
 
-#include <cstdint>
 #include <WString.h>
 #include "Esp.h"
 

@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <atomic>
 #include <WiFi.h>
-
+#include <esp_wifi.h>
 #include "Logger.h"
 #include "Config.h"
 
@@ -15,7 +15,6 @@ static constexpr auto SIGNAL_UPPER_LIM = 100;
 static constexpr uint32_t SSID_SCAN_INTERVAL_MS = 10000;
 static constexpr uint32_t SCAN_POLL_INTERVAL_MS = 200;
 static constexpr uint16_t SCAN_DWELL_MS = 300;
-
 static std::atomic<uint32_t> lastScanStart{0};
 static std::atomic<bool> portal_should_run{true};
 
@@ -46,7 +45,8 @@ void NetworkPortal::begin() {
     while (portal_should_run) {
         if (_dns) _dns->processNextRequest();
 
-        if (WiFi.scanComplete() != WIFI_SCAN_RUNNING &&
+        if (!_scanSuspended &&
+            WiFi.scanComplete() != WIFI_SCAN_RUNNING &&
             (lastScanTime == 0 || millis() - lastScanTime >= SSID_SCAN_INTERVAL_MS)) {
             WiFi.scanNetworks(true, false, true, SCAN_DWELL_MS, 0); // async, no hidden, passive, dwell, all channels
             lastScanTime = millis();
@@ -54,7 +54,7 @@ void NetworkPortal::begin() {
             _logger->logDebug("NetworkPortal::scanNetworksAsync - scan started (running)");
             }
 
-        if (millis() - lastScanPoll >= SCAN_POLL_INTERVAL_MS) {
+        if (!_scanSuspended && millis() - lastScanPoll >= SCAN_POLL_INTERVAL_MS) {
             lastScanPoll = millis();
             scanNetworksAsync();
         }
@@ -74,6 +74,12 @@ auto NetworkPortal::rssiToSignal(const int8_t rssi) -> uint8_t {
 
 void NetworkPortal::setAPMode() const {
     WiFi.persistent(false);
+    wifi_country_t c = {};
+    strcpy(c.cc, "EU");   // or "EU"
+    c.schan = 1;
+    c.nchan = 13;
+    c.policy = WIFI_COUNTRY_POLICY_MANUAL;
+    esp_wifi_set_country(&c);
 
     if (WiFiClass::getMode() != WIFI_MODE_APSTA) {
         WiFiClass::mode(WIFI_MODE_APSTA);
@@ -85,7 +91,7 @@ void NetworkPortal::setAPMode() const {
     WiFi.softAPConfig(ap_ip, ap_gw, ap_nm);
 
     const bool ok = WiFi.softAP(DEFAULT_AP_SSID, DEFAULT_AP_PASS, 1, false, 4);
-    _logger->logInformation(ok ? "AP started" : "AP start FAILED");
+    _logger->logInformation(ok ? "NetworkPortal::setAPMode() - AP started" : "AP start FAILED");
     delay(AP_STARTUP_DELAY_MS);
 
     WiFi.setSleep(false);
@@ -96,9 +102,9 @@ void NetworkPortal::configureDnsServer() const {
     const IPAddress apIP = WiFi.softAPIP();
     const bool ok = _dns->start(DNS_PORT, "*", apIP);
     if (!ok) {
-        _logger->logWarning("DNS start failed");
+        _logger->logWarning("NetworkPortal::setAPMode() - DNS start failed");
     } else {
-        _logger->logInformation(("DNS started on 53, redirecting to " + apIP.toString()).c_str());
+        _logger->logInformation(("NetworkPortal::setAPMode() - DNS started on 53, redirecting to " + apIP.toString()).c_str());
     }
 }
 
@@ -122,15 +128,23 @@ void NetworkPortal::scanNetworksAsync() {
     const auto results = std::make_shared<std::vector<WiFiResult>>();
     results->reserve(static_cast<size_t>(status));
     for (int16_t i = 0; i < status; ++i) {
-        WiFiResult wifiResult;
-        wifiResult.duplicate = false;
+        WiFiResult r;
+        r.duplicate = false;
+
+        uint8_t* tmpBssid = nullptr;
         WiFi.getNetworkInfo(i,
-                            wifiResult.SSID,
-                            wifiResult.encryptionType,
-                            wifiResult.RSSI,
-                            wifiResult.BSSID,
-                            wifiResult.channel);
-        results->emplace_back(std::move(wifiResult));
+                            r.SSID,
+                            r.encryptionType,
+                            r.RSSI,
+                            tmpBssid,
+                            r.channel);
+
+        if (tmpBssid) {
+            r.hasBSSID = true;
+            memcpy(r.BSSID, tmpBssid, 6);
+        }
+
+        results->emplace_back(std::move(r));
     }
 
     WiFi.scanDelete();
@@ -141,7 +155,16 @@ void NetworkPortal::scanNetworksAsync() {
 std::shared_ptr<const std::vector<WiFiResult>> NetworkPortal::getLatestScanResultsSnapshot() const {
     return atomicLoadResults(&_latestScanResults);
 }
+void NetworkPortal::stop() {
+    portal_should_run = false;
+}
 
+void NetworkPortal::suspendScanning(bool on) {
+    _scanSuspended = on;
+    if (on && WiFi.scanComplete() == WIFI_SCAN_RUNNING) {
+        WiFi.scanDelete();
+    }
+}
 
 bool NetworkPortal::waitForApIp() {
     const uint32_t start = millis();

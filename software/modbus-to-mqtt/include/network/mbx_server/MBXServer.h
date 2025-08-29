@@ -11,6 +11,7 @@ class MBXServer {
 public:
     explicit MBXServer(AsyncWebServer * server, DNSServer * dns, Logger * logger);
     void begin() const;
+    void loop();
 private:
     Logger * _logger;
     AsyncWebServer * server;

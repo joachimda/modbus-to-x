@@ -24,8 +24,6 @@ public:
 
     static void setupLED();
 
-    void checkResetButton();
-
     auto getMqttBroker() -> char*;
 
     auto getMQTTState() const -> int;
@@ -39,8 +37,6 @@ public:
 
 private:
     [[noreturn]] static void processMQTTAsync(void *parameter);
-
-    void wifiSetup();
 
     void loadMQTTConfig();
 

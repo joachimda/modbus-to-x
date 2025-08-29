@@ -106,16 +106,18 @@ void setup() {
     logger.addTarget(&serialLogger);
     logger.addTarget(&mqttLogger);
     logger.logDebug("setup started");
-    addSubscriptionHandlers();
-    commLink.overrideUserConfig("espuser","test", "10.159.188.206","1883", "8N1", 9600);
+    //addSubscriptionHandlers();
+    //commLink.overrideUserConfig("espuser","test", "10.159.188.206","1883", "8N1", 9600);
 
-    commLink.begin();
+    //commLink.begin();
+    logger.logDebug("main::setup() - Starting MBX Server");
     mbxServer.begin();
 
     //modbusManager.initialize();
 }
 
 void loop() {
+    mbxServer.loop();
     // mb_manager.readRegisters();
     // commLink.mqttPublish("log", ("Datapoints available: " + String(numData)).c_str());
     delay(500);

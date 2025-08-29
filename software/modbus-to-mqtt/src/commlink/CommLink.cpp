@@ -2,8 +2,6 @@
 #include "commlink/CommLink.h"
 #include "Config.h"
 #include "ESPAsyncWebServer.h"
-#include "../../include/network/wifi/Helpers.h"
-#include "../../include/network/wifi/AsyncWiFiManager.h"
 #include <atomic>
 
 static std::atomic<bool> s_mqttEnabled{false};
@@ -34,7 +32,6 @@ void handleMqttMessage(char *topic, const byte *payload, const unsigned int leng
 
 auto CommLink::begin() -> bool {
     setupLED();
-    wifiSetup();
     _mqttClient->setBufferSize(MQTT_BUFFER_SIZE);
 
     const char *broker = {LOCAL_MQTT_BROKER};
@@ -46,40 +43,6 @@ auto CommLink::begin() -> bool {
     }
     _mqttClient->setCallback(handleMqttMessage);
     return startMqttTask();
-}
-
-void CommLink::wifiSetup() {
-    /*
-    loadMQTTConfig();
-
-    AsyncWebServer server(80);
-    DNSServer _dns;
-    AsyncWiFiManager wm(&server, &_dns, _logger);
-    AsyncWiFiManagerParameter p_mqtt_broker("server", "MQTT Broker domain/IP", LOCAL_MQTT_BROKER, 150);
-    AsyncWiFiManagerParameter p_mqtt_port("port", "MQTT Broker Port", LOCAL_MQTT_PORT, 6);
-    AsyncWiFiManagerParameter p_mqtt_user("user", "MQTT Username", LOCAL_MQTT_USER, 32);
-    AsyncWiFiManagerParameter p_mqtt_pass("pass", "MQTT Password", LOCAL_MQTT_PASSWORD, 32);
-    AsyncWiFiManagerParameter p_modbus_mode("modbus_mode", "MODBUS Mode",DEFAULT_MODBUS_MODE, 3);
-    wm.addParameter(&p_mqtt_broker);
-    wm.addParameter(&p_mqtt_port);
-    wm.addParameter(&p_mqtt_user);
-    wm.addParameter(&p_mqtt_pass);
-    wm.addParameter(&p_modbus_mode);
-    const unsigned long startAttemptTime = millis();
-    while (!wm.autoConnect(DEFAULT_AP_SSID, DEFAULT_AP_PASS)) {
-        if (millis() - startAttemptTime > WIFI_CONNECT_TIMEOUT) {
-            ESP.restart();
-        }
-        delay(100);
-    }
-
-    strcpy(LOCAL_MQTT_BROKER, p_mqtt_broker.getValue());
-    strcpy(LOCAL_MQTT_PORT, p_mqtt_port.getValue());
-    strcpy(LOCAL_MQTT_USER, p_mqtt_user.getValue());
-    strcpy(LOCAL_MQTT_PASSWORD, p_mqtt_pass.getValue());
-    saveUserConfig();
-    */
-
 }
 
 void CommLink::loadMQTTConfig() {
@@ -214,13 +177,13 @@ void CommLink::onMqttMessage(const String &topic, const uint8_t *payload, const 
 }
 
 void CommLink::networkReset() {
-    AsyncWebServer server(80);
-    DNSServer dns;
-    AsyncWiFiManager wm(&server, &dns, _logger);
-    wm.resetSettings();
-    _logger->logDebug("CommLink::networkReset - WifiManager preferences purged successfully");
-    _logger->logDebug("CommLink::networkReset - Sending restart signal");
-    ESP.restart();
+    // AsyncWebServer server(80);
+    // DNSServer dns;
+    // AsyncWiFiManager wm(&server, &dns, _logger);
+    // wm.resetSettings();
+    // _logger->logDebug("CommLink::networkReset - WifiManager preferences purged successfully");
+    // _logger->logDebug("CommLink::networkReset - Sending restart signal");
+    // ESP.restart();
 }
 
 void CommLink::setupLED() {

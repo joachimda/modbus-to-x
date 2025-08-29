@@ -14,7 +14,8 @@ public:
     void begin();
 
     std::shared_ptr<const std::vector<WiFiResult>> getLatestScanResultsSnapshot() const;
-
+    void stop();
+    void suspendScanning(bool on);
 private:
     Logger *_logger;
     DNSServer *_dns;
@@ -23,6 +24,7 @@ private:
     void configureDnsServer() const;
     void scanNetworksAsync();
     static uint8_t rssiToSignal(int8_t rssi);
+    bool _scanSuspended = false;
     void setAPMode() const;
 
     std::shared_ptr<const std::vector<WiFiResult>> _latestScanResults;

@@ -11,22 +11,28 @@
 
 static constexpr auto WIFI_CONNECT_DELAY_MS = 100;
 static constexpr auto WIFI_CONNECT_TIMEOUT = 10000;
+static WiFiConnectController g_wifi; // global/singleton
 
-MBXServer::MBXServer(AsyncWebServer * server, DNSServer * dnsServer, Logger * logger) : server(server), _dns(dnsServer), _logger(logger)  {}
+MBXServer::MBXServer(AsyncWebServer *server, DNSServer *dnsServer, Logger *logger) : server(server), _dns(dnsServer),
+    _logger(logger) {
+}
+
 void MBXServer::begin() const {
     _logger->logDebug("MBXServer::begin - begin");
     if (!SPIFFS.begin(true)) {
         _logger->logError("An error occurred while mounting SPIFFS");
         return;
     }
+    _logger->logDebug(("MBXServer::begin - SSID Stored in NVS: " + String(WiFi.SSID())).c_str());
 
     ensureConfigFile();
-
-    if(tryConnectWithStoredCreds()) {
+    if (tryConnectWithStoredCreds()) {
         configurePageRoutes();
         server->begin();
-    }
-    else {
+    } else {
+
+        g_wifi.begin("modbus-to-x");
+
         NetworkPortal portal(_logger, _dns);
         MBXServerHandlers::setPortal(&portal);
         configureAccessPointRoutes();
@@ -34,8 +40,11 @@ void MBXServer::begin() const {
         portal.begin();
     }
 
-    _logger->logInformation("Web server started successfully");
     _logger->logDebug("MBXServer::begin - end");
+}
+
+void MBXServer::loop() {
+    g_wifi.loop();
 }
 
 void MBXServer::configureAccessPointRoutes() const {
@@ -53,15 +62,29 @@ void MBXServer::configureAccessPointRoutes() const {
         MBXServerHandlers::getSsidListAsJson(req);
     });
 
+    // POST with JSON body
+    server->on("/api/wifi/connect", HTTP_POST,
+               [](AsyncWebServerRequest *req) {
+               },
+               nullptr,
+               [](AsyncWebServerRequest *req, uint8_t *data, size_t len, size_t index, size_t total) {
+                   MBXServerHandlers::handleWifiConnect(req, g_wifi, data, len, index, total);
+               }
+    );
     server->on(Routes::RESET_NETWORK, HTTP_GET, [](AsyncWebServerRequest *req) {
-    serveSPIFFSFile(req, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML);
+        serveSPIFFSFile(req, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML);
     }).setFilter(accessPointFilter);
-
+    server->on("/api/wifi/status", HTTP_GET, [](AsyncWebServerRequest *req) {
+        MBXServerHandlers::handleWifiStatus(req, g_wifi);
+    });
+    server->on("/api/wifi/ap_off", HTTP_POST, MBXServerHandlers::handleWifiApOff);
+    server->on("/api/wifi/cancel", HTTP_POST, [](AsyncWebServerRequest *req) {
+        MBXServerHandlers::handleWifiCancel(req, g_wifi);
+    });
     _logger->logDebug("MBXServer::configureAccessPointRoutes - end");
 }
 
 void MBXServer::configurePageRoutes() const {
-
     _logger->logDebug("MBXServer::configurePageRoutes - begin");
     server->serveStatic("/", SPIFFS, "/")
             .setDefaultFile("/index.html")
@@ -76,7 +99,7 @@ void MBXServer::configurePageRoutes() const {
     });
 
     server->on(Routes::UPLOAD, HTTP_POST, [](AsyncWebServerRequest *req) {
-    req->send(HttpResponseCodes::OK, HttpMediaTypes::PLAIN_TEXT, "Upload OK");
+        req->send(HttpResponseCodes::OK, HttpMediaTypes::PLAIN_TEXT, "Upload OK");
     }, MBXServerHandlers::handleUpload);;
 
     server->on(Routes::DOWNLOAD_CFG, HTTP_GET, [](AsyncWebServerRequest *req) {
@@ -88,7 +111,7 @@ void MBXServer::configurePageRoutes() const {
     });
 
     server->on(Routes::RESET_NETWORK, HTTP_GET, [](AsyncWebServerRequest *req) {
-    serveSPIFFSFile(req, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset,HttpMediaTypes::HTML);
+        serveSPIFFSFile(req, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML);
     }).setFilter(accessPointFilter);
 
     _logger->logDebug("MBXServer::configurePageRoutes - end");
@@ -101,13 +124,16 @@ auto MBXServer::accessPointFilter(AsyncWebServerRequest *request) -> bool {
 }
 
 auto MBXServer::tryConnectWithStoredCreds() const -> bool {
+    _logger->logDebug("MBXServer::tryConnectWithStoredCreds - begin");
+    _logger->logDebug(("MBXServer::tryConnectWithStoredCreds - #1 SSID Stored in NVS: " + String(WiFi.SSID())).c_str());
+
     WiFi.persistent(false);
     // Ensure STA mode for this attempt
     if (WiFiClass::getMode() != WIFI_MODE_STA) {
         WiFiClass::mode(WIFI_MODE_STA);
         delay(10);
     }
-
+    _logger->logDebug(("MBXServer::tryConnectWithStoredCreds - #2 SSID Stored in NVS: " + String(WiFi.SSID())).c_str());
     WiFi.begin();
 
     const unsigned long start = millis();
@@ -119,13 +145,12 @@ auto MBXServer::tryConnectWithStoredCreds() const -> bool {
         }
         delay(WIFI_CONNECT_DELAY_MS);
     }
-    _logger->logInformation("No connection with stored credentials; starting AP portal");
+    _logger->logInformation("MBXServer::tryConnectWithStoredCreds() - No connection with stored credentials; starting AP portal");
     return false;
 }
 
-
-void MBXServer::serveSPIFFSFile(AsyncWebServerRequest* reqPtr, const char* path, std::function<void()> onServed, const char* contentType ){
-
+void MBXServer::serveSPIFFSFile(AsyncWebServerRequest *reqPtr, const char *path, std::function<void()> onServed,
+                                const char *contentType) {
     if (SPIFFS.exists(path)) {
         Serial.println("Serving file: " + String(path));
         reqPtr->send(SPIFFS, path, contentType);
@@ -136,7 +161,7 @@ void MBXServer::serveSPIFFSFile(AsyncWebServerRequest* reqPtr, const char* path,
         }
     } else {
         Serial.println("File not found: " + String(path));
-        reqPtr->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT,"Page not found");
+        reqPtr->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT, "Page not found");
     }
 }
 
@@ -153,7 +178,7 @@ void MBXServer::ensureConfigFile() const {
     }
 }
 
-auto MBXServer::safeWriteFile(FS& fs, const char* path, const String& content) -> bool {
+auto MBXServer::safeWriteFile(FS &fs, const char *path, const String &content) -> bool {
     const String tmp = String(path) + ".tmp";
     File f = fs.open(tmp, FILE_WRITE);
     if (!f) {
@@ -161,7 +186,8 @@ auto MBXServer::safeWriteFile(FS& fs, const char* path, const String& content) -
     }
     const size_t n = f.print(content);
 
-    f.flush(); f.close();
+    f.flush();
+    f.close();
     if (n != content.length()) {
         fs.remove(tmp);
         return false;

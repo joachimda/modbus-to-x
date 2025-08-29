@@ -122,7 +122,7 @@ void setup() {
 }
 
 void loop() {
-    mbxServer.loop();
+    MBXServer::loop();
     // mb_manager.readRegisters();
     // commLink.mqttPublish("log", ("Datapoints available: " + String(numData)).c_str());
     delay(500);

@@ -137,7 +137,7 @@ public:
     }
 
 private:
-    void onEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+    void onEvent(const WiFiEvent_t event, const WiFiEventInfo_t & info) {
         switch (event) {
             case ARDUINO_EVENT_WIFI_STA_CONNECTED:
                 Serial.println("WiFiConnectController::onEvent called with ARDUINO_EVENT_WIFI_STA_CONNECTED");
@@ -148,9 +148,6 @@ private:
                 _status.ip = WiFi.localIP().toString();
                 _status.hasIp = true;
                 WiFi.setAutoReconnect(true);
-                Serial.println(
-                    "WiFiConnectController::onEvent - Event: ARDUINO_EVENT_WIFI_STA_GOT_IP - SSID Stored in NVS: " +
-                    String(WiFi.SSID()));
                 if (_persistRequested && _persistSsid.length()) {
                     writePlainCredsToNvs(_persistSsid, _persistPass);
                     _persistRequested = false;
@@ -187,7 +184,7 @@ private:
         if (sscanf(s.c_str(), "%x:%x:%x:%x:%x:%x", &vals[0], &vals[1], &vals[2], &vals[3], &vals[4], &vals[5]) != 6) {
             return false;
         }
-        for (int i = 0; i < 6; i++) out[i] = (uint8_t) vals[i];
+        for (int i = 0; i < 6; i++) out[i] = static_cast<uint8_t>(vals[i]);
         return true;
     }
 
@@ -197,13 +194,13 @@ private:
         _status.reason = reason;
     }
 
-    void writePlainCredsToNvs(const String &ssid, const String &pass) {
+    static void writePlainCredsToNvs(const String &ssid, const String &pass) {
         Serial.printf("WiFiConnectController::writePlainCredsToNvs(%s, ******) called\n", ssid.c_str());
         wifi_config_t cfg{};
         memset(&cfg, 0, sizeof(cfg));
-        strncpy((char *) cfg.sta.ssid, ssid.c_str(), sizeof(cfg.sta.ssid));
-        strncpy((char *) cfg.sta.password, pass.c_str(), sizeof(cfg.sta.password));
-        cfg.sta.bssid_set = 0; // do NOT lock to a BSSID
+        strncpy(reinterpret_cast<char *>(cfg.sta.ssid), ssid.c_str(), sizeof(cfg.sta.ssid));
+        strncpy(reinterpret_cast<char *>(cfg.sta.password), pass.c_str(), sizeof(cfg.sta.password));
+        cfg.sta.bssid_set = false; // do NOT lock to a BSSID
         esp_wifi_set_storage(WIFI_STORAGE_FLASH);
         esp_wifi_set_config(WIFI_IF_STA, &cfg);
         esp_wifi_set_storage(WIFI_STORAGE_RAM);
@@ -219,4 +216,4 @@ private:
     String _persistSsid, _persistPass;
 };
 
-#endif //MODBUS_TO_MQTT_CONNECTCONTROLLER_H
+#endif

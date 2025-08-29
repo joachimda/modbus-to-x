@@ -1,7 +1,6 @@
 #ifndef CONFIG_WEBSERVER_H
 #define CONFIG_WEBSERVER_H
 
-#include <SPIFFS.h>
 #include <DNSServer.h>
 #include "ESPAsyncWebServer.h"
 #include "Logger.h"
@@ -11,7 +10,8 @@ class MBXServer {
 public:
     explicit MBXServer(AsyncWebServer * server, DNSServer * dns, Logger * logger);
     void begin() const;
-    void loop();
+
+    static void loop();
 private:
     Logger * _logger;
     AsyncWebServer * server;
@@ -29,7 +29,7 @@ private:
 
     auto tryConnectWithStoredCreds() const -> bool;
 
-    static void serveSPIFFSFile(AsyncWebServerRequest *reqPtr, const char *path, std::function<void()> onServed,
+    static void serveSPIFFSFile(AsyncWebServerRequest *reqPtr, const char *path, const std::function<void()> &onServed,
                          const char *contentType);
 };
 

@@ -4,17 +4,18 @@
 #include "constants/HttpMediaTypes.h"
 #include "constants/Routes.h"
 #include <ESPAsyncWebServer.h>
+#include <SPIFFS.h>
 #include <WiFi.h>
 
 #include "network/NetworkPortal.h"
 #include "network/mbx_server/MBXServerHandlers.h"
 
 static constexpr auto WIFI_CONNECT_DELAY_MS = 100;
-static constexpr auto WIFI_CONNECT_TIMEOUT = 10000;
+static constexpr auto WIFI_CONNECT_TIMEOUT = 30000;
 static WiFiConnectController g_wifi;
 
-MBXServer::MBXServer(AsyncWebServer *server, DNSServer *dnsServer, Logger *logger) : server(server), _dns(dnsServer),
-    _logger(logger) {
+MBXServer::MBXServer(AsyncWebServer *server, DNSServer *dnsServer, Logger *logger) : _logger(logger), server(server),
+    _dns(dnsServer) {
 }
 
 void MBXServer::begin() const {
@@ -30,7 +31,6 @@ void MBXServer::begin() const {
         configurePageRoutes();
         server->begin();
     } else {
-
         g_wifi.begin("modbus-to-x");
 
         NetworkPortal portal(_logger, _dns);
@@ -63,7 +63,7 @@ void MBXServer::configureAccessPointRoutes() const {
     });
 
     // POST with JSON body
-    server->on("/api/wifi/connect", HTTP_POST,
+    server->on(Routes::POST_WIFI_CONNECT, HTTP_POST,
                [](AsyncWebServerRequest *req) {
                },
                nullptr,
@@ -71,14 +71,16 @@ void MBXServer::configureAccessPointRoutes() const {
                    MBXServerHandlers::handleWifiConnect(req, g_wifi, data, len, index, total);
                }
     );
+
     server->on(Routes::RESET_NETWORK, HTTP_GET, [](AsyncWebServerRequest *req) {
         serveSPIFFSFile(req, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML);
     }).setFilter(accessPointFilter);
-    server->on("/api/wifi/status", HTTP_GET, [](AsyncWebServerRequest *req) {
+
+    server->on(Routes::GET_WIFI_STATUS, HTTP_GET, [](AsyncWebServerRequest *req) {
         MBXServerHandlers::handleWifiStatus(req, g_wifi);
     });
-    server->on("/api/wifi/ap_off", HTTP_POST, MBXServerHandlers::handleWifiApOff);
-    server->on("/api/wifi/cancel", HTTP_POST, [](AsyncWebServerRequest *req) {
+    server->on(Routes::POST_WIFI_AP_OFF, HTTP_POST, MBXServerHandlers::handleWifiApOff);
+    server->on(Routes::POST_WIFI_CANCEL, HTTP_POST, [](AsyncWebServerRequest *req) {
         MBXServerHandlers::handleWifiCancel(req, g_wifi);
     });
     _logger->logDebug("MBXServer::configureAccessPointRoutes - end");
@@ -122,8 +124,8 @@ auto MBXServer::accessPointFilter(AsyncWebServerRequest *request) -> bool {
     const IPAddress dest = request->client()->localIP();
     return dest == WiFi.softAPIP();
 }
-auto MBXServer::tryConnectWithStoredCreds() const -> bool {
 
+auto MBXServer::tryConnectWithStoredCreds() const -> bool {
     _logger->logDebug("MBXServer::tryConnectWithStoredCreds - begin");
     _logger->logDebug(("MBXServer::tryConnectWithStoredCreds - #1 SSID Stored in NVS: " + String(WiFi.SSID())).c_str());
 
@@ -132,17 +134,8 @@ auto MBXServer::tryConnectWithStoredCreds() const -> bool {
         delay(300);
     }
 
-    wifi_config_t cfg{};
-    if (esp_wifi_get_config(WIFI_IF_STA, &cfg) == ESP_OK) {
-        Serial.printf("NVS STA SSID='%s'\n", reinterpret_cast<char*>(cfg.sta.ssid));
-    } else {
-        Serial.println("esp_wifi_get_config failed");
-    }
+    WiFi.begin();
 
-    _logger->logDebug(("MBXServer::tryConnectWithStoredCreds - #2 SSID Stored in NVS: " + String(WiFi.SSID())).c_str());
-    auto stat = WiFi.begin();
-
-    _logger->logDebug(("MBXServer::tryConnectWithStoredCreds - Got status: " + String(stat)).c_str());
     const unsigned long start = millis();
     while (millis() - start < WIFI_CONNECT_TIMEOUT) {
         if (WiFiClass::status() == WL_CONNECTED) {
@@ -150,14 +143,14 @@ auto MBXServer::tryConnectWithStoredCreds() const -> bool {
                                      " " + WiFi.localIP().toString()).c_str());
             return true;
         }
-        _logger->logDebug("MBXServer::tryConnectWithStoredCreds() - looping connect check");
         delay(WIFI_CONNECT_DELAY_MS);
     }
-    _logger->logInformation("MBXServer::tryConnectWithStoredCreds() - No connection with stored credentials; starting AP portal");
+    _logger->logInformation(
+        "MBXServer::tryConnectWithStoredCreds() - No connection with stored credentials; starting AP portal");
     return false;
 }
 
-void MBXServer::serveSPIFFSFile(AsyncWebServerRequest *reqPtr, const char *path, std::function<void()> onServed,
+void MBXServer::serveSPIFFSFile(AsyncWebServerRequest *reqPtr, const char *path, const std::function<void()> &onServed,
                                 const char *contentType) {
     if (SPIFFS.exists(path)) {
         Serial.println("Serving file: " + String(path));

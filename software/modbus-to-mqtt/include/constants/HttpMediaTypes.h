@@ -3,8 +3,8 @@
 
 class HttpMediaTypes {
 public:
-    constexpr static const auto JSON = "application/json";
-    constexpr static const auto HTML = "text/html";
-    constexpr static const auto PLAIN_TEXT = "text/plain";
+    constexpr static auto JSON = "application/json";
+    constexpr static auto HTML = "text/html";
+    constexpr static auto PLAIN_TEXT = "text/plain";
 };
 #endif

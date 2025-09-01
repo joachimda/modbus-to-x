@@ -1,3 +1,16 @@
 {
-
+  "version": 1,
+  "bus1": {
+    "baud": 9600,
+    "serialFormat": "8N1",
+    "termination": "120R",
+    "enableBias": true
+  },
+  "bus2": {
+    "baud": 19200,
+    "serialFormat": "8N1",
+    "termination": "120R",
+    "enableBias": true
+  },
+  "devices": []
 }

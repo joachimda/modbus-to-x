@@ -6,7 +6,7 @@
 #include <ESPAsyncWebServer.h>
 #include <SPIFFS.h>
 #include <WiFi.h>
-
+#include <ArduinoJson.h>
 #include "network/NetworkPortal.h"
 #include "network/mbx_server/MBXServerHandlers.h"
 
@@ -15,7 +15,7 @@ static constexpr auto WIFI_CONNECT_TIMEOUT = 30000;
 static WiFiConnectController g_wifi;
 
 MBXServer::MBXServer(AsyncWebServer *server, DNSServer *dnsServer, Logger *logger) : _logger(logger), server(server),
-    _dns(dnsServer) {
+    _dnsServer(dnsServer) {
 }
 
 void MBXServer::begin() const {
@@ -24,16 +24,15 @@ void MBXServer::begin() const {
         _logger->logError("An error occurred while mounting SPIFFS");
         return;
     }
-    _logger->logDebug(("MBXServer::begin - SSID Stored in NVS: " + String(WiFi.SSID())).c_str());
 
     ensureConfigFile();
     if (tryConnectWithStoredCreds()) {
-        configurePageRoutes();
+        configureRoutes();
         server->begin();
     } else {
         g_wifi.begin("modbus-to-x");
 
-        NetworkPortal portal(_logger, _dns);
+        NetworkPortal portal(_logger, _dnsServer);
         MBXServerHandlers::setPortal(&portal);
         configureAccessPointRoutes();
         server->begin();
@@ -47,6 +46,61 @@ void MBXServer::loop() {
     g_wifi.loop();
 }
 
+void MBXServer::configureRoutes() const {
+    _logger->logDebug("MBXServer::configureRoutes - begin");
+    server->serveStatic("/", SPIFFS, Routes::ROOT)
+            .setDefaultFile("index.html")
+            .setCacheControl("no-store");
+
+    server->on(Routes::CONFIGURE, HTTP_GET, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        req->send(SPIFFS, "/pages/configure.html", HttpMediaTypes::HTML);
+    });
+
+    server->on("/__stream/index", HTTP_GET, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        streamSPIFFSFileChunked(req, "/index.html", HttpMediaTypes::HTML);
+    });
+
+    server->on(Routes::UPLOAD, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        req->send(HttpResponseCodes::OK, HttpMediaTypes::PLAIN_TEXT, "Upload OK");
+    }, MBXServerHandlers::handleUpload);;
+
+    server->on(Routes::DOWNLOAD_CFG, HTTP_GET, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        serveSPIFFSFile(req, "/conf/config.json", nullptr, HttpMediaTypes::JSON, _logger);
+    });
+
+    server->on(Routes::DOWNLOAD_CFG_EX, HTTP_GET, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        serveSPIFFSFile(req,
+                        Routes::DOWNLOAD_CFG_EX,
+                        nullptr,
+                        HttpMediaTypes::JSON,
+                        _logger);
+    });
+
+    server->on(Routes::RESET_NETWORK, HTTP_GET, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        serveSPIFFSFile(req, "/pages/reset_result.html",
+                        MBXServerHandlers::handleNetworkReset,
+                        HttpMediaTypes::HTML,
+                        _logger);
+    });
+
+    server->on(Routes::SYSTEM_STATS, HTTP_GET, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        MBXServerHandlers::getSystemStats(req, _logger);
+    });
+    server->onNotFound([this](AsyncWebServerRequest *req) {
+            logRequest(req);
+            req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT, "I haz no file");
+        });
+
+    _logger->logDebug("MBXServer::configureRoutes - end");
+}
+
 void MBXServer::configureAccessPointRoutes() const {
     _logger->logDebug("MBXServer::configureAccessPointRoutes - begin");
 
@@ -54,8 +108,8 @@ void MBXServer::configureAccessPointRoutes() const {
             .setDefaultFile("/pages/configure_network.html")
             .setCacheControl("no-store");
 
-    server->on(Routes::ROOT, HTTP_GET, [](AsyncWebServerRequest *req) {
-        serveSPIFFSFile(req, "/pages/configure_network.html", nullptr, HttpMediaTypes::HTML);
+    server->on(Routes::ROOT, HTTP_GET, [this](AsyncWebServerRequest *req) {
+        serveSPIFFSFile(req, "/pages/configure_network.html", nullptr, HttpMediaTypes::HTML, _logger);
     });
 
     server->on(Routes::GET_SSID_LIST, HTTP_GET, [](AsyncWebServerRequest *req) {
@@ -72,51 +126,25 @@ void MBXServer::configureAccessPointRoutes() const {
                }
     );
 
-    server->on(Routes::RESET_NETWORK, HTTP_GET, [](AsyncWebServerRequest *req) {
-        serveSPIFFSFile(req, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML);
+    server->on(Routes::RESET_NETWORK, HTTP_GET, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        serveSPIFFSFile(req, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML,
+                        _logger);
     }).setFilter(accessPointFilter);
 
-    server->on(Routes::GET_WIFI_STATUS, HTTP_GET, [](AsyncWebServerRequest *req) {
+    server->on(Routes::GET_WIFI_STATUS, HTTP_GET, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
         MBXServerHandlers::handleWifiStatus(req, g_wifi);
     });
-    server->on(Routes::POST_WIFI_AP_OFF, HTTP_POST, MBXServerHandlers::handleWifiApOff);
-    server->on(Routes::POST_WIFI_CANCEL, HTTP_POST, [](AsyncWebServerRequest *req) {
+    server->on(Routes::POST_WIFI_AP_OFF, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        MBXServerHandlers::handleWifiApOff(req);
+    });
+    server->on(Routes::POST_WIFI_CANCEL, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
         MBXServerHandlers::handleWifiCancel(req, g_wifi);
     });
     _logger->logDebug("MBXServer::configureAccessPointRoutes - end");
-}
-
-void MBXServer::configurePageRoutes() const {
-    _logger->logDebug("MBXServer::configurePageRoutes - begin");
-    server->serveStatic("/", SPIFFS, "/")
-            .setDefaultFile("/index.html")
-            .setCacheControl("no-store");
-
-    server->on(Routes::ROOT, HTTP_GET, [](AsyncWebServerRequest *req) {
-        req->send(SPIFFS, "/index.html", HttpMediaTypes::HTML);
-    });
-
-    server->on(Routes::CONFIGURE, HTTP_GET, [](AsyncWebServerRequest *req) {
-        req->send(SPIFFS, "/pages/configure.html", HttpMediaTypes::HTML);
-    });
-
-    server->on(Routes::UPLOAD, HTTP_POST, [](AsyncWebServerRequest *req) {
-        req->send(HttpResponseCodes::OK, HttpMediaTypes::PLAIN_TEXT, "Upload OK");
-    }, MBXServerHandlers::handleUpload);;
-
-    server->on(Routes::DOWNLOAD_CFG, HTTP_GET, [](AsyncWebServerRequest *req) {
-        serveSPIFFSFile(req, "/conf/config.json", nullptr, HttpMediaTypes::JSON);
-    });
-
-    server->on(Routes::DOWNLOAD_CFG_EX, HTTP_GET, [](AsyncWebServerRequest *req) {
-        serveSPIFFSFile(req, "/conf/example.json", nullptr, HttpMediaTypes::JSON);
-    });
-
-    server->on(Routes::RESET_NETWORK, HTTP_GET, [](AsyncWebServerRequest *req) {
-        serveSPIFFSFile(req, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML);
-    }).setFilter(accessPointFilter);
-
-    _logger->logDebug("MBXServer::configurePageRoutes - end");
 }
 
 auto MBXServer::accessPointFilter(AsyncWebServerRequest *request) -> bool {
@@ -127,7 +155,6 @@ auto MBXServer::accessPointFilter(AsyncWebServerRequest *request) -> bool {
 
 auto MBXServer::tryConnectWithStoredCreds() const -> bool {
     _logger->logDebug("MBXServer::tryConnectWithStoredCreds - begin");
-    _logger->logDebug(("MBXServer::tryConnectWithStoredCreds - #1 SSID Stored in NVS: " + String(WiFi.SSID())).c_str());
 
     if (WiFiClass::getMode() != WIFI_MODE_STA) {
         WiFiClass::mode(WIFI_MODE_STA);
@@ -151,19 +178,28 @@ auto MBXServer::tryConnectWithStoredCreds() const -> bool {
 }
 
 void MBXServer::serveSPIFFSFile(AsyncWebServerRequest *reqPtr, const char *path, const std::function<void()> &onServed,
-                                const char *contentType) {
+                                const char *contentType, const Logger *logger) {
     if (SPIFFS.exists(path)) {
-        Serial.println("Serving file: " + String(path));
+        logger->logDebug(("Serving file: " + String(path)).c_str());
         reqPtr->send(SPIFFS, path, contentType);
         if (onServed) {
-            Serial.println("Calling onServed");
-            onServed();
-            Serial.println("onServed called");
+            reqPtr->onDisconnect([onServed, logger]() {
+                logger->logDebug("Calling onServed (deferred)");
+                onServed();
+                logger->logDebug("onServed called (deferred)");
+            });
+
         }
     } else {
-        Serial.println("File not found: " + String(path));
+        logger->logDebug(("File not found: " + String(path)).c_str());
         reqPtr->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT, "Page not found");
     }
+}
+
+void MBXServer::logRequest(const AsyncWebServerRequest *request) const {
+    _logger->logDebug(
+        ("MBXServer: - Processing request: " + String(request->methodToString()) + ": " + String(request->url())).
+        c_str());
 }
 
 void MBXServer::ensureConfigFile() const {
@@ -207,4 +243,28 @@ auto MBXServer::readConfig() const -> String {
     String json = file.readString();
     file.close();
     return json;
+}
+
+void MBXServer::streamSPIFFSFileChunked(AsyncWebServerRequest* req, const char* path, const char* contentType) {
+
+    if (!SPIFFS.exists(path)) {
+        req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT, "Page not found");
+        return;
+    }
+
+    auto filePtr = std::make_shared<File>(SPIFFS.open(path, FILE_READ));
+    if (!filePtr || !(*filePtr)) {
+        req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::PLAIN_TEXT, "File open failed");
+        return;
+    }
+
+    auto* response = req->beginChunkedResponse(contentType, [filePtr](uint8_t* buffer, const size_t maxLen, size_t) -> size_t {
+        if (!*filePtr) return 0;
+        const size_t n = filePtr->read(buffer, maxLen);
+        // Returning 0 signals end-of-stream; shared_ptr will release and close
+        return n;
+    });
+
+    response->addHeader("Cache-Control", "no-store");
+    req->send(response);
 }

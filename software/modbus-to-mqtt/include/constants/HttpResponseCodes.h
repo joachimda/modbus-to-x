@@ -7,6 +7,7 @@ public:
     static constexpr int SERVER_ERROR = 500;
     static constexpr int NOT_FOUND = 404;
     static constexpr int REDIRECT = 302;
+    static constexpr int INTERNAL_SERVER_ERROR = 500;
 };
 
 #endif

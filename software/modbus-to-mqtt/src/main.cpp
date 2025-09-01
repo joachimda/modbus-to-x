@@ -110,7 +110,6 @@ void setup() {
     logger.addTarget(&mqttLogger);
     logger.logDebug("main::setup() - System initiating");
 
-    logger.logDebug(("SSID stored in NVS: " + String(WiFi.SSID())).c_str());
     //addSubscriptionHandlers();
     //commLink.overrideUserConfig("espuser","test", "10.159.188.206","1883", "8N1", 9600);
 

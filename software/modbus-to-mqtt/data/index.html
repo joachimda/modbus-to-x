@@ -5,24 +5,69 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Modbus To X</title>
     <link rel="stylesheet" href="/style.css">
-    <link rel="stylesheet" href="style.css">
+    <script type="importmap">
+        {
+          "imports": {
+            "app": "/js/app.js",
+            "index": "/js/index.js"
+          }
+        }
+    </script>
+
 </head>
 <body data-page="index">
-<h1>Modbus To X</h1>
-<div class="info-box">
-    <h2>Device Information</h2>
-    <p><strong>Firmware:</strong> v1.0.0</p>
-    <p><strong>Chip ID:</strong> <span id="chipId">Loading...</span></p>
+<div class="page">
+    <header style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
+        <div>
+            <h1>Modbus-to-X</h1>
+            <div class="muted" id="device-subtitle">Loading device info…</div>
+        </div>
+        <nav class="actions">
+            <a class="btn" href="/pages/configure_network.html">Network</a>
+            <a class="btn" href="/pages/configure.html">Configure Modbus</a>
+            <button class="btn" id="btn-reboot">Reboot</button>
+        </nav>
+    </header>
+
+    <section class="grid" style="margin-top:1rem;">
+        <article class="card" id="card-system">
+            <h3>System</h3>
+            <div class="kvs" id="system-kvs"></div>
+        </article>
+
+        <article class="card" id="card-wifi">
+            <h3>Wi-Fi</h3>
+            <div class="kvs" id="wifi-kvs"></div>
+        </article>
+
+        <article class="card" id="card-mqtt">
+            <h3>MQTT</h3>
+            <div class="kvs" id="mqtt-kvs"></div>
+        </article>
+
+        <article class="card" id="card-modbus">
+            <h3>Modbus</h3>
+            <div class="kvs" id="modbus-kvs"></div>
+        </article>
+
+        <article class="card" id="card-storage">
+            <h3>Storage</h3>
+            <div class="kvs" id="storage-kvs"></div>
+        </article>
+    </section>
+
+    <section class="card" style="margin-top:1rem;">
+        <h3>Live health</h3>
+        <div id="health-line" class="muted">Connecting…</div>
+    </section>
+
+    <p class="footer">Firmware <span id="fw-version" class="mono">—</span> • Build <span id="build-date" class="mono">—</span></p>
 </div>
 
-<div class="card">
-    <div class="toolbar">
-        <a href="pages/configure.html" class="btn">Configure Devices &amp; Modbus</a>
-        <a href="pages/configure_network.html" class="btn">Configure Network</a>
-    </div>
-</div>
+<script type="module">
+    import 'app';
+    import 'index';
+</script>
 
-<script src="/app.js" defer></script>
-<script src="app.js" defer></script>
 </body>
 </html>

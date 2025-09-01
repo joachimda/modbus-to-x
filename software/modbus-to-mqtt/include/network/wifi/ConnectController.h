@@ -115,7 +115,6 @@ public:
         }
         Serial.printf("WiFiConnectController::connect - WiFi.begin(%s, ******) returned OK", ssid.c_str());
         Serial.println();
-        Serial.println("WiFiConnectController::connect - SSID Stored in NVS: " + String(WiFi.SSID()));
         return true;
     }
 

@@ -1,116 +1,213 @@
 <!DOCTYPE html>
-<html lang="en" xmlns="http://www.w3.org/1999/html">
+<html lang="en" xmlns="http://www.w3.org/1999/html" xmlns="http://www.w3.org/1999/html">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Modbus To X – Configuration</title>
-    <link rel="stylesheet" href="/style.css">
-    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="/style.css" />
+    <script type="importmap">
+        {
+          "imports": {
+            "app": "/js/app.js",
+            "configure": "/js/pages/configure_v2.js"
+          }
+        }
+    </script>
 </head>
-<body data-page="configure">
-<h1>Modbus To X</h1>
-<p class="sub">Serial &amp; Modbus Configuration</p>
-
-<div class="card">
-    <div class="toolbar">
-        <button id="btnLoad" class="btn">Reload from device</button>
-        <a class="btn secondary" href="/download/config" target="_blank">Download current</a>
-        <a class="btn secondary" href="/download/config_example" target="_blank">Download example</a>
-        <button id="btnSave" class="btn">Save to device</button>
-    </div>
-    <div id="WIFI_STATUS" class="WIFI_STATUS"></div>
-</div>
-
-<div class="card">
-    <h3>RS485 Configuration</h3>
-    <div class="row">
+<body class="configure" data-page="configure_v2">
+<div class="page">
+    <header style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
         <div>
-            <label for="bus1_baud">Baud</label>
-            <select id="bus1_baud"></select>
+            <h1>Configure Modbus</h1>
+            <div class="muted">Set up buses, devices, and datapoints. Changes are saved to SPIFFS and can be applied live.</div>
+        </div>
+        <nav class="toolbar">
+            <button class="btn" id="btn-validate">Validate</button>
+            <button class="btn" id="btn-export">Export JSON</button>
+            <label class="btn" for="file-import" title="Import JSON">Import JSON</label>
+            <input id="file-import" type="file" accept="application/json" style="display:none" />
+            <button class="btn" id="btn-reload">Reload</button>
+            <button class="btn primary" id="btn-save-apply">Save & Apply</button>
+        </nav>
+    </header>
 
-            <label for="bus1_format">Serial format</label>
-            <select id="bus1_format"></select>
+    <section class="layout">
+        <!-- Left: tree -->
+        <aside class="card sidebar">
+            <div class="tree">
+                <div class="header">
+                    <strong>Configuration</strong>
+                    <!-- removed global +buttons; they move to better places -->
+                </div>
+                <label for="tree-search"></label>
+                <input id="tree-search" class="tree-search" placeholder="Search devices/datapoints…"/>
+                <div id="tree-list" class="list"></div>
 
-            <label for="bus1_term">Termination</label>
-            <select id="bus1_term">
-                <option value="120R">120R</option>
-            </select>
-
-            <div class="switch">
-                <input type="checkbox" id="bus1_bias" />
-                <label for="bus1_bias">Enable bias</label>
+                <div class="sidebar-footer">
+                    <button class="btn" id="btn-add-device">+ Add Device</button>
+                </div>
             </div>
-        </div>
-    </div>
+        </aside>
+        <!-- Right: editor -->
+        <main class="card scroll">
+            <div id="editor-placeholder" class="muted">Select Device or Datapoint to edit, or click the Bus to adjust serial/pins.</div>
+
+            <!-- Bus editor  -->
+            <div id="editor-bus" style="display:none">
+                <h3>Edit RS485 Bus </h3>
+                <div class="kvs">
+                    <!-- BAUD Rate -->
+                    <div>Baud</div>
+                    <label for="bus-baud"></label>
+                    <input id="bus-baud" type="number" step="1" min="1200" />
+
+                    <!-- Parity -->
+                    <div>Parity</div>
+                    <label for="bus-serial-parity"></label>
+                    <select id="bus-serial-parity">
+                        <option value="N">None</option>
+                        <option value="O">Odd</option>
+                        <option value="E">Even</option>
+                        <option value="M">Mark</option>
+                        <option value="S">Space</option>
+                    </select>
+
+                    <!-- Stop Bits -->
+                    <div>Stop Bits</div>
+                    <label for="bus-serial-stop-bits"></label>
+                    <select id="bus-serial-stop-bits">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                    </select>
+
+                    <!-- Data Bits -->
+                    <div>Data Bits</div>
+                    <label for="bus-data-bits"></label>
+                    <select id="bus-data-bits">
+                        <option value="8">8</option>
+                        <option value="7">7</option>
+                        <option value=9">9</option>
+                    </select>
+                </div>
+                <div class="divider"></div>
+                <div class="hstack">
+                    <button class="btn" id="btn-bus-save">Save</button>
+                    <span class="hint">Bus is fixed across all configured devices; .</span>
+                </div>
+            </div>
+
+            <!-- Device editor -->
+            <div id="editor-device" style="display:none">
+                <h3 class="with-actions">
+                    Edit Device
+                </h3>
+                <span class="spacer"></span>
+                <button class="btn" id="btn-dev-add-dp">+ Datapoint</button>
+
+                <div class="kvs">
+                    <div>Device Name</div>
+                    <label for="dev-name"></label><input id="dev-name"/>
+                    <div>Slave ID</div>
+                    <label for="dev-slave"></label><input id="dev-slave" type="number" min="1" max="247"/>
+                    <div>Notes</div>
+                    <label for="dev-notes"></label><input id="dev-notes" placeholder="Optional"/>
+                </div>
+                <div class="divider"></div>
+
+                <!-- Datapoints -->
+                <h4>Datapoints</h4>
+                <table class="table" id="dev-dp-table">
+                    <thead>
+                    <tr>
+                        <th>ID</th><th>Name</th><th>Function</th><th>Address</th><th>Type</th><th></th>
+                    </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <div class="divider"></div>
+                <div class="hstack">
+                    <button class="btn" id="btn-dev-save">Save</button>
+                    <button class="btn danger" id="btn-dev-delete">Delete Device</button>
+                </div>
+            </div>
+
+            <!-- Datapoint editor -->
+            <div id="editor-dp" style="display:none">
+                <h3>Edit Datapoint</h3>
+                <div class="kvs">
+                    <div>Device</div>
+                    <label for="dp-device"></label><select id="dp-device"></select>
+                    <div>Datapoint Name</div>
+                    <label for="dp-name"></label><input id="dp-name"/>
+                    <div>Auto ID</div>
+                    <div>
+                        <span id="dp-autoid" class="mono pill">—</span>
+                        <span class="hint">ID = &lt;device&gt;.&lt;name&gt; (lowercase)</span>
+                    </div>
+                    <div>Function</div>
+                    <label for="dp-func"></label>
+                    <select id="dp-func">
+                        <option value=1>1 (READ_COIL)</option>
+                        <option value=2>2 (READ_DISCRETE)</option>
+                        <option value=3>3 (READ_HREG)</option>
+                        <option value=4>4 (READ_IREG)</option>
+                        <option value=5>5 (WRITE_COIL)</option>
+                        <option value=6>6 (WRITE_HREG)</option>
+                    </select>
+                    <div>Address</div>
+                    <label for="dp-addr"></label>
+                    <input id="dp-addr" type="number" min="0" step="1"/>
+                    <div>Length</div>
+                    <label for="dp-len"></label>
+                    <input id="dp-len" type="number" min="1" step="1" value="1"/>
+
+                    <!-- Data Type -->
+                    <div>Data Type</div>
+                    <label for="dp-type"></label>
+                    <select id="dp-type">
+                        <option value="bool">bool</option>
+                        <option value="u16">u16</option>
+                        <option value="s16">s16</option>
+                        <option value="u32">u32</option>
+                        <option value="s32">s32</option>
+                        <option value="float32_be">float32_be</option>
+                        <option value="float32_le">float32_le</option>
+                    </select>
+
+                    <div>Scale</div>
+                    <label for="dp-scale"></label>
+                    <input id="dp-scale" type="number" step="0.0001" value="1"/>
+
+                    <div>Unit</div>
+                    <label for="dp-unit"></label>
+                    <input id="dp-unit" placeholder="e.g. °C, Pa, %"/>
+
+                    <div>MQTT Topic</div>
+                    <label for="dp-topic"></label>
+                    <input id="dp-topic" placeholder="optional; defaults to /mbx/&lt;id&gt;"/>
+                </div>
+
+                <div class="divider"></div>
+                <div class="hstack">
+                    <button class="btn" id="btn-dp-test-read">Test Read</button>
+                    <button class="btn" id="btn-dp-test-write">Test Write</button>
+                    <label for="dp-test-value"></label>
+                    <input id="dp-test-value" class="mono" placeholder="value for write" />
+                    <span id="dp-test-result" class="hint"></span>
+                </div>
+
+                <div class="divider"></div>
+                <div class="hstack">
+                    <button class="btn" id="btn-dp-save">Save</button>
+                    <button class="btn danger" id="btn-dp-delete">Delete Datapoint</button>
+                </div>
+            </div>
+        </main>
+    </section>
 </div>
-
-<div class="card">
-    <h3>Add Device</h3>
-    <div class="row">
-        <div>
-            <label for="dev_name">Name</label>
-            <input type="text" id="dev_name" placeholder="VentilationUnit" />
-
-            <label for="dev_slave">Slave ID (1–247)</label>
-            <input type="text" id="dev_slave" placeholder="1" />
-
-            <label for="dev_order">Default Byte Order</label>
-            <select id="dev_order">
-                <option value="ABCD">ABCD</option>
-                <option value="DCBA">DCBA</option>
-            </select>
-
-            <input type="hidden" id="dev_bus" value="1" />
-        </div>
-        <div>
-            <p class="sub">Fill in device basics, then add one or more datapoints below. When ready, click “Add Device to JSON.”</p>
-            <button id="btnAddDevice" class="btn">Add Device to JSON</button>
-        </div>
-    </div>
-
-    <h4 style="margin-top:14px">Datapoints</h4>
-    <div class="toolbar">
-        <button id="btnAddDpRow" class="btn secondary">Add datapoint row</button>
-        <button id="btnClearDpRows" class="btn danger">Clear all rows</button>
-    </div>
-
-    <div style="overflow:auto; margin-top:10px">
-        <table id="dpTable" style="width:100%; border-collapse:collapse">
-            <thead>
-            <tr style="text-align:left">
-                <th>Name</th>
-                <th>Address</th>
-                <th>No. of Registers</th>
-                <th>Scale</th>
-                <th>Register Type</th>
-                <th>Data Type</th>
-                <th>Unit</th>
-                <th>Access</th>
-                <th>Poll(ms)</th>
-                <th>DeadBand</th>
-                <th>Precision</th>
-                <th></th>
-            </tr>
-            </thead>
-            <tbody id="dpBody"></tbody>
-        </table>
-    </div>
-
-    <details id="advJson" class="card" data-pref="advJsonOpen">
-        <summary>
-            <h3 style="display:inline">Advanced: Full JSON</h3>
-            <span class="sub"> — only needed for power users</span>
-        </summary>
-
-        <div class="toolbar" style="margin-top:10px">
-            <button id="btnApply" class="btn secondary">Apply editor changes</button>
-            <button id="btnFormat" class="btn secondary">Format JSON</button>
-        </div>
-
-        <p class="sub">Edit full configuration (devices, datapoints, etc.). Be careful—invalid JSON will be rejected on save.</p>
-        <label for="jsonBox"></label><textarea id="jsonBox" spellcheck="false"></textarea>
-    </details>
-</div>
-<script src="/app.js" defer></script>
+<script type="module">
+    import 'app';
+    import 'configure';
+</script>
 </body>
 </html>

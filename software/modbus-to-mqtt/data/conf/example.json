@@ -17,7 +17,6 @@
       "name": "VentilationUnit",
       "busId": 1,
       "slaveId": 1,
-      "defaultByteOrder": "ABCD",
       "dataPoints": [
         {
           "id": "voltage",
@@ -25,24 +24,22 @@
           "address": 1234,
           "numOfRegisters": 1,
           "scale": 0.1,
-          "registerType": "I",
-          "dataType": "F32",
+          "dataType": "f32",
           "unit": "V",
+          "function": 3,
           "access": "r",
-          "pollMs": 1000,
-          "deadBand": 0.1,
           "precision": 2
         },
         {
           "id": "t_setpoint",
           "name": "Temp Setpoint",
-          "registerType": "H",
+          "registerType": "HREG",
           "address": 100,
           "numOfRegisters": 1,
-          "dataType": "S16",
+          "dataType": "s16",
           "scale": 0.1,
           "unit": "°C",
-          "access": "rw",
+          "function": 3,
           "pollMs": 2000
         }
       ]

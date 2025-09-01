@@ -52,7 +52,6 @@ void NetworkPortal::begin() {
             lastScanTime = millis();
             lastScanStart.store(lastScanTime, std::memory_order_release);
             _logger->logDebug("NetworkPortal::begin - Async Scan Initiated)");
-            _logger->logDebug(("NetworkPortal::begin - SSID stored in NVS: " + String(WiFi.SSID())).c_str());
             }
 
         if (!_scanSuspended && millis() - lastScanPoll >= SCAN_POLL_INTERVAL_MS) {

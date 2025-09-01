@@ -4,21 +4,28 @@
     <meta charset="utf-8" />
     <title>Configure Network | Modbus To X</title>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <link rel="stylesheet" href="/style.css">
     <link rel="stylesheet" href="../style.css">
+    <script type="importmap">
+        {
+          "imports": {
+            "app": "/js/app.js",
+            "configure_network": "/js/pages/configure_network.js"
+          }
+        }
+    </script>
 </head>
-<body>
+<body data-page="configure_network">
 <header>
     <h1>Configure Wi-Fi</h1>
 </header>
 <main class="row">
-    <!-- Left: scan & pick -->
     <section class="card">
         <h2>Available Networks</h2>
         <div class="toolbar">
+            <label for="filter"></label>
             <input id="filter" type="text" placeholder="Filter SSIDs…" />
             <button id="refresh" class="btn">Refresh</button>
-            <span id="scanState" class="muted"></span>
+            <span id="scanState" class="muted"></span>www
         </div>
         <div id="list" class="list" role="list"></div>
         <div class="hint" id="scanHint">
@@ -105,7 +112,9 @@
         <div id="finalBadge" class="right" style="margin-top:10px"></div>
     </section>
 </main>
-<script src="/app.js" defer></script>
-<script src="../app.js" defer></script>
+<script type="module">
+    import 'app';
+    import 'configure_network';
+</script>
 </body>
 </html>

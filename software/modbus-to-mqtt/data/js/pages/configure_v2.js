@@ -1,27 +1,13 @@
 import {safeJson} from "app";
 
-
 window.initConfigureV2 = async function initConfigureV2() {
     await load().catch(err);
 }
-// Single-bus config (immutable count; editable fields).
-// If backend returns 0 buses, we create a local draft with one default bus.
+
 let model = { buses: [] };
 let BUS_ID = "bus_1";
 let selection = { kind: "bus", deviceId: null, datapointId: null };
 
-// --- helpers ---
-const $ = (s) => document.querySelector(s);
-const slug = (s) => (s || "").toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g,"");
-const dpIdFrom = (deviceName, dpName) => `${slug(deviceName)}.${slug(dpName)}`;
-const getBus = () => model.buses[0];
-const getDevice = (did) => (getBus()?.devices || []).find(d => d.id === did);
-const getDatapoint = (did, pid) => (getDevice(did)?.datapoints || []).find(p => p.id === pid);
-
-function toast(msg) { console.log(msg); }
-function err(e) { console.error(e); alert(e.message || e); }
-
-// --- load / save ---
 async function load() {
     const cfg = await safeJson("/conf/config.json");
     if (cfg && Array.isArray(cfg.buses) && cfg.buses.length > 0) {
@@ -52,12 +38,10 @@ async function saveApply() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(model),
     });
-    // apply live
     await safeJson("/api/modbus/apply", { method: "POST" });
     toast("Saved and applied.");
 }
 
-// --- tree rendering ---
 function buildTree() {
     const q = $("#tree-search").value?.toLowerCase() || "";
     const list = $("#tree-list");
@@ -137,12 +121,6 @@ function buildTree() {
     });
 }
 
-function numberToHex(n) {
-    if (n == null || Number.isNaN(Number(n))) return "";
-    const num = Math.trunc(Number(n));
-    return Math.abs(num).toString(16);
-}
-
 function addDatapointToCurrentDevice() {
     const d = getDevice(selection.deviceId);
     if (!d) return;
@@ -167,40 +145,14 @@ function addDatapointToCurrentDevice() {
     buildTree();
     showDatapointEditor();
 }
-$('#btn-add-device').onclick = () => {
-    const b = getBus();
-    const id = `dev_${Date.now()}`;
-    b.devices = b.devices || [];
-    b.devices.push({ id, name: "device", slaveId: 1, notes: "", datapoints: [] });
-    selection = {
-        kind:"device", deviceId:id, datapointId:null
-    };
-    buildTree();
-    showDeviceEditor();
-};
-
-$("#btn-dev-add-dp").onclick = () => {
-    if (selection.kind !== "device") return;
-    addDatapointToCurrentDevice();
-};
-function matches(q, arr) {
-    if (!q)
-    {
-        return true;
-    }
-    return arr.some(x => (x+"").toLowerCase().includes(q));
-}
-
-// --- selection controls ---
-function showOnly(id) {
-    $("#editor-placeholder").style.display = "none";
-    ["#editor-bus","#editor-device","#editor-dp"].forEach(s => $(s).style.display = "none");
-    $(id).style.display = "block";
-}
 
 // --- editors ---
 function showBusEditor() {
-    const b = getBus(); if (!b) return;
+    const b = getBus();
+    if (!b)
+    {
+        return;
+    }
     showOnly("#editor-bus");
     $("#bus-baud").value = b.baud || 9600;
     $("#bus-serial-parity").value = b.parity || "N";
@@ -300,16 +252,6 @@ function showDatapointEditor() {
     $("#dp-scale").value = datapoint.scale ?? 1;
     $("#dp-unit").value = datapoint.unit || "";
     $("#dp-topic").value = datapoint.topic || "";
-
-    const recomputeId = () => {
-        const dev = getDevice($("#dp-device").value);
-        const name = $("#dp-name").value;
-        $("#dp-autoid").textContent = dpIdFrom(dev?.name || "device", name || "datapoint");
-    };
-
-    $('#dp-name').addEventListener("input", recomputeId);
-    $('#dp-device').addEventListener("change", recomputeId);
-
     $("#btn-dp-save").onclick = () => {
         const newDevId = $("#dp-device").value;
         const name = $("#dp-name").value.trim();
@@ -350,7 +292,6 @@ function showDatapointEditor() {
         showDatapointEditor();
         toast("Datapoint updated (draft)");
     };
-
     $("#btn-dp-delete").onclick = () => {
         if (!confirm("Delete this datapoint?"))
         {
@@ -395,6 +336,18 @@ function showDatapointEditor() {
     };
 }
 
+/*
+* Helpers
+* */
+const $ = (s) => document.querySelector(s);
+const slug = (s) => (s || "").toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g,"");
+const dpIdFrom = (deviceName, dpName) => `${slug(deviceName)}.${slug(dpName)}`;
+const getBus = () => model.buses[0];
+const getDevice = (did) => (getBus()?.devices || []).find(d => d.id === did);
+const getDatapoint = (did, pid) => (getDevice(did)?.datapoints || []).find(p => p.id === pid);
+
+function toast(msg) { console.log(msg); }
+function err(e) { console.error(e); alert(e.message || e); }
 function findDpById(id) {
     const b = getBus();
     for (const d of (b.devices || [])) {
@@ -405,25 +358,32 @@ function findDpById(id) {
     return null;
 }
 
-// --- toolbar ---
-$("#btn-validate").onclick = async () => {
-    try {
-        const res = await safeJson("/api/config/validate", {
-            method: "POST", headers: { "Content-Type":"application/json" },
-            body: JSON.stringify({ buses: [ getBus() ] }),
-        });
-        alert(res.ok ? "Validation OK" : `Validation errors:\n${(res.errors||[]).join("\n")}`);
-    } catch (e) { err(e); }
+const recomputeId = () => {
+    const dev = getDevice($("#dp-device").value);
+    const name = $("#dp-name").value;
+    $("#dp-autoid").textContent = dpIdFrom(dev?.name || "device", name || "datapoint");
 };
+function showOnly(id) {
+    $("#editor-placeholder").style.display = "none";
+    ["#editor-bus","#editor-device","#editor-dp"].forEach(s => $(s).style.display = "none");
+    $(id).style.display = "block";
+}
+function matches(q, arr) {
+    if (!q)
+    {
+        return true;
+    }
+    return arr.some(x => (x+"").toLowerCase().includes(q));
+}
+function numberToHex(n) {
+    if (n == null || Number.isNaN(Number(n))) return "";
+    const num = Math.trunc(Number(n));
+    return Math.abs(num).toString(16);
+}
 
-$("#btn-export").onclick = () => {
-    const blob = new Blob([JSON.stringify({ buses: [ getBus() ] }, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "modbus-config.json";
-    a.click();
-    URL.revokeObjectURL(a.href);
-};
+/*
+* Listeners
+* */
 $("#file-import").addEventListener("change", async (ev) => {
     const f = ev.target.files?.[0];
     if (!f) return;
@@ -435,14 +395,53 @@ $("#file-import").addEventListener("change", async (ev) => {
         {
             throw new Error("Import must contain a 'buses' array with a single bus.");
         }
-        model = { buses: [ bus ] };
+        model = {
+            buses: [ bus ]
+        };
         BUS_ID = bus.id || BUS_ID;
-        selection = { kind:"bus", deviceId:null, datapointId:null };
+        selection = {
+            kind:"bus", deviceId:null, datapointId:null
+        };
         buildTree();
         showBusEditor();
         toast("Imported draft (not saved yet)");
     } catch (e) { err(e); }
 });
+$('#tree-search').addEventListener("input", buildTree);
+$('#dp-name').addEventListener("input", recomputeId);
+$('#dp-device').addEventListener("change", recomputeId);
+
+$('#btn-add-device').onclick = () => {
+    const b = getBus();
+    const id = `dev_${Date.now()}`;
+    b.devices = b.devices || [];
+    b.devices.push({ id, name: "device", slaveId: 1, notes: "", datapoints: [] });
+    selection = {
+        kind:"device", deviceId:id, datapointId:null
+    };
+    buildTree();
+    showDeviceEditor();
+};
+$("#btn-dev-add-dp").onclick = () => {
+    if (selection.kind !== "device") return;
+    addDatapointToCurrentDevice();
+};
+$("#btn-validate").onclick = async () => {
+    try {
+        const res = await safeJson("/api/config/validate", {
+            method: "POST", headers: { "Content-Type":"application/json" },
+            body: JSON.stringify({ buses: [ getBus() ] }),
+        });
+        alert(res.ok ? "Validation OK" : `Validation errors:\n${(res.errors||[]).join("\n")}`);
+    } catch (e) { err(e); }
+};
+$("#btn-export").onclick = () => {
+    const blob = new Blob([JSON.stringify({ buses: [ getBus() ] }, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "modbus-config.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+};
 $("#btn-reload").onclick = () => load();
 $("#btn-save-apply").onclick = () => saveApply().catch(err);
-$('#tree-search').addEventListener("input", buildTree);

@@ -1,46 +1,35 @@
 #ifndef MODBUSMANAGER_H
 #define MODBUSMANAGER_H
 #include <vector>
-#include "ModbusRegister.h"
-#include "ModbusUserConfig.h"
+#include "config_structs/ModbusDatapoint.h"
 #include "commlink/CommLink.h"
 #include "ModbusMaster.h"
+#include "config_structs/ConfigurationRoot.h"
 
 class ModbusManager {
 public:
     explicit ModbusManager(Logger *logger);
 
-    void initialize();
+    bool begin();
 
-    void readRegisters();
+    void initializeWiring() const;
 
-    void clearRegisters();
-
-    String getRegisterConfigurationAsJson() const;
-
-    void loadRegisterConfig();
-
-    uint16_t getRegisterCount();
-
-    void updateRegisterConfigurationFromJson(const String& registerConfigJson, bool clearExisting);
-
-    std::vector<ModbusRegister> getRegisters() const;
-
-    ModbusUserConfig getUserConfig();
+    void loop();
 
 private:
-    static void preTransmissionHandler();
+    void readModbusDevice(const ModbusDevice &dev);
 
-    void addRegister(const ModbusRegister& reg);
+    bool loadConfiguration();
+
+    static void preTransmissionHandler();
 
     static void postTransmissionHandler();
 
-    void saveRegisters();
-
-    std::vector<ModbusRegister> _modbusRegisters;
+    std::vector<ModbusDatapoint> _modbusRegisters;
     ModbusMaster node;
-    Logger * _logger;
+    Logger *_logger;
     Preferences preferences;
 
+    ConfigurationRoot _modbusRoot{};
 };
 #endif //MODBUSMANAGER_H

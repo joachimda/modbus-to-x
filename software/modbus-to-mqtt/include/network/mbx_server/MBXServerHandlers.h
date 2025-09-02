@@ -4,6 +4,7 @@
 #include "ESPAsyncWebServer.h"
 #include "network/NetworkPortal.h"
 #include "network/wifi/ConnectController.h"
+#include "MemoryLogger.h"
 
 class MBXServerHandlers{
 public:
@@ -11,6 +12,8 @@ public:
     static void getSsidListAsJson(AsyncWebServerRequest *req);
     static void handleUpload(AsyncWebServerRequest *r, const String &fn, size_t index,
                             uint8_t *data, size_t len, bool final);
+    static void handlePutModbusConfigBody(AsyncWebServerRequest* req, const uint8_t* data, size_t len, size_t index, size_t total);
+
 
     static void handleNetworkReset();
     static void handleWifiConnect(AsyncWebServerRequest* req, WiFiConnectController& wifi, uint8_t* data, size_t len, size_t index, size_t total);
@@ -19,6 +22,10 @@ public:
     static void handleWifiApOff(AsyncWebServerRequest* req);
 
     static void getSystemStats(AsyncWebServerRequest * req, const Logger * logger);
+    static void setMemoryLogger(MemoryLogger* mem);
+    static void getLogs(AsyncWebServerRequest* req);
+
+    static void handleDeviceReset(const Logger *logger);
 };
 
 #endif

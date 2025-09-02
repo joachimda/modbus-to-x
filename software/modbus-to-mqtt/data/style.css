@@ -111,6 +111,10 @@ input[type="password"]:focus {
     transform: translateY(1px);
 }
 
+.btn.small { padding: .25rem .5rem; font-size: .85rem; }
+.btn.primary { background:#2f6fed; color:#fff; }
+.btn.danger { background:#b91c1c; color:#fff; }
+
 .btn.secondary {
     background: #374151;
 }
@@ -403,8 +407,25 @@ summary {
 .kvs {
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: .3rem .8rem;
+    gap: .5rem 1rem;
     font-size: .95rem;
+}
+.kvs-2 { grid-template-columns: auto 1fr auto 1fr; }
+.kvs-3 { grid-template-columns: auto 1fr auto 1fr auto 1fr; }
+.kvs-4 { grid-template-columns: auto 1fr auto 1fr auto 1fr auto 1fr; }
+.kvs > div { align-self: center; color:#374151; font-weight:600; }
+.kvs input,
+.kvs select { height: 36px; }
+.kvs .full { grid-column: 2 / -1; }
+
+/* Hide empty label placeholders used for a11y so grid aligns as key+input pairs */
+.configure .kvs label { display: none; }
+
+@media (max-width: 820px) {
+    .kvs-3 { grid-template-columns: auto 1fr auto 1fr; }
+}
+@media (max-width: 620px) {
+    .kvs-2, .kvs-3, .kvs-4 { grid-template-columns: auto 1fr; }
 }
 .kvs div.key {
     color: #666;
@@ -471,6 +492,8 @@ summary {
     font-weight: 600;
     color: #555;
 }
+.table thead th { background:#f8fafc; border-bottom-color:#e5e7eb; }
+.table tr:hover td { background:#fafafa; }
 
 .configure .layout {
     grid-template-columns: 280px 1fr;   /* narrower tree */
@@ -520,3 +543,48 @@ summary {
 /* Editor header: place action buttons near the title */
 .configure h3.with-actions { display:flex; align-items:center; gap:.5rem; }
 .configure h3.with-actions .spacer { flex:1 1 auto; }
+
+/* Modal */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(17,24,39, .45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    z-index: 100;
+}
+.modal { max-width: 820px; width: 100%; }
+
+/* Generic code block */
+.code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    background: #0b0c0f0d;
+    color: inherit;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 8px;
+    padding: .75rem .9rem;
+    white-space: pre;
+}
+
+/* Console-like log viewer */
+.console {
+    background: #0b0c10;
+    color: #d1d5db;
+    border: 1px solid rgba(0,0,0,.25);
+    border-radius: 8px;
+    padding: .6rem .75rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    max-height: 380px;
+    overflow: auto;
+}
+.console .ts { color: #9ca3af; }
+.console .lvl-info { color: #93c5fd; }
+.console .lvl-warn { color: #fcd34d; }
+.console .lvl-err  { color: #fca5a5; }

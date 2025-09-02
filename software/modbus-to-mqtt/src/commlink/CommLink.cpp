@@ -5,7 +5,6 @@
 #include <atomic>
 
 static std::atomic<bool> s_mqttEnabled{false};
-
 static CommLink *s_activeCommLink = nullptr;
 static constexpr auto DEFAULT_MQTT_BROKER_PORT = "1883";
 static constexpr auto DEFAULT_MQTT_BROKER_IP = "0.0.0.0";
@@ -174,16 +173,6 @@ void CommLink::onMqttMessage(const String &topic, const uint8_t *payload, const 
     }
     _subscriptionHandler->handle(topic, message);
     _logger->logDebug("CommLink::onMqttMessage - Received MQTT message");
-}
-
-void CommLink::networkReset() {
-    // AsyncWebServer server(80);
-    // DNSServer dns;
-    // AsyncWiFiManager wm(&server, &dns, _logger);
-    // wm.resetSettings();
-    // _logger->logDebug("CommLink::networkReset - WifiManager preferences purged successfully");
-    // _logger->logDebug("CommLink::networkReset - Sending restart signal");
-    // ESP.restart();
 }
 
 void CommLink::setupLED() {

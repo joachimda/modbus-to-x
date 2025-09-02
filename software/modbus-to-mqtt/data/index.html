@@ -57,8 +57,13 @@
     </section>
 
     <section class="card" style="margin-top:1rem;">
-        <h3>Live health</h3>
-        <div id="health-line" class="muted">Connecting…</div>
+        <details id="logs-panel">
+            <summary style="display:flex;align-items:center;gap:.5rem;">Device Logs <span class="muted" style="font-weight:400">(updates every 10s while open)</span>
+                <span class="spacer"></span>
+                <button class="btn ghost" id="btn-refresh-logs" style="margin:2px 0 0 0;">Refresh</button>
+            </summary>
+            <div class="console" id="logs-console">Open to load logs…</div>
+        </details>
     </section>
 
     <p class="footer">Firmware <span id="fw-version" class="mono">—</span> • Build <span id="build-date" class="mono">—</span></p>

@@ -11,7 +11,9 @@ Local static web server for ESP pages.
 import argparse
 import contextlib
 import http.server
+import json
 import mimetypes
+import random
 import socket
 import socketserver
 import sys
@@ -43,6 +45,101 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
                          (self.client_address[0],
                           self.log_date_time_string(),
                           log_format % args))
+
+    # --- Simple API emulation for local testing ---
+    def _send_json(self, obj, code=200):
+        data = json.dumps(obj).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _handle_api_get(self, path: str) -> bool:
+        # System stats used by index.js
+        if path == "/api/stats/system":
+            now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            # Minimal but realistic payload that index.js expects
+            payload = {
+                "deviceName": "ESP32-DEV",
+                "fwVersion": "dev",
+                "buildDate": now_iso,
+                "chipModel": "ESP32",
+                "chipRevision": 1,
+                "cpuFreqMHz": 240,
+                "sdkVersion": "IDF-5.x",
+                "uptimeMs": int(time.time() * 1000) % (7*24*3600*1000),
+                "heapFree": 256000,
+                "heapMin": 196000,
+                "resetReason": "Power on",
+                # Network
+                "connected": True,
+                "apMode": False,
+                "ssid": "TestNet",
+                "ip": "192.168.1.42",
+                "rssi": -62,
+                "mac": "AA:BB:CC:DD:EE:FF",
+                # MQTT
+                "broker": "mqtt://localhost:1883",
+                "clientId": "esp32-dev",
+                "lastPublishIso": now_iso,
+                "errorCount": 0,
+                # Modbus
+                "buses": 1,
+                "devices": 1,
+                "datapoints": 3,
+                "pollIntervalMs": 1000,
+                "lastPollIso": now_iso,
+            }
+            self._send_json(payload)
+            return True;
+
+        # Logs endpoint used by index
+        if path == "/api/logs":
+            levels = ["INFO", "WARN", "ERROR", "DEBUG"]
+            msgs = [
+                "System boot complete",
+                "Connected to WiFi TestNet",
+                "MQTT connected to mqtt://localhost:1883",
+                "Polling datapoints...",
+                "Read holding register @100 = 42",
+                "Modbus timeout, retrying",
+                "Config saved to SPIFFS",
+            ]
+            def line():
+                ts = time.strftime("%H:%M:%S", time.localtime())
+                lvl = random.choices(levels, weights=[6,2,1,3], k=1)[0]
+                msg = random.choice(msgs)
+                return f"{ts} [{lvl}] {msg}"
+
+            lines = [line() for _ in range(20)]
+            # Return plain text for simplicity
+            body = ("\n".join(lines)).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return True
+
+        if path == "/api/system/reboot":
+            self._send_json({"ok": True})
+            return True
+
+        return False
+
+    def do_GET(self):
+        # Intercept simple API calls; otherwise serve static files
+        if self.path.startswith("/api/"):
+            if self._handle_api_get(self.path):
+                return
+        return super().do_GET()
+
+    def do_POST(self):
+        if self.path == "/api/system/reboot":
+            self._send_json({"ok": True})
+            return
+        return super().do_POST()
 
 
 def find_project_root(start: Path) -> Path:

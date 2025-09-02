@@ -20,11 +20,6 @@ MBXServer::MBXServer(AsyncWebServer *server, DNSServer *dnsServer, Logger *logge
 
 void MBXServer::begin() const {
     _logger->logDebug("MBXServer::begin - begin");
-    if (!SPIFFS.begin(true)) {
-        _logger->logError("An error occurred while mounting SPIFFS");
-        return;
-    }
-
     ensureConfigFile();
     if (tryConnectWithStoredCreds()) {
         configureRoutes();
@@ -62,23 +57,29 @@ void MBXServer::configureRoutes() const {
         streamSPIFFSFileChunked(req, "/index.html", HttpMediaTypes::HTML);
     });
 
-    server->on(Routes::UPLOAD, HTTP_POST, [this](AsyncWebServerRequest *req) {
+    server->on(Routes::PUT_MODBUS_CONFIG, HTTP_PUT, [this](AsyncWebServerRequest *req) {
         logRequest(req);
-        req->send(HttpResponseCodes::OK, HttpMediaTypes::PLAIN_TEXT, "Upload OK");
-    }, MBXServerHandlers::handleUpload);;
+    }, nullptr,[](AsyncWebServerRequest *req, uint8_t *data, size_t len, size_t index, size_t total) {
+        MBXServerHandlers::handlePutModbusConfigBody(req, data, len, index, total);
+    });
 
-    server->on(Routes::DOWNLOAD_CFG, HTTP_GET, [this](AsyncWebServerRequest *req) {
+    server->on(Routes::GET_MODBUS_CONFIG, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         serveSPIFFSFile(req, "/conf/config.json", nullptr, HttpMediaTypes::JSON, _logger);
     });
 
-    server->on(Routes::DOWNLOAD_CFG_EX, HTTP_GET, [this](AsyncWebServerRequest *req) {
+    server->on(Routes::GET_MODBUS_EXAMPLE_CONFIG, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         serveSPIFFSFile(req,
-                        Routes::DOWNLOAD_CFG_EX,
+                        Routes::GET_MODBUS_EXAMPLE_CONFIG,
                         nullptr,
                         HttpMediaTypes::JSON,
                         _logger);
+    });
+
+    server->on(Routes::LOGS, HTTP_GET, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        MBXServerHandlers::getLogs(req);
     });
 
     server->on(Routes::RESET_NETWORK, HTTP_GET, [this](AsyncWebServerRequest *req) {
@@ -94,9 +95,13 @@ void MBXServer::configureRoutes() const {
         MBXServerHandlers::getSystemStats(req, _logger);
     });
     server->onNotFound([this](AsyncWebServerRequest *req) {
-            logRequest(req);
-            req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT, "I haz no file");
-        });
+        logRequest(req);
+        req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT, "I haz no file");
+    });
+    server->on(Routes::DEVICE_RESET, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        MBXServerHandlers::handleDeviceReset(_logger);
+    });
 
     _logger->logDebug("MBXServer::configureRoutes - end");
 }
@@ -188,7 +193,6 @@ void MBXServer::serveSPIFFSFile(AsyncWebServerRequest *reqPtr, const char *path,
                 onServed();
                 logger->logDebug("onServed called (deferred)");
             });
-
         }
     } else {
         logger->logDebug(("File not found: " + String(path)).c_str());
@@ -245,8 +249,7 @@ auto MBXServer::readConfig() const -> String {
     return json;
 }
 
-void MBXServer::streamSPIFFSFileChunked(AsyncWebServerRequest* req, const char* path, const char* contentType) {
-
+void MBXServer::streamSPIFFSFileChunked(AsyncWebServerRequest *req, const char *path, const char *contentType) {
     if (!SPIFFS.exists(path)) {
         req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT, "Page not found");
         return;
@@ -258,12 +261,13 @@ void MBXServer::streamSPIFFSFileChunked(AsyncWebServerRequest* req, const char* 
         return;
     }
 
-    auto* response = req->beginChunkedResponse(contentType, [filePtr](uint8_t* buffer, const size_t maxLen, size_t) -> size_t {
-        if (!*filePtr) return 0;
-        const size_t n = filePtr->read(buffer, maxLen);
-        // Returning 0 signals end-of-stream; shared_ptr will release and close
-        return n;
-    });
+    auto *response = req->beginChunkedResponse(contentType,
+                                               [filePtr](uint8_t *buffer, const size_t maxLen, size_t) -> size_t {
+                                                   if (!*filePtr) return 0;
+                                                   const size_t n = filePtr->read(buffer, maxLen);
+                                                   // Returning 0 signals end-of-stream; shared_ptr will release and close
+                                                   return n;
+                                               });
 
     response->addHeader("Cache-Control", "no-store");
     req->send(response);

@@ -3,17 +3,15 @@
 class Routes {
 public:
     constexpr static auto ROOT = "/";
-    constexpr static auto DOWNLOAD_CFG = "/conf/config.json";
-    constexpr static auto DOWNLOAD_CFG_EX = "/conf/example.json";
     constexpr static auto CONFIGURE = "/configure";
     constexpr static auto RESET_NETWORK = "/reset";
-    constexpr static auto UPLOAD = "/upload";
+    constexpr static auto GET_MODBUS_CONFIG = "/conf/config.json";
+    constexpr static auto GET_MODBUS_EXAMPLE_CONFIG = "/conf/example.json";
 
-    /*
-     * API Routes
-     * */
-    constexpr static auto GET_SYSTEM_INFO = "/api/info";
-    constexpr static auto PUT_GET_CONFIG = "/api/upload";
+    /* *
+     * * Modbus Config API
+     * * */
+    constexpr static auto PUT_MODBUS_CONFIG = "/api/config/modbus";
 
     /* *
      * * WIFI API
@@ -32,7 +30,7 @@ public:
     constexpr static auto STORAGE_STATS = "/api/stats/storage";
     constexpr static auto MODBUS_STATS = "/api/stats/modbus";
     constexpr static auto MQTT_STATS = "/api/stats/mqtt";
-
-
+    constexpr static auto LOGS = "/api/logs";
+    constexpr static auto DEVICE_RESET = "/api/system/reboot";
 };
 #endif

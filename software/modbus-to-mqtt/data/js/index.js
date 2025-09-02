@@ -2,10 +2,9 @@ import {API, safeGet} from "app";
 
 window.initIndex = async function initIndex() {
     $("#btn-reboot").addEventListener("click", reboot);
+    setupLogs();
     await render();
-    await tickHealth();
     setInterval(await render, 30000, );
-    setInterval(tickHealth, 30000);
 }
 const $ = (sel) => document.querySelector(sel);
 const kv = (k, v) => `<div class="key">${k}</div><div>${v ?? "—"}</div>`;
@@ -100,22 +99,49 @@ async function render() {
     ].join("");
 }
 
-async function tickHealth() {
-    const r = await safeGet("/api/health");
-    if (r.__error) {
-        $("#health-line").textContent = `Health: ${r.__error}`;
-        return;
+// --- Logs viewer ---
+let logsTimer = null;
+function setupLogs() {
+    const panel = $("#logs-panel");
+    const refreshBtn = $("#btn-refresh-logs");
+    if (!panel) return;
+    panel.addEventListener('toggle', () => {
+        if (panel.open) {
+            fetchLogs(true);
+            logsTimer = setInterval(fetchLogs, 10000);
+        } else if (logsTimer) {
+            clearInterval(logsTimer);
+            logsTimer = null;
+        }
+    });
+    if (refreshBtn) refreshBtn.addEventListener('click', (e) => { e.preventDefault(); fetchLogs(true); });
+}
+
+async function fetchLogs(forceScroll) {
+    const el = $("#logs-console");
+    if (!el) return;
+    try {
+        const r = await fetch(API.LOGS, { cache: 'no-store' });
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        const ct = r.headers.get('content-type') || '';
+        let text = '';
+        if (ct.includes('application/json')) {
+            const j = await r.json();
+            if (Array.isArray(j.lines)) text = j.lines.join('\n');
+            else if (typeof j.text === 'string') text = j.text;
+            else text = JSON.stringify(j, null, 2);
+        } else {
+            text = await r.text();
+        }
+
+        const atBottom = Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 30;
+        el.textContent = text || '(no logs)';
+        if (forceScroll || atBottom) {
+            el.scrollTop = el.scrollHeight;
+        }
+    } catch (e) {
+        el.textContent = `Error loading logs: ${e.message}`;
     }
-    const parts = [];
-    if (r.ok) parts.push("OK");
-    if (r.components) {
-        Object.keys(r.components).forEach(k => {
-            const s = r.components[k];
-            const cls = s === "ok" ? "ok" : (s === "warn" ? "warn" : (s === "idle" ? "idle" : "bad"));
-            parts.push(`${dot(cls, k)}`);
-        });
-    }
-    $('#health-line').innerHTML = parts.join(" • ");
 }
 
 async function reboot() {

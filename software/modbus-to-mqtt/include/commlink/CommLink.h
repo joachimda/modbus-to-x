@@ -20,8 +20,6 @@ public:
 
     auto startMqttTask() -> bool;
 
-    void networkReset();
-
     static void setupLED();
 
     auto getMqttBroker() -> char*;

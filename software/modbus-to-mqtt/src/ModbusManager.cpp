@@ -1,152 +1,209 @@
 #include "Config.h"
 #include "Modbus/ModbusManager.h"
 
+#include <atomic>
 #include <map>
+#include <SPIFFS.h>
 
 #include "ArduinoJson.h"
 
-static constexpr auto REG_COUNT_KEY = "count";
-static constexpr auto REG_DATA_KEY = "data";
+static std::atomic<bool> BUS_ACTIVE{false};
+static const std::map<String, uint32_t> communicationModes = {
+    {"8N1", SERIAL_8N1},
+    {"8N2", SERIAL_8N2},
+    {"8E1", SERIAL_8E1},
+    {"8E2", SERIAL_8E2},
+    {"8O1", SERIAL_8O1},
+    {"8O2", SERIAL_8O2}
+};
 
 ModbusManager::ModbusManager(Logger *logger) : _logger(logger) {
 }
 
-ModbusUserConfig ModbusManager::getUserConfig() {
-    preferences.begin(MQTT_PREFS_NAMESPACE, false);
-
-    ModbusUserConfig config{};
-    String modbusMode = "";
-
-    if (preferences.isKey("modbus_mode")) {
-         modbusMode = preferences.getString("modbus_mode");
-        _logger->logDebug(("ModbusManager::getMode - Found stored mode: " + modbusMode).c_str());
-    } else {
-        modbusMode = DEFAULT_MODBUS_MODE;
-        _logger->logWarning("ModbusManager::getMode - No stored mode found. Using default");
+bool ModbusManager::begin() {
+    if (loadConfiguration()) {
+        BUS_ACTIVE.store(true, std::memory_order_release);
+        return true;
     }
-
-    if (communicationModes.find(modbusMode) != communicationModes.end()) {
-        config.communicationMode = communicationModes.at(modbusMode);
-    } else {
-        _logger->logWarning(("ModbusManager::getMode - Invalid mode: " + modbusMode + ". Using default").c_str());
-        config.communicationMode = communicationModes.at(DEFAULT_MODBUS_MODE);
-    }
-
-    if (preferences.isKey("modbus_baud_rate")) {
-        config.baudRate = preferences.getUShort("modbus_baud_rate");
-        _logger->logDebug(("ModbusManager::getMode - Found stored baud rate: " + String(config.baudRate)).c_str());
-    } else {
-        config.baudRate = DEFAULT_MODBUS_BAUD_RATE;
-        _logger->logWarning("ModbusManager::getMode - No stored baud rate found. Using default");
-
-    }
-    preferences.end();
-    return config;
-
+    BUS_ACTIVE.store(false, std::memory_order_release);
+    return false;
 }
 
-void ModbusManager::initialize() {
+bool ModbusManager::loadConfiguration() {
+    const char *path = "/conf/config.json";
+    if (!SPIFFS.exists(path)) {
+        _logger->logDebug("Configuration file not found '/conf/config.json'");
+        // fallback to defaults
+        _modbusRoot.bus.baud = DEFAULT_MODBUS_BAUD_RATE;
+        _modbusRoot.bus.serialFormat = DEFAULT_MODBUS_MODE;
+        _modbusRoot.devices.clear();
+        return false;
+    }
+
+    _logger->logDebug("Found configuration file '/conf/config.json'");
+
+    File f = SPIFFS.open(path, FILE_READ);
+    if (!f) {
+        _logger->logError("ModbusManager::loadConfiguration - Failed to open /conf/config.json");
+        return false;
+    }
+    String json = f.readString();
+    f.close();
+
+    JsonDocument doc;
+    const DeserializationError err = deserializeJson(doc, json);
+    if (err) {
+        _logger->logError((String("ModbusManager::loadConfiguration - JSON parse error: ") + err.c_str()).c_str());
+        return false;
+    }
+
+    // Helpers to parse enums
+    auto parseFunction = [](const int fn) -> ModbusFunctionType {
+        switch (fn) {
+            case 1: return READ_COIL;
+            case 2: return READ_DISCRETE;
+            case 3: return READ_HOLDING;
+            case 4: return READ_INPUT;
+            case 5: return WRITE_COIL;
+            case 6: return WRITE_HOLDING;
+            default: return READ_HOLDING;
+        }
+    };
+    auto parseDataType = [](const JsonVariant &v) -> ModbusDataType {
+        if (v.is<int>()) {
+            const int n = v.as<int>();
+            switch (n) {
+                case 1: return TEXT;
+                case 2: return INT16;
+                case 3: return INT32;
+                case 4: return INT64;
+                case 5: return UINT16;
+                case 6: return UINT32;
+                case 7: return UINT64;
+                case 8: return FLOAT32;
+                default: return UINT16;
+            }
+        }
+        String s = v.as<const char *>();
+        s.toLowerCase();
+        if (s == "text") return TEXT;
+        if (s == "int16") return INT16;
+        if (s == "int32") return INT32;
+        if (s == "int64") return INT64;
+        if (s == "uint16") return UINT16;
+        if (s == "uint32") return UINT32;
+        if (s == "uint64") return UINT64;
+        if (s == "float32") return FLOAT32;
+        return UINT16;
+    };
+
+    // bus
+    const JsonObject bus = doc["bus"].as<JsonObject>();
+    if (bus.isNull()) {
+        _logger->logWarning("ModbusManager::loadConfiguration - missing 'bus' object; using defaults");
+        _modbusRoot.bus.baud = DEFAULT_MODBUS_BAUD_RATE;
+        _modbusRoot.bus.serialFormat = DEFAULT_MODBUS_MODE;
+    } else {
+        _modbusRoot.bus.baud = bus["baud"] | DEFAULT_MODBUS_BAUD_RATE;
+        _modbusRoot.bus.serialFormat = String(bus["serialFormat"] | DEFAULT_MODBUS_MODE);
+    }
+
+    // devices
+    _modbusRoot.devices.clear();
+    const JsonArray devs = doc["devices"].as<JsonArray>();
+    if (!devs.isNull()) {
+        _modbusRoot.devices.reserve(devs.size());
+        for (JsonObject d: devs) {
+            ModbusDevice dev{};
+            dev.name = String(d["name"] | "device");
+            dev.slaveId = static_cast<uint8_t>(d["slaveId"] | 1);
+
+            const JsonArray dps = d["dataPoints"].as<JsonArray>();
+            if (!dps.isNull()) {
+                dev.datapoints.reserve(dps.size());
+                for (JsonObject p: dps) {
+                    ModbusDatapoint dp{};
+                    dp.id = String(p["id"] | "");
+                    dp.name = String(p["name"] | "");
+                    dp.function = parseFunction(p["function"] | 3);
+                    dp.address = static_cast<uint16_t>(p["address"] | 0);
+                    dp.numOfRegisters = static_cast<uint8_t>(p["numOfRegisters"] | 1);
+                    dp.scale = static_cast<float>(p["scale"] | 1.0);
+                    dp.dataType = parseDataType(p["dataType"]);
+                    dp.unit = String(p["unit"] | "");
+                    dev.datapoints.push_back(dp);
+                }
+            }
+            _modbusRoot.devices.push_back(dev);
+        }
+    }
+
+    _logger->logInformation((String("Loaded config: ") + String(_modbusRoot.devices.size()) + " devices; baud " +
+                             String(_modbusRoot.bus.baud) + ", format " + _modbusRoot.bus.serialFormat).c_str());
+    return true;
+}
+
+void ModbusManager::initializeWiring() const {
     _logger->logDebug("ModbusManager::initialize - Entry");
 
-    const auto userConfig = getUserConfig();
     pinMode(RS485_DE_PIN, OUTPUT);
     pinMode(RS485_RE_PIN, OUTPUT);
 
     digitalWrite(RS485_DE_PIN, LOW);
     digitalWrite(RS485_RE_PIN, LOW);
 
-    Serial1.begin(userConfig.baudRate, userConfig.communicationMode, RX2, TX2);
-    node.begin(MODBUS_SLAVE_ID, Serial1);
-    
-    node.preTransmission(preTransmissionHandler);
-    node.postTransmission(postTransmissionHandler);
-
-    loadRegisterConfig();
+    Serial1.begin(_modbusRoot.bus.baud,
+                  communicationModes.at(_modbusRoot.bus.serialFormat),
+                  RX2, TX2);
 
     _logger->logDebug("ModbusManager::initialize - Exit");
 }
-
-void ModbusManager::readRegisters() {
-    for (auto &reg: _modbusRegisters) {
-        _logger->logDebug(("ModbusManager::readRegisters - Reading register: " + String(reg.name)).c_str());
-
-        const uint8_t result = reg.registerType == INPUT_REGISTER
-                                   ? node.readInputRegisters(reg.address, reg.numOfRegisters)
-                                   : node.readHoldingRegisters(reg.address, reg.numOfRegisters);
-
-        if (result == ModbusMaster::ku8MBSuccess) {
-            String topic = reg.name;
-            const float rawData = node.getResponseBuffer(0);
-            const float value = rawData * reg.scale;
-            auto payload = String(value);
-        } else {
-            _logger->logError(
-                ("Error reading register: " + String(reg.name) + " Error code: " + String(result)).c_str());
+void ModbusManager::loop(){
+    if (BUS_ACTIVE.load(std::memory_order_acquire)) {
+        for (auto &dev: _modbusRoot.devices) {
+            readModbusDevice(dev);
         }
     }
 }
 
-void ModbusManager::clearRegisters() {
-    _modbusRegisters.clear();
-    // Preferences preferences;
-    preferences.begin(MODBUS_PREFS_NAMESPACE, false);
-    preferences.putUShort(REG_COUNT_KEY, 0);
-    preferences.end();
-}
+void ModbusManager::readModbusDevice(const ModbusDevice &dev) {
 
-String ModbusManager::getRegisterConfigurationAsJson() const {
-    JsonDocument doc;
+    node.begin(dev.slaveId, Serial1);
+    node.preTransmission(preTransmissionHandler);
+    node.postTransmission(postTransmissionHandler);
 
-    const auto modbusRegisters = doc.to<JsonArray>();
-    for (auto &reg: _modbusRegisters) {
-        modbusRegisters.add<JsonObject>()["name"] = reg.name;
-        modbusRegisters.add<JsonObject>()["address"] = reg.address;
-        modbusRegisters.add<JsonObject>()["numOfRegisters"] = reg.numOfRegisters;
-        modbusRegisters.add<JsonObject>()["scale"] = reg.scale;
-        modbusRegisters.add<JsonObject>()["registerType"] = reg.registerType;
-        modbusRegisters.add<JsonObject>()["dataType"] = reg.dataType;
+    uint8_t result;
+    for (auto &dp: dev.datapoints) {
+        _logger->logDebug(("ModbusManager::readRegisters - Reading register: " + String(dp.name)).c_str());
+        switch (dp.function) {
+            case READ_COIL:
+                result = node.readCoils(dp.address, dp.numOfRegisters);
+                break;
+            case READ_DISCRETE:
+                result = node.readDiscreteInputs(dp.address, dp.numOfRegisters);
+                break;
+            case READ_HOLDING:
+                result = node.readHoldingRegisters(dp.address, dp.numOfRegisters);
+                break;
+            case READ_INPUT:
+                result = node.readInputRegisters(dp.address, dp.numOfRegisters);
+                break;
+            default:
+                result = -1;
+                _logger->logError(("ModbusManager::readRegisters - Function: " + String(dp.function) + " is not valid in this scope.").c_str());
+        }
+
+        if (result == ModbusMaster::ku8MBSuccess) {
+            String topic = dp.name;
+            const float rawData = node.getResponseBuffer(0);
+            const float value = rawData * dp.scale;
+            auto payload = String(value);
+        }
+        else {
+            _logger->logError(
+                ("Error reading register: " + String(dp.name) + " Error code: " + String(result)).c_str());
+        }
     }
-    String out;
-    serializeJson(doc, out);
-    return out;
-}
-
-void ModbusManager::updateRegisterConfigurationFromJson(const String &registerConfigJson, bool clearExisting) {
-    JsonDocument doc;
-    _logger->logInformation((registerConfigJson).c_str());
-    const DeserializationError err = deserializeJson(doc, registerConfigJson);
-
-    if (err) {
-        _logger->logError(
-            ("ModbusManager::updateRegistersFromJson - Error parsing register config: " + String(err.c_str())).c_str());
-        return;
-    }
-
-    const auto arr = doc.as<JsonArray>();
-    if (clearExisting) {
-        clearRegisters();
-    }
-
-    for (JsonObject obj: arr) {
-        ModbusRegister reg{};
-
-        reg.address = obj["address"] | 0;
-        reg.numOfRegisters = obj["numOfRegisters"] | 1;
-        reg.scale = obj["scale"] | 1.0f;
-        reg.registerType = static_cast<RegisterType>(obj["registerType"] | 1);
-        reg.dataType = static_cast<ModbusDataType>(obj["dataType"] | 2);
-        const char *name = obj["name"] | "unnamed";
-        strncpy(reg.name, name, sizeof(reg.name));
-        reg.name[sizeof(reg.name) - 1] = '\0';
-
-        _modbusRegisters.push_back(reg);
-    }
-    _logger->logInformation(("Loaded " + String(_modbusRegisters.size()) + " registers from JSON").c_str());
-    saveRegisters();
-}
-
-std::vector<ModbusRegister> ModbusManager::getRegisters() const {
-    return _modbusRegisters;
 }
 
 void ModbusManager::preTransmissionHandler() {
@@ -157,39 +214,4 @@ void ModbusManager::preTransmissionHandler() {
 void ModbusManager::postTransmissionHandler() {
     digitalWrite(RS485_DE_PIN, LOW);
     digitalWrite(RS485_RE_PIN, LOW);
-}
-
-void ModbusManager::loadRegisterConfig() {
-    // Preferences preferences;
-    preferences.begin(MODBUS_PREFS_NAMESPACE, true);
-    const uint16_t count = preferences.getUShort(REG_COUNT_KEY, 0);
-    _logger->logDebug(("ModbusManager::loadRegisterConfig - Found " + String(count) + " registers").c_str());
-    if (count > 0 && count < MODBUS_MAX_REGISTERS + 1) {
-        _modbusRegisters.resize(count);
-        preferences.getBytes(REG_DATA_KEY, _modbusRegisters.data(), count * sizeof(ModbusRegister));
-    }
-    preferences.end();
-}
-
-uint16_t ModbusManager::getRegisterCount() {
-    // Preferences preferences;
-    preferences.begin(MODBUS_PREFS_NAMESPACE, true);
-    const uint16_t count = preferences.getUShort(REG_COUNT_KEY, 0);
-    preferences.end();
-
-    return count;
-}
-
-void ModbusManager::addRegister(const ModbusRegister &reg) {
-    _modbusRegisters.push_back(reg);
-    saveRegisters();
-}
-
-void ModbusManager::saveRegisters()  {
-    // Preferences preferences;
-    preferences.begin(MODBUS_PREFS_NAMESPACE, false);
-    const uint16_t count = _modbusRegisters.size();
-    preferences.putUShort(REG_COUNT_KEY, count);
-    preferences.putBytes(REG_DATA_KEY, _modbusRegisters.data(), count * sizeof(ModbusRegister));
-    preferences.end();
 }

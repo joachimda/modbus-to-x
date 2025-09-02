@@ -8,7 +8,8 @@ export const API = {
     SYSTEM_STATS: '/api/stats/system',
     STORAGE_STATS: '/api/stats/storage',
     MODBUS_STATS: '/api/stats/modbus',
-    MQTT_STATS: '/api/stats/mqtt'
+    MQTT_STATS: '/api/stats/mqtt',
+    LOGS: '/api/logs'
 };
 
 document.addEventListener('DOMContentLoaded', async () => {

@@ -5,14 +5,16 @@
 
 #include "ModbusDataType.h"
 #include <Arduino.h>
-#include "RegisterType.h"
+#include "ModbusFunctionType.h"
 
-struct ModbusRegister {
+struct ModbusDatapoint {
+    String id;
+    String name;
+    ModbusFunctionType function;
     uint16_t address;
     uint8_t numOfRegisters;
     float scale;
-    RegisterType registerType;
     ModbusDataType dataType;
-    char name[16];
+    String unit;
 };
 #endif //MBREGISTER_H

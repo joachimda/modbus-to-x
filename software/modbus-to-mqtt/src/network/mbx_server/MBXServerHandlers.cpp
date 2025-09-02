@@ -7,6 +7,7 @@
 #include "services/StatService.h"
 
 std::atomic<NetworkPortal *> g_portal{nullptr};
+static std::atomic<MemoryLogger *> g_memlog{nullptr};
 
 bool parseConnectPayload(uint8_t *data, size_t len,
                          String &ssid, String &pass, String &bssid, bool &save, WifiStaticCfg &st,
@@ -55,6 +56,10 @@ void sendJson(AsyncWebServerRequest *req, const JsonDocument &doc, int code = 20
 
 void MBXServerHandlers::setPortal(NetworkPortal *portal) {
     g_portal.store(portal, std::memory_order_release);
+}
+
+void MBXServerHandlers::setMemoryLogger(MemoryLogger *mem) {
+    g_memlog.store(mem, std::memory_order_release);
 }
 
 void MBXServerHandlers::getSsidListAsJson(AsyncWebServerRequest *req) {
@@ -148,7 +153,7 @@ void MBXServerHandlers::handleUpload(AsyncWebServerRequest *r, const String &fn,
                                      size_t len, bool final) {
     static File uploadFile;
     if (index == 0U) {
-        uploadFile = SPIFFS.open("/config.json", FILE_WRITE);
+        uploadFile = SPIFFS.open("/conf/config.json", FILE_WRITE);
     }
     if (uploadFile) {
         uploadFile.write(data, len);
@@ -157,6 +162,22 @@ void MBXServerHandlers::handleUpload(AsyncWebServerRequest *r, const String &fn,
         uploadFile.close();
     }
 }
+
+void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len, const size_t index,
+                                                  const size_t total) {
+    static File bodyFile;
+    if (index == 0U) {
+        bodyFile = SPIFFS.open("/conf/config.json", FILE_WRITE);
+    }
+    if (bodyFile) {
+        bodyFile.write(data, len);
+    }
+    if (index + len == total) {
+        if (bodyFile) bodyFile.close();
+        req->send(204);
+    }
+}
+
 
 void MBXServerHandlers::handleWifiConnect(AsyncWebServerRequest *req, WiFiConnectController &wifi,
                                           uint8_t *data, size_t len, size_t index, size_t total) {
@@ -222,7 +243,8 @@ void MBXServerHandlers::handleWifiApOff(AsyncWebServerRequest *req) {
 }
 
 void MBXServerHandlers::getSystemStats(AsyncWebServerRequest *req, const Logger *logger) {
-    logger->logDebug(("MBX Server: Started processing " + String(req->methodToString()) + " request on " + req->url()).c_str());
+    logger->logDebug(
+        ("MBX Server: Started processing " + String(req->methodToString()) + " request on " + req->url()).c_str());
 
     JsonDocument doc;
     doc = StatService::appendSystemStats(doc);
@@ -233,5 +255,21 @@ void MBXServerHandlers::getSystemStats(AsyncWebServerRequest *req, const Logger 
     doc = StatService::appendHealthStats(doc);
 
     sendJson(req, doc);
-    logger->logDebug(("MBX Server: Finished processing " + String(req->methodToString()) + " request on " + req->url()).c_str());
+    logger->logDebug(
+        ("MBX Server: Finished processing " + String(req->methodToString()) + " request on " + req->url()).c_str());
+}
+
+void MBXServerHandlers::getLogs(AsyncWebServerRequest *req) {
+    if (auto *mem = g_memlog.load(std::memory_order_acquire)) {
+        const String text = mem->toText();
+        req->send(200, "text/plain; charset=utf-8", text);
+    } else {
+        req->send(503, "text/plain", "logging buffer unavailable");
+    }
+}
+
+void MBXServerHandlers::handleDeviceReset(const Logger *logger) {
+    logger->logInformation("Device reset requested. Will reset in 5 sec");
+    delay(5000);
+    ESP.restart();
 }

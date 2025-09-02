@@ -4,7 +4,6 @@
 #include <DNSServer.h>
 #include "ESPAsyncWebServer.h"
 #include "Logger.h"
-#include <ArduinoJson.h>
 
 static constexpr int serverPort = 80;
 

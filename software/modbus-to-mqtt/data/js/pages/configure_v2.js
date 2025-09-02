@@ -8,23 +8,116 @@ let model = { buses: [] };
 let BUS_ID = "bus_1";
 let selection = { kind: "bus", deviceId: null, datapointId: null };
 
+// --- mapping helpers between UI model and schema model ---
+const SERIAL_FORMATS = new Set(["7N1","7N2","7O1","7O2","7E1","7E2","8N1","8N2","8E1","8E2","8O1","8O2"]);
+function toSerialParts(fmt) {
+    const def = { data_bits: 8, parity: "N", stop_bits: 1 };
+    if (!fmt || typeof fmt !== "string" || fmt.length < 3) return def;
+    const db = Number(fmt[0]);
+    const p = fmt[1];
+    const sb = Number(fmt[2]);
+    if ((db === 7 || db === 8) && (p === "N" || p === "E" || p === "O") && (sb === 1 || sb === 2)) {
+        return { data_bits: db, parity: p, stop_bits: sb };
+    }
+    return def;
+}
+function toSerialFormat(db, p, sb) {
+    const dbn = Number(db);
+    const sbn = Number(sb);
+    const pr = (p || "N").toUpperCase();
+    const fmt = `${(dbn===7||dbn===8)?dbn:8}${["N","E","O"].includes(pr)?pr:"N"}${(sbn===1||sbn===2)?sbn:1}`;
+    return SERIAL_FORMATS.has(fmt) ? fmt : "8N1";
+}
+function schemaToUi(json) {
+    // Expect current schema shape: { version, bus, devices }
+    const parts = toSerialParts(json?.bus?.serialFormat);
+    const bus = {
+        id: 1,
+        name: "RS485 Bus",
+        baud: Number(json?.bus?.baud) || 9600,
+        parity: parts.parity,
+        stop_bits: parts.stop_bits,
+        data_bits: parts.data_bits,
+        devices: []
+    };
+    // devices
+    const inDevices = Array.isArray(json?.devices) ? json.devices : [];
+    bus.devices = inDevices.map((d, idx) => ({
+        id: d.id || `dev_${idx+1}`,
+        name: d.name || "device",
+        slaveId: Number(d.slaveId) || 1,
+        notes: d.notes || "",
+        datapoints: Array.isArray(d.dataPoints) ? d.dataPoints.map((p) => ({
+            id: p.id,
+            name: p.name,
+            func: Number(p.function ?? 3),
+            address: Number(p.address) || 0,
+            length: Number(p.numOfRegisters ?? 1) || 1,
+            type: String(p.dataType || "uint16"),
+            scale: Number(p.scale ?? 1) || 1,
+            unit: p.unit || "",
+            topic: p.topic || ""
+        })) : []
+    }));
+
+    return { buses: [ bus ] };
+}
+function uiToSchema(uiModel) {
+    const b = (uiModel?.buses||[])[0] || {};
+    const cfg = {
+        version: 1,
+        bus: {
+            baud: Number(b.baud) || 9600,
+            serialFormat: toSerialFormat(b.data_bits, b.parity, b.stop_bits)
+        },
+        devices: (b.devices||[]).map(d => ({
+            name: d.name || "device",
+            slaveId: Number(d.slaveId) || 1,
+            dataPoints: (d.datapoints||[]).map(p => ({
+                id: p.id,
+                name: p.name,
+                function: Number(p.func) || 3,
+                address: Number(p.address) || 0,
+                numOfRegisters: Number(p.length) || 1,
+                dataType: String(p.type || "uint16"),
+                scale: Number(p.scale ?? 1) || 1,
+                unit: p.unit || "",
+                ...(p.precision != null ? { precision: Number(p.precision) } : {})
+            }))
+        }))
+    };
+    return cfg;
+}
+function validateSchemaConfig(cfg) {
+    const errors = [];
+    // bus
+    if (!cfg.bus || typeof cfg.bus !== "object") errors.push("Missing bus");
+    if (cfg.bus) {
+        if (!Number.isInteger(cfg.bus.baud) || cfg.bus.baud <= 0) errors.push("Bus baud must be a positive integer");
+        if (!SERIAL_FORMATS.has(cfg.bus.serialFormat)) errors.push(`Invalid serialFormat ${cfg.bus.serialFormat}`);
+    }
+    // devices
+    for (const [i,d] of (cfg.devices||[]).entries()) {
+        if (!d.name) errors.push(`Device #${i+1}: name required`);
+        if (!Number.isInteger(d.slaveId) || d.slaveId < 1 || d.slaveId > 247) errors.push(`Device ${d.name||i+1}: slaveId 1-247`);
+        for (const [j,p] of (d.dataPoints||[]).entries()) {
+            if (!p.name) errors.push(`Datapoint #${j+1} on ${d.name}: name required`);
+            if (!p.id) errors.push(`Datapoint ${p.name||j+1} on ${d.name}: id required`);
+            if (!Number.isInteger(p.function) || p.function < 1 || p.function > 6) errors.push(`Datapoint ${p.id}: function 1-6`);
+            if (!Number.isInteger(p.address) || p.address < 0 || p.address > 65535) errors.push(`Datapoint ${p.id}: address 0-65535`);
+            if (!Number.isInteger(p.numOfRegisters) || p.numOfRegisters < 1 || p.numOfRegisters > 125) errors.push(`Datapoint ${p.id}: numOfRegisters 1-125`);
+            if (typeof p.unit === "string" && p.unit.length > 5) errors.push(`Datapoint ${p.id}: unit max length 5`);
+            if (typeof p.name === "string" && p.name.length > 16) errors.push(`Datapoint ${p.id}: name max length 16`);
+        }
+    }
+    return { ok: errors.length === 0, errors };
+}
+
 async function load() {
     const cfg = await safeJson("/conf/config.json");
-    if (cfg && Array.isArray(cfg.buses) && cfg.buses.length > 0) {
-        model = { buses: [ cfg.buses[0] ] }; // ignore any extra buses just in case
-        BUS_ID = model.buses[0].id || BUS_ID;
-    } else {
-        model = {
-            buses: [{
-                id: 1,
-                name: "RS485 Bus",
-                baud: 9600,
-                parity: "N",
-                stop_bits: 1,
-                data_bits: 8,
-                devices: []
-            }]};
-    }
+    // Map any incoming shape to our UI model
+    model = schemaToUi(cfg);
+    BUS_ID = (model.buses?.[0]?.id) || BUS_ID;
     selection = {
         kind: "bus", deviceId: null, datapointId: null
     };
@@ -32,14 +125,57 @@ async function load() {
     showBusEditor();
 }
 
-async function saveApply() {
+async function doSaveApply(cfg) {
     await safeJson("/api/config/modbus", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(model),
+        body: JSON.stringify(cfg),
     });
-    await safeJson("/api/modbus/apply", { method: "POST" });
     toast("Saved and applied.");
+}
+
+function openConfirmModal() {
+    const cfg = uiToSchema(model);
+    const v = validateSchemaConfig(cfg);
+    if (!v.ok) {
+        alert(`Fix errors before saving:\n${v.errors.join("\n")}`);
+        return;
+    }
+    // fill preview
+    const pre = $("#json-preview");
+    if (pre) pre.textContent = JSON.stringify(cfg, null, 2);
+    // show modal
+    const modal = $("#modal-confirm");
+    modal.style.display = "flex";
+
+    // wire buttons
+    const approve = $("#btn-approve-apply");
+    const cancel = $("#btn-cancel-apply");
+    const closeBtn = $("#btn-confirm-close");
+    const dl = $("#btn-download-backup");
+    const close = () => { modal.style.display = "none"; };
+
+    approve.onclick = async () => {
+        try {
+            await doSaveApply(cfg);
+            close();
+        } catch (e) { err(e); }
+    };
+    cancel.onclick = close;
+    closeBtn.onclick = close;
+    dl.onclick = async () => {
+        try {
+            const r = await fetch('/conf/config.json', { cache: 'no-store' });
+            if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+            const blob = await r.blob();
+            const a = document.createElement('a');
+            const ts = new Date().toISOString().replace(/[:T]/g,'-').replace(/\..+/, '');
+            a.href = URL.createObjectURL(blob);
+            a.download = `config-backup-${ts}.json`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        } catch (e) { err(e); }
+    };
 }
 
 function buildTree() {
@@ -134,7 +270,7 @@ function addDatapointToCurrentDevice() {
         func: 3,
         address: 0,
         length: 1,
-        type: "u16",
+        type: "uint16",
         scale: 1,
         unit: "",
         topic: ""
@@ -216,7 +352,7 @@ function renderDeviceDatapointTable(d) {
         <td>${p.func}</td>
         <td>${p.address}</td>
         <td>${p.type}</td>
-        <td><button class="btn" data-dp="${p.id}">Edit</button></td>
+        <td><button class="btn small" data-dp="${p.id}">Edit</button></td>
       </tr>
     `).join("");
     tbody.querySelectorAll("button[data-dp]").forEach(b =>
@@ -248,7 +384,7 @@ function showDatapointEditor() {
     $("#dp-func").value = datapoint.func || 3;
     $("#dp-addr").value = datapoint.address ?? 0;
     $("#dp-len").value = datapoint.length ?? 1;
-    $("#dp-type").value = datapoint.type || "u16";
+    $("#dp-type").value = datapoint.type || "uint16";
     $("#dp-scale").value = datapoint.scale ?? 1;
     $("#dp-unit").value = datapoint.unit || "";
     $("#dp-topic").value = datapoint.topic || "";
@@ -264,7 +400,7 @@ function showDatapointEditor() {
 
         // content
         datapoint.name = name || "datapoint";
-        datapoint.func = $("#dp-func").value;
+        datapoint.func = Number($("#dp-func").value);
         datapoint.address = Number($("#dp-addr").value);
         datapoint.length = Number($("#dp-len").value);
         datapoint.type = $("#dp-type").value;
@@ -390,14 +526,10 @@ $("#file-import").addEventListener("change", async (ev) => {
     const text = await f.text();
     try {
         const json = JSON.parse(text);
-        const bus = Array.isArray(json.buses) ? json.buses[0] : null;
-        if (!bus)
-        {
-            throw new Error("Import must contain a 'buses' array with a single bus.");
-        }
-        model = {
-            buses: [ bus ]
-        };
+        const ui = schemaToUi(json);
+        const bus = ui?.buses?.[0];
+        if (!bus) throw new Error("Invalid config file: missing bus");
+        model = ui;
         BUS_ID = bus.id || BUS_ID;
         selection = {
             kind:"bus", deviceId:null, datapointId:null
@@ -428,15 +560,19 @@ $("#btn-dev-add-dp").onclick = () => {
 };
 $("#btn-validate").onclick = async () => {
     try {
+        const cfg = uiToSchema(model);
+        const v = validateSchemaConfig(cfg);
+        if (!v.ok) return alert(`Validation errors:\n${v.errors.join("\n")}`);
         const res = await safeJson("/api/config/validate", {
             method: "POST", headers: { "Content-Type":"application/json" },
-            body: JSON.stringify({ buses: [ getBus() ] }),
+            body: JSON.stringify(cfg),
         });
         alert(res.ok ? "Validation OK" : `Validation errors:\n${(res.errors||[]).join("\n")}`);
     } catch (e) { err(e); }
 };
 $("#btn-export").onclick = () => {
-    const blob = new Blob([JSON.stringify({ buses: [ getBus() ] }, null, 2)], { type: "application/json" });
+    const cfg = uiToSchema(model);
+    const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "modbus-config.json";
@@ -444,4 +580,4 @@ $("#btn-export").onclick = () => {
     URL.revokeObjectURL(a.href);
 };
 $("#btn-reload").onclick = () => load();
-$("#btn-save-apply").onclick = () => saveApply().catch(err);
+$("#btn-save-apply").onclick = () => openConfirmModal();

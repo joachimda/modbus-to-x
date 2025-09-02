@@ -6,6 +6,7 @@
 #include <SPIFFS.h>
 
 #include "ArduinoJson.h"
+#include "services/IndicatorService.h"
 
 static std::atomic<bool> BUS_ACTIVE{false};
 static const std::map<String, uint32_t> communicationModes = {
@@ -160,19 +161,22 @@ void ModbusManager::initializeWiring() const {
 }
 void ModbusManager::loop(){
     if (BUS_ACTIVE.load(std::memory_order_acquire)) {
+        bool anySuccess = false;
         for (auto &dev: _modbusRoot.devices) {
-            readModbusDevice(dev);
+            anySuccess = readModbusDevice(dev) || anySuccess;
         }
+        IndicatorService::instance().setModbusConnected(anySuccess);
     }
 }
 
-void ModbusManager::readModbusDevice(const ModbusDevice &dev) {
+bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
 
     node.begin(dev.slaveId, Serial1);
     node.preTransmission(preTransmissionHandler);
     node.postTransmission(postTransmissionHandler);
 
     uint8_t result;
+    bool successOnThisDevice = false;
     for (auto &dp: dev.datapoints) {
         _logger->logDebug(("ModbusManager::readRegisters - Reading register: " + String(dp.name)).c_str());
         switch (dp.function) {
@@ -194,6 +198,7 @@ void ModbusManager::readModbusDevice(const ModbusDevice &dev) {
         }
 
         if (result == ModbusMaster::ku8MBSuccess) {
+            successOnThisDevice = true;
             String topic = dp.name;
             const float rawData = node.getResponseBuffer(0);
             const float value = rawData * dp.scale;
@@ -204,6 +209,7 @@ void ModbusManager::readModbusDevice(const ModbusDevice &dev) {
                 ("Error reading register: " + String(dp.name) + " Error code: " + String(result)).c_str());
         }
     }
+    return successOnThisDevice;
 }
 
 void ModbusManager::preTransmissionHandler() {

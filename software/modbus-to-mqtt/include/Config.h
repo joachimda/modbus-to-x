@@ -5,22 +5,22 @@
  * WIRING
  ****************************************************/
 #ifndef RS485_DE_PIN
-#define RS485_DE_PIN 32
+#define RS485_DE_PIN 15
 #endif
 
 #ifndef RS485_RE_PIN
-#define RS485_RE_PIN 33
+#define RS485_RE_PIN 15
 #endif
 
 #ifndef LED_A_PIN
-#define LED_A_PIN 2
+#define LED_A_PIN 26
 #endif
 
 #ifndef LED_B_PIN
-#define LED_B_PIN 14
+#define LED_B_PIN 25
 #endif
 #ifndef LED_C_PIN
-#define LED_C_PIN 14
+#define LED_C_PIN 33
 #endif
 
 #define RESET_BUTTON_PIN 13
@@ -60,6 +60,20 @@
 
 #ifndef MQTT_BUFFER_SIZE
 #define MQTT_BUFFER_SIZE 4096
+#endif
+
+/****************************************************
+ * OTA
+ ****************************************************/
+#ifndef OTA_HTTP_USER
+#define OTA_HTTP_USER "admin"
+#endif
+#ifndef OTA_HTTP_PASS
+#define OTA_HTTP_PASS "admin"
+#endif
+
+#ifndef DEV_OTA_ARDUINO_PASS
+#define DEV_OTA_ARDUINO_PASS "admin"
 #endif
 
 /****************************************************

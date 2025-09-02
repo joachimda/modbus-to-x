@@ -17,7 +17,7 @@ public:
     void loop();
 
 private:
-    void readModbusDevice(const ModbusDevice &dev);
+    bool readModbusDevice(const ModbusDevice &dev);
 
     bool loadConfiguration();
 

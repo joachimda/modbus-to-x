@@ -4,7 +4,7 @@
 class HttpResponseCodes {
 public:
     static constexpr int OK = 200;
-    static constexpr int NoContent = 204;
+    static constexpr int NO_CONTENT = 204;
     static constexpr int SERVER_ERROR = 500;
     static constexpr int NOT_FOUND = 404;
     static constexpr int REDIRECT = 302;

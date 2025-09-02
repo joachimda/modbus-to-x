@@ -7,7 +7,7 @@
 #define FW_VERSION "dev"
 #endif
 
-static const char *resetReasonToString(esp_reset_reason_t r) {
+static const char *resetReasonToString(const esp_reset_reason_t r) {
     switch (r) {
         case ESP_RST_POWERON: return "Power on";
         case ESP_RST_EXT: return "External (reset pin)";

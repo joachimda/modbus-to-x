@@ -5,6 +5,8 @@
 #include <ArduinoJson.h>
 #include "network/NetworkPortal.h"
 #include "services/StatService.h"
+#include "services/OtaService.h"
+#include "services/IndicatorService.h"
 
 std::atomic<NetworkPortal *> g_portal{nullptr};
 static std::atomic<MemoryLogger *> g_memlog{nullptr};
@@ -184,7 +186,7 @@ void MBXServerHandlers::handleWifiConnect(AsyncWebServerRequest *req, WiFiConnec
     static String body;
     if (index == 0) body = "";
     body.concat((const char *) data, len);
-    if (index + len < total) return; // wait for last chunk
+    if (index + len < total) return;
 
     String ssid, pass, bssid;
     uint8_t channel = 0;
@@ -199,7 +201,7 @@ void MBXServerHandlers::handleWifiConnect(AsyncWebServerRequest *req, WiFiConnec
 
     bool accepted = wifi.connect(ssid, pass, bssid, st, save, channel);
     if (!accepted) {
-        req->send(409, "application/json", "{\"error\":\"already_connecting\"}");
+        req->send(409, "application/json", R"({"error":"already_connecting"})");
         return;
     }
     if (auto *p = g_portal.load(std::memory_order_acquire)) {
@@ -238,6 +240,7 @@ void MBXServerHandlers::handleWifiApOff(AsyncWebServerRequest *req) {
     xTaskCreatePinnedToCore([](void *) {
         delay(800);
         WiFiClass::mode(WIFI_MODE_STA);
+        IndicatorService::instance().setPortalMode(false);
         vTaskDelete(nullptr);
     }, "apOff", 2048, nullptr, 1, nullptr, APP_CPU_NUM);
 }
@@ -272,4 +275,63 @@ void MBXServerHandlers::handleDeviceReset(const Logger *logger) {
     logger->logInformation("Device reset requested. Will reset in 5 sec");
     delay(5000);
     ESP.restart();
+}
+
+void MBXServerHandlers::handleOtaFirmwareUpload(AsyncWebServerRequest *r, const String &fn, size_t index,
+                                                uint8_t *data, size_t len, bool final, const Logger *logger) {
+    if (index == 0U) {
+        if (logger) logger->logInformation((String("OTA firmware upload start: ") + fn).c_str());
+        if (!OtaService::beginFirmware(0, const_cast<Logger*>(logger))) {
+            if (logger) logger->logError("OTA begin firmware failed");
+            r->send(500, "application/json", R"({"error":"ota_begin_failed"})");
+            return;
+        }
+    }
+    if (len) {
+        if (!OtaService::write(data, len, const_cast<Logger*>(logger))) {
+            if (logger) logger->logError("OTA firmware write failed");
+        }
+    }
+    if (final) {
+        const bool ok = OtaService::end(true, const_cast<Logger*>(logger));
+        if (!ok) {
+            r->send(500, "application/json", R"({"error":"ota_end_failed"})");
+        } else {
+            r->send(200, "application/json", R"({"ok":true,"type":"firmware"})");
+            // Restart after a short delay to let response flush
+            xTaskCreatePinnedToCore([](void *) {
+                delay(500);
+                ESP.restart();
+            }, "otaReboot", 2048, nullptr, 1, nullptr, APP_CPU_NUM);
+        }
+    }
+}
+
+void MBXServerHandlers::handleOtaFilesystemUpload(AsyncWebServerRequest *r, const String &fn, size_t index,
+                                                  uint8_t *data, size_t len, bool final, const Logger *logger) {
+    if (index == 0U) {
+        if (logger) logger->logInformation((String("OTA filesystem upload start: ") + fn).c_str());
+        if (!OtaService::beginFilesystem(0, const_cast<Logger*>(logger))) {
+            if (logger) logger->logError("OTA begin fs failed");
+            r->send(500, "application/json", R"({"error":"ota_begin_failed"})");
+            return;
+        }
+    }
+    if (len) {
+        if (!OtaService::write(data, len, const_cast<Logger*>(logger))) {
+            if (logger) logger->logError("OTA fs write failed");
+        }
+    }
+    if (final) {
+        const bool ok = OtaService::end(true, const_cast<Logger*>(logger));
+        if (!ok) {
+            r->send(500, "application/json", R"({"error":"ota_end_failed"})");
+        } else {
+            r->send(200, "application/json", R"({"ok":true,"type":"filesystem"})");
+            xTaskCreatePinnedToCore([](void *) {
+                delay(500);
+                ESP.restart();
+            }, "otaReboot", 2048, nullptr, 1, nullptr, APP_CPU_NUM);
+        }
+    }
 }

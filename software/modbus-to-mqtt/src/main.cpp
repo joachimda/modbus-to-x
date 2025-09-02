@@ -9,6 +9,7 @@
 #include "network/mbx_server/MBXServer.h"
 #include "Config.h"
 #include <network/mbx_server/MBXServerHandlers.h>
+#include "services/IndicatorService.h"
 
 Logger logger;
 MemoryLogger memoryLogger(300);
@@ -39,7 +40,6 @@ void addSubscriptionHandlers() {
     const auto netReset = MQTT_ROOT_TOPIC + SUB_NETWORK_RESET;
     subscriptionHandler.addHandler(netReset, [](const String &) {
         logger.logInformation("Network reset requested by MQTT message");
-        logger.logDebug("Testeroo");
     });
 
 }
@@ -50,6 +50,8 @@ void setup() {
     logger.addTarget(&memoryLogger);
     logger.logDebug("setup() - logger initialized");
     setupFs(&logger);
+
+    IndicatorService::instance().begin();
 
     //addSubscriptionHandlers();
     //commLink.overrideUserConfig("espuser","test", "10.159.188.206","1883", "8N1", 9600);

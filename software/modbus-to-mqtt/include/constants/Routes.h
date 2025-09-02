@@ -32,5 +32,11 @@ public:
     constexpr static auto MQTT_STATS = "/api/stats/mqtt";
     constexpr static auto LOGS = "/api/logs";
     constexpr static auto DEVICE_RESET = "/api/system/reboot";
+
+    /* *
+     * * OTA API
+     * * */
+    constexpr static auto OTA_FIRMWARE = "/api/system/ota/firmware";
+    constexpr static auto OTA_FILESYSTEM = "/api/system/ota/fs";
 };
 #endif

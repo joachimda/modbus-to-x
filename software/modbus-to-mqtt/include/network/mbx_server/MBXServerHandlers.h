@@ -5,6 +5,7 @@
 #include "network/NetworkPortal.h"
 #include "network/wifi/ConnectController.h"
 #include "MemoryLogger.h"
+#include "services/OtaService.h"
 
 class MBXServerHandlers{
 public:
@@ -26,6 +27,12 @@ public:
     static void getLogs(AsyncWebServerRequest* req);
 
     static void handleDeviceReset(const Logger *logger);
+
+    // OTA upload handlers
+    static void handleOtaFirmwareUpload(AsyncWebServerRequest *r, const String &fn, size_t index,
+                                        uint8_t *data, size_t len, bool final, const Logger *logger);
+    static void handleOtaFilesystemUpload(AsyncWebServerRequest *r, const String &fn, size_t index,
+                                         uint8_t *data, size_t len, bool final, const Logger *logger);
 };
 
 #endif

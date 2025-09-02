@@ -3,6 +3,7 @@
 #include "Config.h"
 #include "ESPAsyncWebServer.h"
 #include <atomic>
+#include "services/IndicatorService.h"
 
 static std::atomic<bool> s_mqttEnabled{false};
 static CommLink *s_activeCommLink = nullptr;
@@ -30,7 +31,6 @@ void handleMqttMessage(char *topic, const byte *payload, const unsigned int leng
 }
 
 auto CommLink::begin() -> bool {
-    setupLED();
     _mqttClient->setBufferSize(MQTT_BUFFER_SIZE);
 
     const char *broker = {LOCAL_MQTT_BROKER};
@@ -39,6 +39,7 @@ auto CommLink::begin() -> bool {
     _mqttClient->setServer(broker, atoi(LOCAL_MQTT_PORT));
     if (!ensureMQTTConnection()) {
         _logger->logError("MQTT connection failed");
+        IndicatorService::instance().setMqttConnected(false);
     }
     _mqttClient->setCallback(handleMqttMessage);
     return startMqttTask();
@@ -107,7 +108,7 @@ auto CommLink::ensureMQTTConnection() const -> bool {
             _logger->logError(("MQTT connect failed, rc=" + String(_mqttClient->state())).c_str());
         }
     } else {
-        //setLedColor(false, false, false);
+        IndicatorService::instance().setMqttConnected(true);
     }
 
     for (const auto &topic: _subscriptionHandler->getHandlerTopics()) {
@@ -129,7 +130,9 @@ auto CommLink::ensureMQTTConnection() const -> bool {
             continue;
         }
 
-        if (!commLink->_mqttClient->connected()) {
+        const bool connectedNow = commLink->_mqttClient->connected();
+        IndicatorService::instance().setMqttConnected(connectedNow);
+        if (!connectedNow) {
             commLink->_logger->logError("MQTT disconnected, attempting reconnect");
             const unsigned long now = millis();
             if (now - lastReconnectAttempt >= MQTT_RECONNECT_INTERVAL_MS) {
@@ -173,13 +176,6 @@ void CommLink::onMqttMessage(const String &topic, const uint8_t *payload, const 
     }
     _subscriptionHandler->handle(topic, message);
     _logger->logDebug("CommLink::onMqttMessage - Received MQTT message");
-}
-
-void CommLink::setupLED() {
-    pinMode(LED_A_PIN, OUTPUT);
-    pinMode(LED_B_PIN, OUTPUT);
-    pinMode(LED_C_PIN, OUTPUT);
-    //setLedColor(false, false, false);
 }
 
 char *CommLink::getMqttBroker() {

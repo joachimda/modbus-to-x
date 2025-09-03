@@ -16,11 +16,11 @@
       "type": "object",
       "required": [
         "baud",
-        "serialFormat",
+        "serialFormat"
       ],
       "properties": {
         "baud": {
-          "type": "integer",
+          "type": "integer"
         },
         "serialFormat": {
           "type": "string",
@@ -38,7 +38,7 @@
             "8O1",
             "8O2"
           ]
-        },
+        }
       },
       "additionalProperties": false
     },

@@ -17,8 +17,8 @@ public:
 
     void setMaxLines(size_t n);
     size_t size() const;
-    String toText() const;               // newline-joined text
-    std::vector<String> lines() const;   // copy of lines
+    String toText() const;
+    std::vector<String> lines() const;
 
 private:
     void append(const char* level, const char* message);

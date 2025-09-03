@@ -118,7 +118,6 @@ async function fetchSSIDs() {
 function getStaticBlock() {
     const hasStatic = isAnyFilled(ip.value, gw.value, mask.value, dns1.value, dns2.value);
     if (!hasStatic) return null;
-    // minimal validation
     if (![ip.value, gw.value, mask.value].every(isValidIp)) {
         throw new Error('Static IP, gateway, and subnet must be valid IPv4 addresses.');
     }
@@ -146,8 +145,7 @@ async function connect() {
         ssid: ssid.value.trim(),
         password: password.value,
         bssid: bssid.value.trim() || undefined,
-        channel: networks[selectedIndex]?.channel || 0, // <— add this line
-        // static: st || undefined,
+        channel: networks[selectedIndex]?.channel || 0,
         save: (save.value === 'true')
     };
     if (!payload.ssid) {
@@ -163,9 +161,13 @@ async function connect() {
 
     try {
         const st = getStaticBlock();
-        if (st) payload.static = st;
-    } catch (e) {
-        connectBtn.disabled = false; cancelBtn.disabled = true;
+        if (st) {
+            payload.static = st;
+        }
+    }
+    catch (e) {
+        connectBtn.disabled = false;
+        cancelBtn.disabled = true;
         return log('❌ ' + e.message);
     }
 
@@ -247,11 +249,19 @@ refreshBtn.addEventListener('click', fetchSSIDs);
 filter.addEventListener('input', renderList);
 connectBtn.addEventListener('click', connect);
 cancelBtn.addEventListener('click', cancel);
-showPw.addEventListener('change', () => { password.type = showPw.checked ? 'text' : 'password'; });
-showHiddenPw.addEventListener('change', () => { hiddenPass.type = showHiddenPw.checked ? 'text' : 'password'; });
+showPw.addEventListener('change', () => {
+    password.type = showPw.checked ? 'text' : 'password';
+});
+
+showHiddenPw.addEventListener('change', () => {
+    hiddenPass.type = showHiddenPw.checked ? 'text' : 'password';
+});
 
 selectHidden.addEventListener('click', () => {
-    if (!hiddenSsid.value.trim()) { hiddenSsid.focus(); return; }
+    if (!hiddenSsid.value.trim()) {
+        hiddenSsid.focus();
+        return;
+    }
     ssid.value = hiddenSsid.value.trim();
     password.value = hiddenPass.value;
     bssid.value = '';

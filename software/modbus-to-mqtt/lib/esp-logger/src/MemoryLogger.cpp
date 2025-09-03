@@ -1,8 +1,8 @@
 #include "MemoryLogger.h"
 
-MemoryLogger::MemoryLogger(size_t maxLines) : _maxLines(maxLines) {}
+MemoryLogger::MemoryLogger(const size_t maxLines) : _maxLines(maxLines) {}
 
-void MemoryLogger::setMaxLines(size_t n) {
+void MemoryLogger::setMaxLines(const size_t n) {
     portENTER_CRITICAL(&_mux);
     _maxLines = n > 0 ? n : 1;
     if (_lines.size() > _maxLines) {
@@ -12,9 +12,9 @@ void MemoryLogger::setMaxLines(size_t n) {
 }
 
 size_t MemoryLogger::size() const {
-    portENTER_CRITICAL(&const_cast<MemoryLogger*>(this)->_mux);
+    portENTER_CRITICAL(&this->_mux);
     const size_t s = _lines.size();
-    portEXIT_CRITICAL(&const_cast<MemoryLogger*>(this)->_mux);
+    portEXIT_CRITICAL(&this->_mux);
     return s;
 }
 
@@ -41,7 +41,6 @@ void MemoryLogger::logWarning(const char *message) { append("[WARN]", message); 
 void MemoryLogger::logDebug(const char *message) { append("[DEBUG]", message); }
 
 String MemoryLogger::ts() {
-    // Basic HH:MM:SS from millis
     const uint32_t ms = millis();
     const uint32_t s = ms / 1000u;
     const uint32_t hh = (s / 3600u) % 24u;
@@ -49,24 +48,23 @@ String MemoryLogger::ts() {
     const uint32_t ss = s % 60u;
     char buf[10];
     snprintf(buf, sizeof(buf), "%02u:%02u:%02u", hh, mm, ss);
-    return String(buf);
+    return {buf};
 }
 
 String MemoryLogger::toText() const {
     String out;
-    portENTER_CRITICAL(&const_cast<MemoryLogger*>(this)->_mux);
+    portENTER_CRITICAL(&this->_mux);
     for (size_t i = 0; i < _lines.size(); ++i) {
         out += _lines[i];
         if (i + 1 < _lines.size()) out += '\n';
     }
-    portEXIT_CRITICAL(&const_cast<MemoryLogger*>(this)->_mux);
+    portEXIT_CRITICAL(&this->_mux);
     return out;
 }
 
 std::vector<String> MemoryLogger::lines() const {
-    std::vector<String> copy;
-    portENTER_CRITICAL(&const_cast<MemoryLogger*>(this)->_mux);
-    copy = _lines;
-    portEXIT_CRITICAL(&const_cast<MemoryLogger*>(this)->_mux);
+    portENTER_CRITICAL(&this->_mux);
+    std::vector<String> copy = _lines;
+    portEXIT_CRITICAL(&this->_mux);
     return copy;
 }

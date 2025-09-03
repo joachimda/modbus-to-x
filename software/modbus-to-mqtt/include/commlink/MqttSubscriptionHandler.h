@@ -1,5 +1,5 @@
-#ifndef TOPICHANDLERSTRUCT_H
-#define TOPICHANDLERSTRUCT_H
+#ifndef MQTTSUBSCRIPTIONHANDLER_H
+#define MQTTSUBSCRIPTIONHANDLER_H
 
 #include <WString.h>
 #include <vector>

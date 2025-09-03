@@ -78,15 +78,6 @@ void MBXServer::configureRoutes() const {
         serveSPIFFSFile(req, "/conf/config.json", nullptr, HttpMediaTypes::JSON, _logger);
     });
 
-    server->on(Routes::GET_MODBUS_EXAMPLE_CONFIG, HTTP_GET, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        serveSPIFFSFile(req,
-                        Routes::GET_MODBUS_EXAMPLE_CONFIG,
-                        nullptr,
-                        HttpMediaTypes::JSON,
-                        _logger);
-    });
-
     server->on(Routes::LOGS, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         MBXServerHandlers::getLogs(req);

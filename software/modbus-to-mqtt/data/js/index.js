@@ -22,20 +22,20 @@ const fmtMs = (ms) => {
     if (ms == null) return "—";
     const s = Math.floor(ms/1000), d = Math.floor(s/86400), h = Math.floor((s%86400)/3600), m = Math.floor((s%3600)/60);
     const r = [];
-    if (d) r.push(`${d}d`);
-    if (h || d) r.push(`${h}h`);
+    if (d) {
+        r.push(`${d}d`);
+    }
+    if (h || d) {
+        r.push(`${h}h`);
+    }
     r.push(`${m}m`);
     return r.join(" ");
 };
 
 // --- Render functions ---
 async function render() {
-    const [sys/*, wifi, mqtt, mdb, stg*/] = await Promise.all([
-        safeGet(API.SYSTEM_STATS),
-        // safeGet(API.NETWORK_STATS),
-        // safeGet(API.MQTT_STATS),
-        // safeGet(API.MODBUS_STATS),
-        // safeGet(API.STORAGE_STATS),
+    const [sys] = await Promise.all([
+        safeGet(API.SYSTEM_STATS)
     ]);
 
     // Header subtitle
@@ -121,8 +121,10 @@ async function fetchLogs(forceScroll) {
     const el = $("#logs-console");
     if (!el) return;
     try {
-        const r = await fetch(API.LOGS, { cache: 'no-store' });
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        const r = await fetch(API.GET_LOGS, { cache: 'no-store' });
+        if (!r.ok) {
+            throw new Error(`${r.status} ${r.statusText}`);
+        }
         const ct = r.headers.get('content-type') || '';
         let text = '';
         if (ct.includes('application/json')) {
@@ -147,7 +149,7 @@ async function fetchLogs(forceScroll) {
 async function reboot() {
     if (!confirm("Reboot the device now?")) return;
     try {
-        const r = await fetch("/api/system/reboot", { method: "POST" });
+        const r = await fetch(API.POST_SYSTEM_RESET, { method: "POST" });
         if (r.ok) {
             alert("Rebooting… The page will try to reconnect automatically.");
             // Optional: try to reload after a short pause

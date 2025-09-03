@@ -2,7 +2,6 @@
 #define COMMLINK_H
 
 #include <PubSubClient.h>
-#include <WiFiClient.h>
 #include <commlink/MqttSubscriptionHandler.h>
 #include <Preferences.h>
 

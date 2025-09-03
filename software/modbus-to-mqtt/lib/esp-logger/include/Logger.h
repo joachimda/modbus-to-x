@@ -2,7 +2,6 @@
 #ifndef LOGGER_H
 #define LOGGER_H
 
-#include <Arduino.h>
 #include <vector>
 #include "LoggerInterface.h"
 

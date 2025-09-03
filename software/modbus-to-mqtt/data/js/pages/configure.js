@@ -1,462 +1,651 @@
-import {$id, pretty} from "/js/app.js";
-const BAUDS = [1200,2400,4800,9600,19200,38400,57600,115200,230400,460800,921600];
-const SERIAL_FORMATS = [
-    "5N1","6N1","7N1","8N1","5N2","6N2","7N2","8N2",
-    "5E1","6E1","7E1","8E1","5E2","6E2","7E2","8E2",
-    "5O1","6O1","7O1","8O1","5O2","6O2","7O2","8O2"
-];
-const DP_REGISTER_TYPES = ["H","I"];
-const DP_DATA_TYPES     = ["TEXT","F32","S16","DATE"];
-const DP_ACCESS         = ["r","rw"];
-
-let elsCfg = null;
-let devEls = null;
-
+import {API, safeJson, STATIC_FILES} from "app";
 
 window.initConfigure = async function initConfigure() {
-    elsCfg = {
-        btnLoad: $id('btnLoad'),
-        btnSave: $id('btnSave'),
-        status: $id('status'),
+    await load().catch(err);
+}
 
-        bus1_baud: $id('bus1_baud'),
-        bus1_format: $id('bus1_format'),
-        bus1_term: $id('bus1_term'),
-        bus1_bias: $id('bus1_bias'),
+let model = { buses: [] };
+let BUS_ID = "bus_1";
+let selection = { kind: "bus", deviceId: null, datapointId: null };
 
-        // advanced JSON
-        advJson: $id('advJson'),
-        jsonBox: $id('jsonBox'),
-        btnApply: $id('btnApply'),
-        btnFormat: $id('btnFormat')
+/* *
+* * Mapping helpers between UI model and schema model
+* * */
+const SERIAL_FORMATS = new Set(["7N1","7N2","7O1","7O2","7E1","7E2","8N1","8N2","8E1","8E2","8O1","8O2"]);
+function toSerialParts(fmt) {
+    const def = { data_bits: 8, parity: "N", stop_bits: 1 };
+    if (!fmt || typeof fmt !== "string" || fmt.length < 3) return def;
+    const db = Number(fmt[0]);
+    const p = fmt[1];
+    const sb = Number(fmt[2]);
+    if ((db === 7 || db === 8) && (p === "N" || p === "E" || p === "O") && (sb === 1 || sb === 2)) {
+        return { data_bits: db, parity: p, stop_bits: sb };
+    }
+    return def;
+}
+function toSerialFormat(db, p, sb) {
+    const dbn = Number(db);
+    const sbn = Number(sb);
+    const pr = (p || "N").toUpperCase();
+    const fmt = `${(dbn===7||dbn===8)?dbn:8}${["N","E","O"].includes(pr)?pr:"N"}${(sbn===1||sbn===2)?sbn:1}`;
+    return SERIAL_FORMATS.has(fmt) ? fmt : "8N1";
+}
+function schemaToUi(json) {
+    // Expect current schema shape: { version, bus, devices }
+    const parts = toSerialParts(json?.bus?.serialFormat);
+    const bus = {
+        id: 1,
+        name: "RS485 Bus",
+        baud: Number(json?.bus?.baud) || 9600,
+        parity: parts.parity,
+        stop_bits: parts.stop_bits,
+        data_bits: parts.data_bits,
+        devices: []
     };
+    // devices
+    const inDevices = Array.isArray(json?.devices) ? json.devices : [];
+    bus.devices = inDevices.map((d, idx) => ({
+        id: d.id || `dev_${idx+1}`,
+        name: d.name || "device",
+        slaveId: Number(d.slaveId) || 1,
+        notes: d.notes || "",
+        datapoints: Array.isArray(d.dataPoints) ? d.dataPoints.map((p) => ({
+            id: p.id,
+            name: p.name,
+            func: Number(p.function ?? 3),
+            address: Number(p.address) || 0,
+            length: Number(p.numOfRegisters ?? 1) || 1,
+            type: String(p.dataType || "uint16"),
+            scale: Number(p.scale ?? 1) || 1,
+            unit: p.unit || "",
+            topic: p.topic || ""
+        })) : []
+    }));
 
-    devEls = {
-        // device basics
-        name: $id('dev_name'),
-        slave: $id('dev_slave'),
-        order: $id('dev_order'),
-        bus: $id('dev_bus'),
-
-        // Datapoint table + controls
-        dpBody: $id('dpBody'),
-        btnAddDpRow: $id('btnAddDpRow'),
-        btnClearDp: $id('btnClearDpRows'),
-        btnAddDevice: $id('btnAddDevice'),
+    return { buses: [ bus ] };
+}
+function uiToSchema(uiModel) {
+    const b = (uiModel?.buses||[])[0] || {};
+    return {
+        version: 1,
+        bus: {
+            baud: Number(b.baud) || 9600,
+            serialFormat: toSerialFormat(b.data_bits, b.parity, b.stop_bits)
+        },
+        devices: (b.devices || []).map(d => ({
+            name: d.name || "device",
+            slaveId: Number(d.slaveId) || 1,
+            dataPoints: (d.datapoints || []).map(p => ({
+                id: p.id,
+                name: p.name,
+                function: Number(p.func) || 3,
+                address: Number(p.address) || 0,
+                numOfRegisters: Number(p.length) || 1,
+                dataType: String(p.type || "uint16"),
+                scale: Number(p.scale ?? 1) || 1,
+                unit: p.unit || "",
+                ...(p.precision != null ? {
+                    precision: Number(p.precision)
+                } : {})
+            }))
+        }))
     };
-
-    /* 2) One-time control population */
-    fillSelect(elsCfg.bus1_baud, BAUDS);
-    fillSelect(elsCfg.bus1_format, SERIAL_FORMATS);
-
-    /* 3) Event listeners */
-    if (elsCfg.btnLoad) elsCfg.btnLoad.addEventListener('click', loadConfig);
-    if (elsCfg.btnFormat) elsCfg.btnFormat.addEventListener('click', formatJson);
-    if (elsCfg.btnApply) elsCfg.btnApply.addEventListener('click', applyEditorChanges);
-    if (elsCfg.btnSave) elsCfg.btnSave.addEventListener('click', saveToDevice);
-
-    // JSON sync when bus controls change
-    for (const id of ['bus1_baud', 'bus1_format', 'bus1_term', 'bus1_bias']) {
-        const el = $id(id);
-        if (el) el.addEventListener('change', updateEditorFromForm);
+}
+function validateSchemaConfig(cfg) {
+    const errors = [];
+    // bus
+    if (!cfg.bus || typeof cfg.bus !== "object") {
+        errors.push("Missing bus");
     }
-
-    // device & datapoint handlers
-    if (devEls.btnAddDpRow) devEls.btnAddDpRow.addEventListener('click', () => addDpRow());
-    if (devEls.btnClearDp) devEls.btnClearDp.addEventListener('click', clearDpRows);
-    if (devEls.btnAddDevice) devEls.btnAddDevice.addEventListener('click', addDeviceToJson);
-    if (devEls.name) devEls.name.addEventListener('input', updateAllDpIdPreviews);
-
-    // start with one datapoint row
-    clearDpRows();
-    addDpRow();
-    updateAllDpIdPreviews();
-
-    /* 4) Initial data load */
-    await loadConfig();
-}
-
-/* ===========================
-   Helpers
-   =========================== */
-function slug(s) {
-    return String(s || '')
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '')
-        .replace(/_+/g, '_');
-}
-
-function makeDpId(deviceName, dpName) {
-    const d = slug(deviceName);
-    const n = slug(dpName);
-    return d && n ? `${d}.${n}` : '';
-}
-
-function previewDpId(deviceName, dpName) {
-    const id = makeDpId(deviceName, dpName);
-    return id ? `id: ${id}` : `id: (enter names to generate)`;
-}
-
-function clearDpRows() {
-    if (devEls.dpBody) devEls.dpBody.innerHTML = '';
-}
-
-function updateAllDpIdPreviews() {
-    if (!devEls?.dpBody) return;
-    const deviceName = devEls.name?.value || '';
-    const rows = [...devEls.dpBody.querySelectorAll('tr')];
-    for (const r of rows) {
-        const dpName = r._cells?.name?.value || '';
-        r._cells.nameHint.textContent = previewDpId(deviceName, dpName);
-    }
-}
-
-function setStatus(el, msg, cls='') {
-    if (!el) return;
-    el.textContent = msg;
-    el.className = `status ${cls}`;
-}
-
-function fillSelect(select, values) {
-    if (!select) return;
-    select.innerHTML = '';
-    for (const v of values) {
-        const opt = document.createElement('option');
-        opt.value = v; opt.textContent = v;
-        select.appendChild(opt);
-    }
-}
-
-async function loadConfig() {
-    setStatus(elsCfg.status, 'Loading configuration...', '');
-    let resp = await fetch('/conf/config.json', { cache: 'no-store' });
-    if (!resp.ok) {
-        resp = await fetch('/conf/example.json', { cache: 'no-store' });
-        if (!resp.ok) {
-            setStatus(elsCfg.status, 'Failed to load configuration (and example).', 'err');
-            return;
-        } else {
-            setStatus(elsCfg.status, 'Loaded example configuration (no user config yet).', 'warn');
+    if (cfg.bus) {
+        if (!Number.isInteger(cfg.bus.baud) || cfg.bus.baud <= 0) {
+            errors.push("Bus baud must be a positive integer");
         }
-    } else {
-        setStatus(elsCfg.status, 'Loaded current configuration from device.', 'ok');
+        if (!SERIAL_FORMATS.has(cfg.bus.serialFormat)) {
+            errors.push(`Invalid serialFormat ${cfg.bus.serialFormat}`);
+        }
     }
+    // devices
+    for (const [i,d] of (cfg.devices||[]).entries()) {
+        if (!d.name) {
+            errors.push(`Device #${i+1}: name required`);
+        }
 
-    try {
-        const cfg = await resp.json();
-        elsCfg.jsonBox.value = pretty(cfg);
-        applyBusesToForm(cfg);
-    } catch (e) {
-        setStatus(elsCfg.status, 'Error parsing JSON: ' + e.message, 'err');
+        if (!Number.isInteger(d.slaveId) || d.slaveId < 1 || d.slaveId > 247) {
+            errors.push(`Device ${d.name||i+1}: slaveId 1-247`);
+        }
+        for (const [j,p] of (d.dataPoints||[]).entries()) {
+            if (!p.name) {
+                errors.push(`Datapoint #${j+1} on ${d.name}: name required`);
+            }
+            if (!p.id) {
+                errors.push(`Datapoint ${p.name||j+1} on ${d.name}: id required`);
+            }
+            if (!Number.isInteger(p.function) || p.function < 1 || p.function > 6) {
+                errors.push(`Datapoint ${p.id}: function 1-6`);
+            }
+            if (!Number.isInteger(p.address) || p.address < 0 || p.address > 65535) {
+                errors.push(`Datapoint ${p.id}: address 0-65535`);
+            }
+            if (!Number.isInteger(p.numOfRegisters) || p.numOfRegisters < 1 || p.numOfRegisters > 125) {
+                errors.push(`Datapoint ${p.id}: numOfRegisters 1-125`);
+            }
+            if (typeof p.unit === "string" && p.unit.length > 5) {
+                errors.push(`Datapoint ${p.id}: unit max length 5`);
+            }
+            if (typeof p.name === "string" && p.name.length > 16) {
+                errors.push(`Datapoint ${p.id}: name max length 16`);
+            }
+        }
     }
+    return { ok: errors.length === 0, errors };
 }
 
-function formatJson() {
-    try {
-        elsCfg.jsonBox.value = pretty(JSON.parse(elsCfg.jsonBox.value));
-        setStatus(elsCfg.status, 'JSON formatted.', 'ok');
-    } catch (e) {
-        setStatus(elsCfg.status, 'Invalid JSON: ' + e.message, 'err');
-    }
+async function load() {
+    const cfg = await safeJson(STATIC_FILES.MODBUS_CONFIG_JSON);
+    // Map any incoming shape to the UI model
+    model = schemaToUi(cfg);
+    BUS_ID = (model.buses?.[0]?.id) || BUS_ID;
+    selection = {
+        kind: "bus", deviceId: null, datapointId: null
+    };
+    buildTree();
+    showBusEditor();
 }
 
-function applyEditorChanges() {
-    try {
-        const cfg = JSON.parse(elsCfg.jsonBox.value);
-        applyBusesToForm(cfg);
-        setStatus(elsCfg.status, 'Editor applied to form.', 'ok');
-    } catch (e) {
-        setStatus(elsCfg.status, 'Invalid JSON: ' + e.message, 'err');
-    }
+async function doSaveApply(cfg) {
+    await safeJson(API.PUT_MODBUS_CONFIG, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cfg),
+    });
+    toast("Saved and applied.");
 }
 
-function updateEditorFromForm() {
-    try {
-        const cfg = JSON.parse(elsCfg.jsonBox.value || '{}');
-        applyFormToBuses(cfg);
-        elsCfg.jsonBox.value = pretty(cfg);
-        setStatus(elsCfg.status, 'Form changes applied to JSON.', 'ok');
-    } catch (e) {
-        setStatus(elsCfg.status, 'Invalid JSON before applying form: ' + e.message, 'err');
-    }
-}
-
-async function saveToDevice() {
-    let cfg;
-    try {
-        cfg = JSON.parse(elsCfg.jsonBox.value);
-    } catch (e) {
-        setStatus(elsCfg.status, 'Cannot save: JSON is invalid. ' + e.message, 'err');
+function openConfirmModal() {
+    const cfg = uiToSchema(model);
+    const v = validateSchemaConfig(cfg);
+    if (!v.ok) {
+        alert(`Fix errors before saving:\n${v.errors.join("\n")}`);
         return;
     }
-    if (!cfg.version) cfg.version = 1;
+    // fill preview
+    const pre = $("#json-preview");
+    if (pre) pre.textContent = JSON.stringify(cfg, null, 2);
+    // show modal
+    const modal = $("#modal-confirm");
+    modal.style.display = "flex";
 
-    const blob = new Blob([pretty(cfg)], { type: 'application/json' });
-    const form = new FormData();
-    form.append('file', blob, 'config.json');
+    // wire buttons
+    const approve = $("#btn-approve-apply");
+    const cancel = $("#btn-cancel-apply");
+    const closeBtn = $("#btn-confirm-close");
+    const dl = $("#btn-download-backup");
+    const close = () => { modal.style.display = "none"; };
 
-    setStatus(elsCfg.status, 'Uploading config...', '');
-    try {
-        const resp = await fetch('/upload', { method: 'POST', body: form });
-        if (resp.ok) {
-            setStatus(elsCfg.status, 'Config uploaded successfully.', 'ok');
-        } else {
-            const t = await resp.text();
-            setStatus(elsCfg.status, 'Upload failed: ' + t, 'err');
-        }
-    } catch (e) {
-        setStatus(elsCfg.status, 'Upload error: ' + e.message, 'err');
-    }
+    approve.onclick = async () => {
+        try {
+            await doSaveApply(cfg);
+            close();
+        } catch (e) { err(e); }
+    };
+    cancel.onclick = close;
+    closeBtn.onclick = close;
+    dl.onclick = async () => {
+        try {
+            const r = await fetch(STATIC_FILES.MODBUS_CONFIG_JSON, {
+                cache: 'no-store'
+            });
+            if (!r.ok) {
+                throw new Error(`${r.status} ${r.statusText}`);
+            }
+            const blob = await r.blob();
+            const a = document.createElement('a');
+            const ts = new Date()
+                .toISOString()
+                .replace(/[:T]/g,'-')
+                .replace(/\..+/, '');
+            a.href = URL.createObjectURL(blob);
+            a.download = `config-backup-${ts}.json`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        } catch (e) { err(e); }
+    };
 }
 
-/* ---------- Configure: buses <-> JSON ---------- */
-function applyBusesToForm(cfg) {
-    if (cfg.bus1) {
-        if (elsCfg.bus1_baud)   elsCfg.bus1_baud.value   = String(cfg.bus1.baud ?? '');
-        if (elsCfg.bus1_format) elsCfg.bus1_format.value = cfg.bus1.serialFormat ?? '';
-        if (elsCfg.bus1_term)   elsCfg.bus1_term.value   = cfg.bus1.termination ?? '120R';
-        if (elsCfg.bus1_bias)   elsCfg.bus1_bias.checked = !!cfg.bus1.enableBias;
-    }
-}
+function buildTree() {
+    const q = $("#tree-search").value?.toLowerCase() || "";
+    const list = $("#tree-list");
+    list.innerHTML = "";
 
-function applyFormToBuses(cfg) {
-    cfg.bus1 = cfg.bus1 || {};
-    if (elsCfg.bus1_baud)   cfg.bus1.baud         = Number(elsCfg.bus1_baud.value);
-    if (elsCfg.bus1_format) cfg.bus1.serialFormat = elsCfg.bus1_format.value;
-    if (elsCfg.bus1_term)   cfg.bus1.termination  = elsCfg.bus1_term.value;
-    if (elsCfg.bus1_bias)   cfg.bus1.enableBias   = !!elsCfg.bus1_bias.checked;
-}
+    const b = getBus();
+    const busNode = document.createElement("div");
+    busNode.className = "node" + (selection.kind==="bus" ? " active" : "");
+    busNode.innerHTML =
+        `<div>
+            <strong>${b.name || "(bus)"} </strong>
+            <span class="pill">${(b.devices?.length || 0)} dev</span>
+         </div>
+         <div class="meta">${b.baud} • ${b.data_bits}${b.parity}${b.stop_bits}</div>`;
 
-/* ---------- Configure: device + datapoint's ---------- */
-function mkInput(placeholder, type="text") {
-    const i = document.createElement('input');
-    i.type = type;
-    i.placeholder = placeholder;
-    return i;
-}
+    busNode.onclick = () => {
+        selection = {
+            kind:"bus", deviceId:null, datapointId:null
+        };
+        showBusEditor();
+    };
 
-function makeSelect(options, value) {
-    const sel = document.createElement('select');
-    for (const o of options) {
-        const opt = document.createElement('option');
-        opt.value = o; opt.textContent = o;
-        sel.appendChild(opt);
-    }
-    if (value != null) sel.value = value;
-    return sel;
-}
+    list.appendChild(busNode);
 
-function addDpRow(prefill = {}) {
-    const tr = document.createElement('tr');
+    // Devices + datapoints
+    (b.devices || []).forEach(d => {
+        const devNode = document.createElement("div");
+        devNode.className = "node" + (selection.kind==="device" && selection.deviceId===d.id ? " active" : "");
+        devNode.style.marginLeft = "1rem";
+        devNode.classList.add("device");
+        devNode.innerHTML =
+            `<div>
+                <strong>${d.name}</strong>
+                <span class="pill">ID ${d.slaveId}</span>
+                <span class="pill"> Datapoints: ${d.datapoints?.length || 0}</span>
+            </div>
+            <div class="meta">${b.name}</div>
+            <div class="inline-actions">
+                <button class="btn icon" data-add-dp="${d.id}" title="Add datapoint">+</button>
+            </div>`;
 
-    // Name cell with generated-id preview
-    const td_name = document.createElement('td');
-    td_name.className = 'name-cell';
-    const name = mkInput('Voltage');
-    name.value = prefill.name ?? '';
-    const nameHint = document.createElement('div');
-    nameHint.className = 'hint';
-    nameHint.textContent = ''; // set below
-    td_name.appendChild(name);
-    td_name.appendChild(nameHint);
-
-    const td_address = document.createElement('td');
-    const inp_address = mkInput('1234');
-    inp_address.value = prefill.address ?? '';
-    td_address.appendChild(inp_address);
-
-    const td_numRegisters = document.createElement('td');
-    const inp_numRegisters   = mkInput('1');
-    inp_numRegisters.value   = prefill.numOfRegisters ?? '1';
-    td_numRegisters.appendChild(inp_numRegisters);
-
-    const td_scale= document.createElement('td');
-    const inp_scale   = mkInput('1.0');
-    inp_scale.value   = prefill.scale ?? '';
-    td_scale.appendChild(inp_scale);
-
-    const td_registerType= document.createElement('td');
-    const inp_registerType= makeSelect(DP_REGISTER_TYPES, prefill.registerType);
-    td_registerType.appendChild(inp_registerType);
-
-    const td_dataType= document.createElement('td');
-    const inp_dataType= makeSelect(DP_DATA_TYPES, prefill.dataType);
-    td_dataType.appendChild(inp_dataType);
-
-    const td_unit= document.createElement('td');
-    const inp_unit = mkInput('V');
-    inp_unit.value = prefill.unit ?? '';
-    td_unit.appendChild(inp_unit);
-
-    const td_access= document.createElement('td');
-    const inp_access= makeSelect(DP_ACCESS, prefill.access);
-    td_access.appendChild(inp_access);
-
-    const td_poll= document.createElement('td');
-    const poll = mkInput('1000');
-    poll.value = prefill.pollMs ?? '';
-    td_poll.appendChild(poll);
-
-    const td_deadband= document.createElement('td');
-    const inp_deadband= mkInput('0');
-    inp_deadband.value = prefill.deadBand ?? ''; td_deadband.appendChild(inp_deadband);
-
-    const td_precision= document.createElement('td');
-    const inp_precision= mkInput('1');
-    inp_precision.value = prefill.precision ?? '';
-    td_precision.appendChild(inp_precision);
-
-    const td_del= document.createElement('td');
-    const delBtn= document.createElement('button');
-    delBtn.textContent = '✕';
-    delBtn.className = 'btn danger';
-    delBtn.style.padding = '6px 10px';
-    delBtn.addEventListener('click', () => tr.remove());
-    td_del.appendChild(delBtn);
-
-    tr._cells = {
-        name,
-        nameHint,
-        address: inp_address,
-        numOfRegisters: inp_numRegisters,
-        scale: inp_scale,
-        registerType: inp_registerType,
-        dataType: inp_dataType,
-        unit: inp_unit,
-        access: inp_access,
-        poll,
-        deadBand: inp_deadband,
-        precision: inp_precision };
-    tr.append(td_name, td_address, td_numRegisters, td_scale, td_registerType, td_dataType, td_unit, td_access, td_poll, td_deadband, td_precision, td_del);
-    devEls.dpBody.appendChild(tr);
-
-    // Live preview as names change
-    name.addEventListener('input', () => {
-        tr._cells.nameHint.textContent = previewDpId(devEls.name.value, name.value);
-    });
-    tr._cells.nameHint.textContent = previewDpId(devEls.name.value, name.value);
-}
-
-
-function readDatapoints(deviceName) {
-    const body = devEls.dpBody;
-    if (!body) return { dps: [] };
-    const rows = [...body.querySelectorAll('tr')];
-    const datapoints = [];
-    for (const r of rows) {
-        const c = r._cells;
-        const dpName = c.name.value.trim();
-        const obj = {
-            id:      makeDpId(deviceName, dpName),
-            name:    dpName,
-            address: Number(c.address.value),
-            numOfRegisters: Number(c.numOfRegisters.value || 1),
-            scale:   c.scale.value === '' ? undefined : Number(c.scale.value),
-            registerType: c.registerType.value,
-            dataType: c.dataType.value,
-            unit:    c.unit.value.trim(),
-            access:  c.access.value,
-            pollMs:  c.poll.value === '' ? undefined : Number(c.poll.value),
-            deadBand: c.deadBand.value === '' ? undefined : Number(c.deadBand.value),
-            precision: c.precision.value === '' ? undefined : Number(c.precision.value),
+        devNode.onclick = () => {
+            selection = {
+                kind:"device", deviceId:d.id, datapointId:null
+            };
+            showDeviceEditor();
         };
 
-        // validation
-        if (!obj.name) return { error: 'Datapoint name is required' };
-        if (!obj.id)
+        if (matches(q, [d.name, d.slaveId, b.name]))
         {
-            return { error: 'Generated datapoint ID is empty; check device & datapoint names' };
+            list.appendChild(devNode);
         }
-        if (Number.isNaN(obj.address) || obj.address < 0 || obj.address > 65535)
-            return { error: `Address must be 0–65535 (got ${c.address.value})` };
-        if (Number.isNaN(obj.numOfRegisters) || obj.numOfRegisters < 1 || obj.numOfRegisters > 125)
-            return { error: `#Regs must be 1–125 (got ${c.numOfRegisters.value})` };
-        if (!DP_REGISTER_TYPES.includes(obj.registerType))
-            return { error: 'Invalid register type' };
-        if (!DP_DATA_TYPES.includes(obj.dataType))
-            return { error: 'Invalid data type' };
-        if (!DP_ACCESS.includes(obj.access))
-            return { error: 'Invalid access' };
 
-        // prune undefined for tidy JSON
-        for (const k of Object.keys(obj)) if (obj[k] === undefined || obj[k] === '') delete obj[k];
-        datapoints.push(obj);
-    }
-    return { dps: datapoints };
+        devNode.querySelector('[data-add-dp]')?.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            selection = {
+                kind:"device", deviceId: d.id, datapointId: null
+            };
+            addDatapointToCurrentDevice();
+        });
+
+        (d.datapoints || []).forEach(p => {
+            const dpNode = document.createElement("div");
+            dpNode.className = "node" + (selection.kind==="dp" && selection.datapointId===p.id ? " active" : "");
+            dpNode.style.marginLeft = "2rem";
+            dpNode.innerHTML =
+                `<div class="mono">${p.id}</div>
+                 <div class="meta">${p.name} • F${p.func} @ 0x${numberToHex(p.address)}</div>`;
+            dpNode.onclick = () => {
+                selection = {
+                    kind:"dp", deviceId:d.id, datapointId:p.id
+                };
+                showDatapointEditor();
+            };
+            if (matches(q, [p.id, p.name, p.func, p.address]))
+            {
+                list.appendChild(dpNode);
+            }
+        });
+    });
 }
 
-function buildDeviceFromForm() {
-    const name = devEls.name?.value.trim();
-    const slave = Number(devEls.slave?.value);
-    const byteOrder = devEls.order?.value;
-    const busId = Number(devEls.bus?.value || 1);
+function addDatapointToCurrentDevice() {
+    const d = getDevice(selection.deviceId);
+    if (!d) return;
+    const name = "datapoint";
+    const baseId = dpIdFrom(d.name || "device", name);
+    let unique = baseId, i = 2;
+    while (findDpById(unique)) unique = `${baseId}_${i++}`;
+    d.datapoints = d.datapoints || [];
+    d.datapoints.push({
+        id: unique, name,
+        func: 3,
+        address: 0,
+        length: 1,
+        type: "uint16",
+        scale: 1,
+        unit: "",
+        topic: ""
+    });
+    selection = {
+        kind:"dp", deviceId:d.id, datapointId: unique
+    };
+    buildTree();
+    showDatapointEditor();
+}
 
-    if (!name) return { error: 'Device name is required' };
-    if (Number.isNaN(slave) || slave < 1 || slave > 247) return { error: 'Slave ID must be 1–247' };
-    if (!['ABCD','DCBA'].includes(byteOrder)) return { error: 'Invalid byte order' };
-    if (busId !== 1) return { error: 'Only bus1 supported right now' };
+// --- editors ---
+function showBusEditor() {
+    const b = getBus();
+    if (!b)
+    {
+        return;
+    }
+    showOnly("#editor-bus");
+    $("#bus-baud").value = b.baud || 9600;
+    $("#bus-serial-parity").value = b.parity || "N";
+    $("#bus-serial-stop-bits").value = b.stop_bits || 1;
+    $("#bus-data-bits").value = b.data_bits || 8;
+    $("#btn-bus-save").onclick = () => {
+        b.baud = Number($("#bus-baud").value);
+        b.data_bits = $("#bus-data-bits").value;
+        b.parity = $("#bus-serial-parity").value;
+        b.stop_bits = $("#bus-serial-stop-bits").value;
+        buildTree();
+        toast("Bus updated (draft)");
+    };
+}
 
-    const { dps, error } = readDatapoints(name);
-    if (error) return { error };
-
-    // prevent duplicate IDs within the new device
-    const seen = new Set();
-    for (const dp of dps) {
-        if (seen.has(dp.id))
-        {
-            return { error: `Duplicate datapoint id generated: ${dp.id}` };
-        }
-        seen.add(dp.id);
+function showDeviceEditor() {
+    const bus = getBus();
+    const device = getDevice(selection.deviceId);
+    if (!bus || !device)
+    {
+        return;
     }
 
-    return {
-        device: {
-            name,
-            busId,
-            slaveId: slave,
-            defaultByteOrder: byteOrder,
-            dataPoints: dps || []
+    showOnly("#editor-device");
+
+    $("#dev-name").value = device.name || "";
+    $("#dev-slave").value = device.slaveId ?? 1;
+    $("#dev-notes").value = device.notes || "";
+
+    renderDeviceDatapointTable(device);
+
+    $("#btn-dev-save").onclick = () => {
+        device.name = $("#dev-name").value.trim() || "device";
+        device.slaveId = Number($("#dev-slave").value);
+        device.notes = $("#dev-notes").value.trim();
+        buildTree();
+        toast("Device updated (draft)");
+    };
+
+    $("#btn-dev-delete").onclick = () => {
+        if (!confirm("Delete this device and its datapoints?"))
+        {
+            return;
+        }
+
+        bus.devices = (bus.devices || []).filter(x => x.id !== device.id);
+        selection = {
+            kind:"bus", deviceId:null, datapointId:null
+        };
+        buildTree();
+        showBusEditor();
+    };
+}
+
+function renderDeviceDatapointTable(d) {
+    const tbody = $("#dev-dp-table tbody");
+    tbody.innerHTML = (d.datapoints || []).map(p => `
+      <tr>
+        <td class="mono">${p.id}</td>
+        <td>${p.name}</td>
+        <td>${p.func}</td>
+        <td>${p.address}</td>
+        <td>${p.type}</td>
+        <td><button class="btn small" data-dp="${p.id}">Edit</button></td>
+      </tr>
+    `).join("");
+    tbody.querySelectorAll("button[data-dp]").forEach(b =>
+        b.addEventListener("click", () => {
+            selection = {
+                kind:"dp", deviceId: selection.deviceId, datapointId: b.dataset.dp
+            };
+            showDatapointEditor();
+        })
+    );
+}
+
+function showDatapointEditor() {
+    const device = getDevice(selection.deviceId);
+    const datapoint = getDatapoint(selection.deviceId, selection.datapointId);
+    if (!device || !datapoint)
+    {
+        return;
+    }
+    showOnly("#editor-dp");
+
+    const devSel = $("#dp-device");
+    const devices = (getBus()?.devices || []);
+    devSel.innerHTML = devices.map(dev => `<option value="${dev.id}">${dev.name}</option>`).join("");
+    devSel.value = device.id;
+
+    $("#dp-name").value = datapoint.name || "";
+    $("#dp-autoid").textContent = datapoint.id || "—";
+    $("#dp-func").value = datapoint.func || 3;
+    $("#dp-addr").value = datapoint.address ?? 0;
+    $("#dp-len").value = datapoint.length ?? 1;
+    $("#dp-type").value = datapoint.type || "uint16";
+    $("#dp-scale").value = datapoint.scale ?? 1;
+    $("#dp-unit").value = datapoint.unit || "";
+    $("#dp-topic").value = datapoint.topic || "";
+    $("#btn-dp-save").onclick = () => {
+        const newDevId = $("#dp-device").value;
+        const name = $("#dp-name").value.trim();
+        const newId = dpIdFrom(getDevice(newDevId)?.name || "device", name || "datapoint");
+
+        if (findDpById(newId) && newId !== datapoint.id) {
+            alert(`Datapoint ID "${newId}" already exists.`);
+            return;
+        }
+
+        // content
+        datapoint.name = name || "datapoint";
+        datapoint.func = Number($("#dp-func").value);
+        datapoint.address = Number($("#dp-addr").value);
+        datapoint.length = Number($("#dp-len").value);
+        datapoint.type = $("#dp-type").value;
+        datapoint.scale = Number($("#dp-scale").value);
+        datapoint.unit = ($("#dp-unit").value || "").trim();
+        datapoint.topic = ($("#dp-topic").value || "").trim();
+
+        // move and rename if a device changed
+        if (newDevId !== selection.deviceId) {
+            const oldDev = getDevice(selection.deviceId);
+            oldDev.datapoints = (oldDev.datapoints || []).filter(x => x.id !== datapoint.id);
+            const newDev = getDevice(newDevId);
+            datapoint.id = newId;
+            newDev.datapoints = newDev.datapoints || [];
+            newDev.datapoints.push(datapoint);
+            selection = {
+                kind: "dp", deviceId: newDevId, datapointId: datapoint.id
+            };
+        }
+        else {
+            datapoint.id = newId;
+        }
+
+        buildTree();
+        showDatapointEditor();
+        toast("Datapoint updated (draft)");
+    };
+    $("#btn-dp-delete").onclick = () => {
+        if (!confirm("Delete this datapoint?"))
+        {
+            return;
+        }
+
+        device.datapoints = (device.datapoints || [])
+            .filter(x => x.id !== datapoint.id);
+
+        selection = {
+            kind:"device", deviceId: device.id, datapointId: null
+        };
+
+        buildTree();
+        showDeviceEditor();
+    };
+
+    // test read/write
+    $("#btn-dp-test-read").onclick = async () => {
+        $('#dp-test-result').textContent = "Reading…";
+        try {
+            const r = await safeJson(`/api/modbus/test-read?id=${encodeURIComponent(datapoint.id)}`);
+            $("#dp-test-result").textContent = `Value: ${r.value} ${datapoint.unit || ""}`;
+        } catch (e) {
+            $("#dp-test-result").textContent = `Error: ${e.message}`;
+        }
+    };
+    $("#btn-dp-test-write").onclick = async () => {
+        const val = $("#dp-test-value").value.trim();
+        if (!val) return alert("Provide a value to write");
+        $('#dp-test-result').textContent = "Writing…";
+        try {
+            await safeJson(`/api/modbus/test-write`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    id: datapoint.id,
+                    value: isNaN(Number(val)) ? val : Number(val)
+                })
+            });
+            $("#dp-test-result").textContent = "Write OK";
+        } catch (e) {
+            $("#dp-test-result").textContent = `Error: ${e.message}`;
         }
     };
 }
 
-function addDeviceToJson() {
-    let cfg;
-    try {
-        cfg = JSON.parse(elsCfg.jsonBox.value || '{}');
-    } catch (e) {
-        setStatus(elsCfg.status, 'Invalid JSON in editor. Fix it before adding device. ' + e.message, 'err');
-        return;
-    }
+/*
+* Helpers
+* */
+const $ = (s) => document.querySelector(s);
+const slug = (s) => (s || "")
+    .toString().trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g,"");
+const dpIdFrom = (deviceName, dpName) => `${slug(deviceName)}.${slug(dpName)}`;
+const getBus = () => model.buses[0];
+const getDevice = (did) => (getBus()?.devices || []).find(d => d.id === did);
+const getDatapoint = (did, pid) => (getDevice(did)?.datapoints || []).find(p => p.id === pid);
 
-    const built = buildDeviceFromForm();
-    if (built.error) {
-        setStatus(elsCfg.status, built.error, 'err');
-        return;
-    }
-
-    if (!Array.isArray(cfg.devices))
-    {
-        cfg.devices = [];
-    }
-
-    cfg.devices.push(built.device);
-
-    if (!cfg.version) cfg.version = 1;
-    if (!cfg.bus1) {
-        cfg.bus1 = { baud: 9600, serialFormat: '8N1', termination: '120R', enableBias: true };
-    }
-
-    elsCfg.jsonBox.value = pretty(cfg);
-    setStatus(elsCfg.status, `Device "${built.device.name}" added to JSON (bus ${built.device.busId}).`, 'ok');
-
-    // reset form for next entry
-    if (devEls.name)  devEls.name.value = '';
-    if (devEls.slave) devEls.slave.value = '';
-    if (devEls.order) devEls.order.value = 'ABCD';
-    clearDpRows();
-    addDpRow();
-    updateAllDpIdPreviews();
+function toast(msg) {
+    console.log(msg);
 }
+
+function err(e) {
+    console.error(e);
+    alert(e.message || e);
+}
+
+function findDpById(id) {
+    const b = getBus();
+    for (const d of (b.devices || [])) {
+        for (const p of (d.datapoints || [])) {
+            if (p.id === id) return p;
+        }
+    }
+    return null;
+}
+
+const recomputeId = () => {
+    const dev = getDevice($("#dp-device").value);
+    const name = $("#dp-name").value;
+    $("#dp-autoid").textContent = dpIdFrom(dev?.name || "device", name || "datapoint");
+};
+function showOnly(id) {
+    $("#editor-placeholder").style.display = "none";
+    ["#editor-bus","#editor-device","#editor-dp"].forEach(s => $(s).style.display = "none");
+    $(id).style.display = "block";
+}
+function matches(q, arr) {
+    if (!q)
+    {
+        return true;
+    }
+    return arr.some(x => (x+"").toLowerCase().includes(q));
+}
+function numberToHex(n) {
+    if (n == null || Number.isNaN(Number(n))) return "";
+    const num = Math.trunc(Number(n));
+    return Math.abs(num).toString(16);
+}
+
+/*
+* Listeners
+* */
+$("#file-import").addEventListener("change", async (ev) => {
+    const f = ev.target.files?.[0];
+    if (!f) return;
+    const text = await f.text();
+    try {
+        const json = JSON.parse(text);
+        const ui = schemaToUi(json);
+        const bus = ui?.buses?.[0];
+        if (!bus) {
+            throw new Error("Invalid config file: missing bus");
+        }
+        model = ui;
+        BUS_ID = bus.id || BUS_ID;
+        selection = {
+            kind:"bus", deviceId:null, datapointId:null
+        };
+        buildTree();
+        showBusEditor();
+        toast("Imported draft (not saved yet)");
+    }
+    catch (e) {
+        err(e);
+    }
+});
+$('#tree-search').addEventListener("input", buildTree);
+$('#dp-name').addEventListener("input", recomputeId);
+$('#dp-device').addEventListener("change", recomputeId);
+
+$('#btn-add-device').onclick = () => {
+    const b = getBus();
+    const id = `dev_${Date.now()}`;
+    b.devices = b.devices || [];
+    b.devices.push({ id, name: "device", slaveId: 1, notes: "", datapoints: [] });
+    selection = {
+        kind:"device", deviceId:id, datapointId:null
+    };
+    buildTree();
+    showDeviceEditor();
+};
+$("#btn-dev-add-dp").onclick = () => {
+    if (selection.kind !== "device") {
+        return;
+    }
+    addDatapointToCurrentDevice();
+};
+
+$("#btn-validate").onclick = async () => {
+    try {
+        const cfg = uiToSchema(model);
+        const v = validateSchemaConfig(cfg);
+        if (!v.ok) {
+            return alert(`Validation errors:\n${v.errors.join("\n")}`);
+        }
+        const res = await safeJson("/api/config/validate", {
+            method: "POST", headers: { "Content-Type":"application/json" },
+            body: JSON.stringify(cfg),
+        });
+        alert(res.ok ? "Validation OK" : `Validation errors:\n${(res.errors||[]).join("\n")}`);
+    }
+    catch (e) {
+        err(e);
+    }
+};
+
+$("#btn-export").onclick = () => {
+    const cfg = uiToSchema(model);
+    const blob = new Blob([JSON.stringify(cfg, null, 2)], {
+        type: "application/json"
+    });
+
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "modbus-config.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+};
+$("#btn-reload").onclick = () => load();
+$("#btn-save-apply").onclick = () => openConfirmModal();

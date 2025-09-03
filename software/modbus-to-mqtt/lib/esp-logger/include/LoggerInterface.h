@@ -1,5 +1,5 @@
-#ifndef LOGTARGET_H
-#define LOGTARGET_H
+#ifndef LOGGERINTERFACE_H
+#define LOGGERINTERFACE_H
 
 class LoggerInterface {
 public:
@@ -9,4 +9,4 @@ public:
     virtual void logWarning(const char* message) = 0;
     virtual void logDebug(const char* message) = 0;
 };
-#endif //LOGTARGET_H
+#endif

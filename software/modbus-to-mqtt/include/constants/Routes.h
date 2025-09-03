@@ -6,7 +6,6 @@ public:
     constexpr static auto CONFIGURE = "/configure";
     constexpr static auto RESET_NETWORK = "/reset";
     constexpr static auto GET_MODBUS_CONFIG = "/conf/config.json";
-    constexpr static auto GET_MODBUS_EXAMPLE_CONFIG = "/conf/example.json";
 
     /* *
      * * Modbus Config API

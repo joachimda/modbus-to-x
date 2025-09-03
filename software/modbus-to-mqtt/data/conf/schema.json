@@ -20,7 +20,7 @@
       ],
       "properties": {
         "baud": {
-          "type": "integer",
+          "type": "integer"
         },
         "serialFormat": {
           "type": "string",
@@ -38,7 +38,7 @@
             "8O1",
             "8O2"
           ]
-        },
+        }
       },
       "additionalProperties": false
     },
@@ -117,7 +117,7 @@
                     "uint16",
                     "uint32",
                     "uint64",
-                    "float32",
+                    "float32"
                   ]
                 },
                 "unit": {

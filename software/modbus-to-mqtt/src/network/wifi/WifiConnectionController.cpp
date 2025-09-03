@@ -35,7 +35,7 @@ void WifiConnectionController::setApChannelIfNeeded(const uint8_t ch) {
 }
 
 bool WifiConnectionController::connect(const String &ssid, const String &pass, const String &bssidStr,
-    const WifiStaticConfig &st, const bool save, const uint8_t channel) {
+    const WifiStaticConfig &static_config, const bool save, const uint8_t channel) {
 
         if (_status.state == WifiConnectionState::Connecting) {
             return false;
@@ -51,19 +51,19 @@ bool WifiConnectionController::connect(const String &ssid, const String &pass, c
         WiFi.setAutoReconnect(false);
         setApChannelIfNeeded(channel);
 
-        if (st.any()) {
+        if (static_config.any()) {
             Serial.println("WiFiConnectController::connect - Using static config");
 
             IPAddress ip, gw, mask, dns1, dns2;
-            if (!ip.fromString(st.ip) || !gw.fromString(st.gateway) || !mask.fromString(st.subnet)) {
+            if (!ip.fromString(static_config.ip) || !gw.fromString(static_config.gateway) || !mask.fromString(static_config.subnet)) {
                 fail("BAD_STATIC_CONFIG");
                 return true;
             }
-            if (st.dns1.length()) {
-                (void) dns1.fromString(st.dns1);
+            if (static_config.dns1.length()) {
+                (void) dns1.fromString(static_config.dns1);
             }
-            if (st.dns2.length()) {
-                (void) dns2.fromString(st.dns2);
+            if (static_config.dns2.length()) {
+                (void) dns2.fromString(static_config.dns2);
             }
             WiFi.config(ip, gw, mask, dns1, dns2);
         } else {

@@ -15,7 +15,7 @@ public:
     static void setApChannelIfNeeded(uint8_t ch);
 
     bool connect(const String &ssid, const String &pass, const String &bssidStr,
-                 const WifiStaticConfig &st, bool save, uint8_t channel);
+                 const WifiStaticConfig &static_config, bool save, uint8_t channel);
 
     void loop();
 

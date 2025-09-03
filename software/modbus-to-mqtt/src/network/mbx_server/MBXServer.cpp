@@ -15,7 +15,7 @@
 
 static constexpr auto WIFI_CONNECT_DELAY_MS = 100;
 static constexpr auto WIFI_CONNECT_TIMEOUT = 30000;
-static WiFiConnectController g_wifi;
+static WifiConnectionController g_wifi;
 
 MBXServer::MBXServer(AsyncWebServer *server, DNSServer *dnsServer, Logger *logger) : _logger(logger), server(server),
     _dnsServer(dnsServer) {

@@ -75,28 +75,6 @@ void CommLink::loadMQTTConfig() {
     preferences.end();
 }
 
-void CommLink::saveUserConfig() {
-    preferences.begin(MQTT_PREFS_NAMESPACE, false);
-    preferences.putString("server", LOCAL_MQTT_BROKER);
-    preferences.putString("port", LOCAL_MQTT_PORT);
-    preferences.putString("user", LOCAL_MQTT_USER);
-    preferences.putString("pass", LOCAL_MQTT_PASSWORD);
-    preferences.putString("modbus_mode", LOCAL_MODBUS_MODE);
-    preferences.putULong("modbus_baud", LOCAL_MODBUS_BAUD);
-    preferences.end();
-}
-void CommLink::overrideUserConfig(const char* user, const char* pass, const char* server, const char* port, const char* mode, const uint32_t baud) {
-    preferences.begin(MQTT_PREFS_NAMESPACE, false);
-    preferences.putString("server", server);
-    preferences.putString("port", port);
-    preferences.putString("user", user);
-    preferences.putString("pass", pass);
-    preferences.putString("modbus_mode", mode);
-    preferences.putULong("modbus_baud", baud);
-    preferences.end();
-}
-
-
 auto CommLink::ensureMQTTConnection() const -> bool {
     String clientId = MQTT_CLIENT_PREFIX;
     clientId += String(random(RND_SEED), HEX);

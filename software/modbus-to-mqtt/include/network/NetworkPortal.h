@@ -5,7 +5,7 @@
 #include <memory>
 
 #include "Logger.h"
-#include "wifi/WifiResult.h"
+#include "wifi/WifiConfiguration.h"
 
 class NetworkPortal {
 public:
@@ -13,7 +13,7 @@ public:
 
     void begin();
 
-    std::shared_ptr<const std::vector<WiFiResult>> getLatestScanResultsSnapshot() const;
+    std::shared_ptr<const std::vector<WifiScanResult>> getLatestScanResultsSnapshot() const;
 
     static void stop();
     void suspendScanning(bool on);
@@ -28,7 +28,7 @@ private:
     bool _scanSuspended = false;
     void setAPMode() const;
 
-    std::shared_ptr<const std::vector<WiFiResult>> _latestScanResults;
+    std::shared_ptr<const std::vector<WifiScanResult>> _latestScanResults;
 };
 
 #endif

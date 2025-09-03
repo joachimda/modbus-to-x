@@ -25,8 +25,6 @@ public:
 
     auto getMQTTUser() -> char *;
 
-    void overrideUserConfig(const char *user, const char *pass, const char *server, const char *port, const char *mode,
-                        uint32_t baud);
     static void setMQTTEnabled(bool enabled);
     static auto isMQTTEnabled() -> bool;
 
@@ -35,7 +33,6 @@ private:
 
     void loadMQTTConfig();
 
-    void saveUserConfig();
     char LOCAL_MQTT_BROKER[150] = "";
     char LOCAL_MQTT_PORT[6] = "";
     char LOCAL_MQTT_USER[32] = "";

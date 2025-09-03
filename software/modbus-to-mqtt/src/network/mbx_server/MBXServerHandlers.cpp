@@ -3,16 +3,30 @@
 #include <SPIFFS.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
+
+#include "constants/HttpMediaTypes.h"
+#include "constants/HttpResponseCodes.h"
 #include "network/NetworkPortal.h"
 #include "services/StatService.h"
 #include "services/OtaService.h"
 #include "services/IndicatorService.h"
 
+auto constexpr OTA_FS_UPLOAD_BEGIN_FAIL_RESP = R"({"error":"ota_begin_failed"})";
+auto constexpr OTA_FW_UPLOAD_BEGIN_FAIL_RESP = R"({"error":"ota_begin_failed"})";
+auto constexpr OTA_END_FAIL_RESP = R"({"error":"ota_end_failed"})";
+auto constexpr OTA_END_FW_UPLOAD_OK = R"({"ok":true,"type":"firmware"})";
+auto constexpr OTA_END_FS_UPLOAD_OK = R"({"ok":true,"type":"filesystem"})";
+auto constexpr BAD_REQUEST_RESP = R"({"error":"bad_request"})";
+auto constexpr WIFI_HANDLER_OK_RESP = "{\"ok\":true}";
+auto constexpr WIFI_ALREADY_CONNECTING_RESP = R"({"error":"already_connecting"})";
+
+auto constexpr NETWORK_RESET_DELAY_MS = 5000;
+
 std::atomic<NetworkPortal *> g_portal{nullptr};
 static std::atomic<MemoryLogger *> g_memlog{nullptr};
 
-bool parseConnectPayload(uint8_t *data, size_t len,
-                         String &ssid, String &pass, String &bssid, bool &save, WifiStaticCfg &st,
+bool parseConnectPayload(uint8_t *data, size_t len, String &ssid, String &pass,
+                         String &bssid, bool &save, WifiStaticConfig &st,
                          uint8_t &channel) {
     Serial.print("MBXServerHandlers::parseConnectPayload called with: ");
     Serial.println("data: " + String(data, len));
@@ -39,21 +53,21 @@ bool parseConnectPayload(uint8_t *data, size_t len,
     return true;
 }
 
-const char *stateToStr(const WifiConnState s) {
+const char *stateToStr(const WifiConnectionState s) {
     switch (s) {
-        case WifiConnState::Idle: return "idle";
-        case WifiConnState::Connecting: return "connecting";
-        case WifiConnState::Connected: return "connected";
-        case WifiConnState::Failed: return "failed";
-        case WifiConnState::Disconnected: return "disconnected";
+        case WifiConnectionState::Idle: return "idle";
+        case WifiConnectionState::Connecting: return "connecting";
+        case WifiConnectionState::Connected: return "connected";
+        case WifiConnectionState::Failed: return "failed";
+        case WifiConnectionState::Disconnected: return "disconnected";
     }
     return "unknown";
 }
 
-void sendJson(AsyncWebServerRequest *req, const JsonDocument &doc, int code = 200) {
+void sendJson(AsyncWebServerRequest *req, const JsonDocument &doc) {
     String out;
     serializeJson(doc, out);
-    req->send(code, "application/json", out);
+    req->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, out);
 }
 
 void MBXServerHandlers::setPortal(NetworkPortal *portal) {
@@ -67,7 +81,7 @@ void MBXServerHandlers::setMemoryLogger(MemoryLogger *mem) {
 void MBXServerHandlers::getSsidListAsJson(AsyncWebServerRequest *req) {
     auto *portal = g_portal.load(std::memory_order_acquire);
     if (!portal) {
-        req->send(503, "application/json", "[]");
+        req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::JSON, "[]");
         return;
     }
 
@@ -119,14 +133,14 @@ void MBXServerHandlers::getSsidListAsJson(AsyncWebServerRequest *req) {
             out += escSsid;
             out += "\"";
             out += ",\"rssi\":";
-            out += String((long) ap.RSSI);
+            out += String(static_cast<long>(ap.RSSI));
             out += R"(,"secure":)";
             out += (ap.encryptionType == WIFI_AUTH_OPEN ? "false" : "true");
             out += R"(,"auth":")";
             out += authName;
             out += "\"";
             out += ",\"channel\":";
-            out += String((unsigned) ap.channel);
+            out += String(static_cast<unsigned>(ap.channel));
             if (ap.hasBSSID) {
                 out += R"(,"bssid":")";
                 out += bssidBuf;
@@ -139,20 +153,20 @@ void MBXServerHandlers::getSsidListAsJson(AsyncWebServerRequest *req) {
     }
 
     out += "]";
-    req->send(200, "application/json", out);
+    req->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, out);
 }
 
 void MBXServerHandlers::handleNetworkReset() {
     Serial.println("MBXServerHandlers::handleNetworkReset called");
-    delay(5000);
+    delay(NETWORK_RESET_DELAY_MS);
     WiFi.persistent(true);
     WiFi.disconnect(true, true);
     WiFi.persistent(false);
     WiFiClass::mode(WIFI_MODE_APSTA);
 }
 
-void MBXServerHandlers::handleUpload(AsyncWebServerRequest *r, const String &fn, size_t index, uint8_t *data,
-                                     size_t len, bool final) {
+void MBXServerHandlers::handleUpload(AsyncWebServerRequest *r, const String &fn, const size_t index, const uint8_t *data,
+                                     const size_t len, const bool final) {
     static File uploadFile;
     if (index == 0U) {
         uploadFile = SPIFFS.open("/conf/config.json", FILE_WRITE);
@@ -165,7 +179,8 @@ void MBXServerHandlers::handleUpload(AsyncWebServerRequest *r, const String &fn,
     }
 }
 
-void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len, const size_t index,
+void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
+                                                  const size_t index,
                                                   const size_t total) {
     static File bodyFile;
     if (index == 0U) {
@@ -176,46 +191,47 @@ void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, co
     }
     if (index + len == total) {
         if (bodyFile) bodyFile.close();
-        req->send(204);
+        req->send(HttpResponseCodes::NO_CONTENT);
     }
 }
 
 
-void MBXServerHandlers::handleWifiConnect(AsyncWebServerRequest *req, WiFiConnectController &wifi,
-                                          uint8_t *data, size_t len, size_t index, size_t total) {
+void MBXServerHandlers::handleWifiConnect(AsyncWebServerRequest *req, WifiConnectionController &wifi,
+                                          const uint8_t *data, const size_t len,
+                                          const size_t index, const size_t total) {
     static String body;
     if (index == 0) body = "";
-    body.concat((const char *) data, len);
+    body.concat(reinterpret_cast<const char *>(data), len);
     if (index + len < total) return;
 
     String ssid, pass, bssid;
     uint8_t channel = 0;
     bool save = true;
-    WifiStaticCfg st;
+    WifiStaticConfig st;
 
     if (!parseConnectPayload((uint8_t *) body.c_str(), body.length(), ssid, pass, bssid, save, st, channel)
         || ssid.isEmpty()) {
-        req->send(400, "application/json", "{\"error\":\"bad_request\"}");
+        req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
         return;
     }
 
-    bool accepted = wifi.connect(ssid, pass, bssid, st, save, channel);
+    const bool accepted = wifi.connect(ssid, pass, bssid, st, save, channel);
     if (!accepted) {
-        req->send(409, "application/json", R"({"error":"already_connecting"})");
+        req->send(HttpResponseCodes::CONFLICT, HttpMediaTypes::JSON, WIFI_ALREADY_CONNECTING_RESP);
         return;
     }
     if (auto *p = g_portal.load(std::memory_order_acquire)) {
         p->suspendScanning(true);
     }
 
-    // 202 Accepted keeps the UI simple (it will poll /status)
-    req->send(202, "application/json", "{\"ok\":true}");
+    req->send(HttpResponseCodes::ACCEPTED, HttpMediaTypes::JSON, WIFI_HANDLER_OK_RESP);
 }
 
-void MBXServerHandlers::handleWifiStatus(AsyncWebServerRequest *req, WiFiConnectController &wifi) {
-    WifiStatus s = wifi.status();
-    if (s.state == WifiConnState::Connected || s.state == WifiConnState::Failed || s.state ==
-        WifiConnState::Disconnected) {
+void MBXServerHandlers::handleWifiStatus(AsyncWebServerRequest *req, const WifiConnectionController &wifi) {
+    const WifiStatus s = wifi.getStatus();
+    if (s.state == WifiConnectionState::Connected
+        || s.state == WifiConnectionState::Failed
+        || s.state == WifiConnectionState::Disconnected) {
         if (auto *p = g_portal.load(std::memory_order_acquire)) {
             p->suspendScanning(false);
         }
@@ -229,13 +245,13 @@ void MBXServerHandlers::handleWifiStatus(AsyncWebServerRequest *req, WiFiConnect
     sendJson(req, doc);
 }
 
-void MBXServerHandlers::handleWifiCancel(AsyncWebServerRequest *req, WiFiConnectController &wifi) {
+void MBXServerHandlers::handleWifiCancel(AsyncWebServerRequest *req, WifiConnectionController &wifi) {
     wifi.cancel();
-    req->send(200, "application/json", "{\"ok\":true}");
+    req->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, WIFI_HANDLER_OK_RESP);
 }
 
 void MBXServerHandlers::handleWifiApOff(AsyncWebServerRequest *req) {
-    req->send(200, "application/json", "{\"ok\":true}");
+    req->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, WIFI_HANDLER_OK_RESP);
     if (auto *p = g_portal.load(std::memory_order_acquire)) p->stop();
     xTaskCreatePinnedToCore([](void *) {
         delay(800);
@@ -247,7 +263,8 @@ void MBXServerHandlers::handleWifiApOff(AsyncWebServerRequest *req) {
 
 void MBXServerHandlers::getSystemStats(AsyncWebServerRequest *req, const Logger *logger) {
     logger->logDebug(
-        ("MBX Server: Started processing " + String(req->methodToString()) + " request on " + req->url()).c_str());
+        ("MBX Server: Started processing "
+         + String(req->methodToString()) + " request on " + req->url()).c_str());
 
     JsonDocument doc;
     doc = StatService::appendSystemStats(doc);
@@ -265,9 +282,9 @@ void MBXServerHandlers::getSystemStats(AsyncWebServerRequest *req, const Logger 
 void MBXServerHandlers::getLogs(AsyncWebServerRequest *req) {
     if (auto *mem = g_memlog.load(std::memory_order_acquire)) {
         const String text = mem->toText();
-        req->send(200, "text/plain; charset=utf-8", text);
+        req->send(HttpResponseCodes::OK, "text/plain; charset=utf-8", text);
     } else {
-        req->send(503, "text/plain", "logging buffer unavailable");
+        req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::PLAIN_TEXT, "logging buffer unavailable");
     }
 }
 
@@ -277,28 +294,33 @@ void MBXServerHandlers::handleDeviceReset(const Logger *logger) {
     ESP.restart();
 }
 
-void MBXServerHandlers::handleOtaFirmwareUpload(AsyncWebServerRequest *r, const String &fn, size_t index,
-                                                uint8_t *data, size_t len, bool final, const Logger *logger) {
+void MBXServerHandlers::handleOtaFirmwareUpload(AsyncWebServerRequest *r, const String &fn, const size_t index,
+                                                uint8_t *data, const size_t len, const bool final,
+                                                const Logger *logger) {
     if (index == 0U) {
-        if (logger) logger->logInformation((String("OTA firmware upload start: ") + fn).c_str());
-        if (!OtaService::beginFirmware(0, const_cast<Logger*>(logger))) {
-            if (logger) logger->logError("OTA begin firmware failed");
-            r->send(500, "application/json", R"({"error":"ota_begin_failed"})");
+        if (logger) {
+            logger->logInformation((String("OTA firmware upload start: ") + fn).c_str());
+        }
+        if (!OtaService::beginFirmware(0, logger)) {
+            if (logger) {
+                logger->logError("OTA begin firmware failed");
+            }
+            r->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, OTA_FW_UPLOAD_BEGIN_FAIL_RESP );
             return;
         }
     }
     if (len) {
-        if (!OtaService::write(data, len, const_cast<Logger*>(logger))) {
+        if (!OtaService::write(data, len, logger)) {
             if (logger) logger->logError("OTA firmware write failed");
         }
     }
     if (final) {
-        const bool ok = OtaService::end(true, const_cast<Logger*>(logger));
+        const bool ok = OtaService::end(true, logger);
         if (!ok) {
-            r->send(500, "application/json", R"({"error":"ota_end_failed"})");
+            r->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON,
+                    OTA_END_FAIL_RESP);
         } else {
-            r->send(200, "application/json", R"({"ok":true,"type":"firmware"})");
-            // Restart after a short delay to let response flush
+            r->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, OTA_END_FW_UPLOAD_OK);
             xTaskCreatePinnedToCore([](void *) {
                 delay(500);
                 ESP.restart();
@@ -307,31 +329,33 @@ void MBXServerHandlers::handleOtaFirmwareUpload(AsyncWebServerRequest *r, const 
     }
 }
 
-void MBXServerHandlers::handleOtaFilesystemUpload(AsyncWebServerRequest *r, const String &fn, size_t index,
-                                                  uint8_t *data, size_t len, bool final, const Logger *logger) {
+void MBXServerHandlers::handleOtaFilesystemUpload(AsyncWebServerRequest *r, const String &fn, const size_t index,
+                                                  uint8_t *data, const size_t len, const bool final, const Logger *logger) {
     if (index == 0U) {
         if (logger) logger->logInformation((String("OTA filesystem upload start: ") + fn).c_str());
-        if (!OtaService::beginFilesystem(0, const_cast<Logger*>(logger))) {
-            if (logger) logger->logError("OTA begin fs failed");
-            r->send(500, "application/json", R"({"error":"ota_begin_failed"})");
-            return;
+        if (!OtaService::beginFilesystem(0, logger)) {
+            if (logger) {
+                logger->logError("OTA begin fs failed");
+                r->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, OTA_FS_UPLOAD_BEGIN_FAIL_RESP);
+                return;
+            }
         }
-    }
-    if (len) {
-        if (!OtaService::write(data, len, const_cast<Logger*>(logger))) {
-            if (logger) logger->logError("OTA fs write failed");
+        if (len) {
+            if (!OtaService::write(data, len, logger)) {
+                if (logger) logger->logError("OTA fs write failed");
+            }
         }
-    }
-    if (final) {
-        const bool ok = OtaService::end(true, const_cast<Logger*>(logger));
-        if (!ok) {
-            r->send(500, "application/json", R"({"error":"ota_end_failed"})");
-        } else {
-            r->send(200, "application/json", R"({"ok":true,"type":"filesystem"})");
-            xTaskCreatePinnedToCore([](void *) {
-                delay(500);
-                ESP.restart();
-            }, "otaReboot", 2048, nullptr, 1, nullptr, APP_CPU_NUM);
+        if (final) {
+            const bool ok = OtaService::end(true, logger);
+            if (!ok) {
+                r->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, OTA_END_FAIL_RESP);
+            } else {
+                r->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, OTA_END_FS_UPLOAD_OK);
+                xTaskCreatePinnedToCore([](void *) {
+                    delay(HttpResponseCodes::INTERNAL_SERVER_ERROR);
+                    ESP.restart();
+                }, "otaReboot", 2048, nullptr, 1, nullptr, APP_CPU_NUM);
+            }
         }
     }
 }

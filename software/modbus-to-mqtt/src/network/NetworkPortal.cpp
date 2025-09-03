@@ -18,15 +18,18 @@ static constexpr uint16_t SCAN_DWELL_MS = 300;
 static std::atomic<uint32_t> lastScanStart{0};
 static std::atomic<bool> portal_should_run{true};
 
-static std::shared_ptr<const std::vector<WiFiResult>> atomicLoadResults(const std::shared_ptr<const std::vector<WiFiResult>>* p) {
+static std::shared_ptr<const std::vector<WifiScanResult>> atomicLoadResults(
+    const std::shared_ptr<const std::vector<WifiScanResult>> *p) {
     return std::atomic_load(p);
 }
-static void atomicStoreResults(std::shared_ptr<const std::vector<WiFiResult>>* p, std::shared_ptr<const std::vector<WiFiResult>> v) {
+
+static void atomicStoreResults(std::shared_ptr<const std::vector<WifiScanResult>> *p,
+                               std::shared_ptr<const std::vector<WifiScanResult>> v) {
     std::atomic_store(p, std::move(v));
 }
 
 NetworkPortal::NetworkPortal(Logger *logger, DNSServer *dnsServer) : _logger(logger), _dns(dnsServer) {
-    atomicStoreResults(&_latestScanResults, std::make_shared<const std::vector<WiFiResult>>());
+    atomicStoreResults(&_latestScanResults, std::make_shared<const std::vector<WifiScanResult>>());
 }
 
 void NetworkPortal::begin() {
@@ -36,6 +39,7 @@ void NetworkPortal::begin() {
     if (!waitForApIp()) {
         _logger->logWarning("NetworkPortal::begin - AP not ready, continuing");
     }
+
     configureDnsServer();
 
     unsigned long lastScanTime = 0;
@@ -43,16 +47,18 @@ void NetworkPortal::begin() {
 
     // Serve portal
     while (portal_should_run) {
-        if (_dns) _dns->processNextRequest();
+        if (_dns) {
+            _dns->processNextRequest();
+        }
 
         if (!_scanSuspended &&
             WiFi.scanComplete() != WIFI_SCAN_RUNNING &&
             (lastScanTime == 0 || millis() - lastScanTime >= SSID_SCAN_INTERVAL_MS)) {
-            WiFi.scanNetworks(true, false, true, SCAN_DWELL_MS, 0); // async, no hidden, passive, dwell, all channels
+            WiFi.scanNetworks(true, false, true, SCAN_DWELL_MS, 0);
             lastScanTime = millis();
             lastScanStart.store(lastScanTime, std::memory_order_release);
             _logger->logDebug("NetworkPortal::begin - Async Scan Initiated)");
-            }
+        }
 
         if (!_scanSuspended && millis() - lastScanPoll >= SCAN_POLL_INTERVAL_MS) {
             lastScanPoll = millis();
@@ -62,7 +68,6 @@ void NetworkPortal::begin() {
         delay(2);
         yield();
     }
-
 }
 
 auto NetworkPortal::rssiToSignal(const int8_t rssi) -> uint8_t {
@@ -75,7 +80,7 @@ auto NetworkPortal::rssiToSignal(const int8_t rssi) -> uint8_t {
 void NetworkPortal::setAPMode() const {
     WiFi.persistent(false);
     wifi_country_t c = {};
-    strcpy(c.cc, "EU");   // or "EU"
+    strcpy(c.cc, "EU");
     c.schan = 1;
     c.nchan = 13;
     c.policy = WIFI_COUNTRY_POLICY_MANUAL;
@@ -98,13 +103,16 @@ void NetworkPortal::setAPMode() const {
 }
 
 void NetworkPortal::configureDnsServer() const {
-    if (!_dns) return;
+    if (!_dns) {
+        return;
+    }
     const IPAddress apIP = WiFi.softAPIP();
     const bool ok = _dns->start(DNS_PORT, "*", apIP);
     if (!ok) {
         _logger->logWarning("NetworkPortal::setAPMode() - DNS start failed");
     } else {
-        _logger->logInformation(("NetworkPortal::setAPMode() - DNS started on 53, redirecting to " + apIP.toString()).c_str());
+        _logger->logInformation(
+            ("NetworkPortal::setAPMode() - DNS started on 53, redirecting to " + apIP.toString()).c_str());
     }
 }
 
@@ -120,13 +128,13 @@ void NetworkPortal::scanNetworksAsync() {
     if (status < 0) {
         return;
     }
-    const auto results = std::make_shared<std::vector<WiFiResult>>();
+    const auto results = std::make_shared<std::vector<WifiScanResult> >();
     results->reserve(static_cast<size_t>(status));
     for (int16_t i = 0; i < status; ++i) {
-        WiFiResult r;
+        WifiScanResult r;
         r.duplicate = false;
 
-        uint8_t* tmpBssid = nullptr;
+        uint8_t *tmpBssid = nullptr;
         WiFi.getNetworkInfo(i,
                             r.SSID,
                             r.encryptionType,
@@ -144,17 +152,18 @@ void NetworkPortal::scanNetworksAsync() {
 
     WiFi.scanDelete();
 
-    atomicStoreResults(&_latestScanResults, std::shared_ptr<const std::vector<WiFiResult>>(results));
+    atomicStoreResults(&_latestScanResults, std::shared_ptr<const std::vector<WifiScanResult>>(results));
 }
 
-std::shared_ptr<const std::vector<WiFiResult>> NetworkPortal::getLatestScanResultsSnapshot() const {
+std::shared_ptr<const std::vector<WifiScanResult>> NetworkPortal::getLatestScanResultsSnapshot() const {
     return atomicLoadResults(&_latestScanResults);
 }
+
 void NetworkPortal::stop() {
     portal_should_run = false;
 }
 
-void NetworkPortal::suspendScanning(bool on) {
+void NetworkPortal::suspendScanning(const bool on) {
     _scanSuspended = on;
     if (on && WiFi.scanComplete() == WIFI_SCAN_RUNNING) {
         WiFi.scanDelete();

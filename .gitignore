@@ -86,7 +86,7 @@ fp-info-cache
 *.csv
 
 # For VS Code
-.vscode/.browse.c_cpp.db*
+.vscode/
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch

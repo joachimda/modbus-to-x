@@ -4,7 +4,8 @@ window.initIndex = async function initIndex() {
     $("#btn-reboot").addEventListener("click", reboot);
     setupLogs();
     await render();
-    setInterval(await render, 30000, );
+    // Refresh stats every 30s
+    setInterval(render, 30000);
 }
 const $ = (sel) => document.querySelector(sel);
 const kv = (k, v) => `<div class="key">${k}</div><div>${v ?? "—"}</div>`;
@@ -58,9 +59,11 @@ async function render() {
     ].join("");
 
     // Wi-Fi card
+    const wifiConnected = (sys.wifiConnected !== undefined) ? sys.wifiConnected : sys.connected;
+    const wifiApMode = (sys.wifiApMode !== undefined) ? sys.wifiApMode : sys.apMode;
     const wifiDot = sys.__error ? dot("bad", "Unknown") :
-        sys.connected ? dot("ok", "Connected") :
-            sys.apMode ? dot("warn", "AP mode") : dot("bad", "Disconnected");
+        wifiConnected ? dot("ok", "Connected") :
+            wifiApMode ? dot("warn", "AP mode") : dot("bad", "Disconnected");
     $("#wifi-kvs").innerHTML = sys.__error ? kv("Error", sys.__error) : [
         kv("Status", wifiDot),
         kv("SSID", sys.ssid || "—"),
@@ -70,8 +73,9 @@ async function render() {
     ].join("");
 
     // MQTT card
+    const mqttConnected = (sys.mqttConnected !== undefined) ? sys.mqttConnected : false;
     const mqttDot = sys.__error ? dot("bad", "Unknown") :
-        sys.connected ? dot("ok", "Connected") :
+        mqttConnected ? dot("ok", "Connected") :
             dot("bad", "Disconnected");
     $("#mqtt-kvs").innerHTML = sys.__error ? kv("Error", sys.__error) : [
         kv("Status", mqttDot),

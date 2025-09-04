@@ -4,7 +4,6 @@
 #include "MqttLogger.h"
 #include "MemoryLogger.h"
 #include "SerialLogger.h"
-#include "commlink/MqttSubscriptions.h"
 #include "modbus/ModbusManager.h"
 #include "network/mbx_server/MBXServer.h"
 #include "Config.h"
@@ -36,14 +35,6 @@ void setupFs(const Logger * l ) {
     l->logDebug("setupFs() - SPIFFS mounted");
 }
 
-void addSubscriptionHandlers() {
-    const auto netReset = MQTT_ROOT_TOPIC + SUB_NETWORK_RESET;
-    subscriptionHandler.addHandler(netReset, [](const String &) {
-        logger.logInformation("Network reset requested by MQTT message");
-    });
-
-}
-
 void setup() {
     setupEnvironment();
     logger.addTarget(&serialLogger);
@@ -53,13 +44,11 @@ void setup() {
 
     IndicatorService::instance().begin();
 
-
     commLink.begin();
     logger.logDebug("setup() - Starting MBX Server");
     MBXServerHandlers::setMemoryLogger(&memoryLogger);
     MBXServerHandlers::setCommLink(&commLink);
     mbxServer.begin();
-  
 
     logger.logDebug("setup() - Starting modbus manager");
     modbusManager.begin();

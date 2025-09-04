@@ -14,47 +14,54 @@
         }
     </script>
     <style>
-        .form { display:grid; grid-template-columns: 180px 1fr; gap:.6rem .8rem; align-items:center; }
-        .form .full { grid-column: 1 / -1; }
+        .kvs input, .kvs select { height: 36px; }
     </style>
     </head>
-<body data-page="configure_mqtt">
+<body class="configure" data-page="configure_mqtt">
 <div class="page">
     <header style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
         <div>
             <h1>Configure MQTT</h1>
-            <div class="muted">Set broker and credentials. Non-sensitive settings are stored in SPIFFS; the password is kept securely in NVS.</div>
+            <div class="muted">Configure a connection to an MQTT broker.</div>
         </div>
         <nav class="toolbar">
+            <a class="btn" href="/">Home</a>
             <button class="btn" id="btn-reload">Reload</button>
-            <button class="btn" id="btn-test">Test Connection</button>
             <button class="btn primary" id="btn-save">Save</button>
         </nav>
     </header>
 
     <main class="card">
         <h3>Broker</h3>
-        <div class="form">
+        <div class="kvs kvs-2">
             <div>Broker IP</div>
-            <label for="broker-ip"></label><input id="broker-ip" placeholder="e.g. 192.168.1.100" />
+            <label for="broker-ip"></label><input id="broker-ip" type="text" placeholder="e.g. 192.168.1.100" />
 
             <div>Broker URL</div>
-            <label for="broker-url"></label><input id="broker-url" placeholder="e.g. mqtt://my.broker.local" />
+            <label for="broker-url"></label><input id="broker-url" type="text" placeholder="e.g. mqtt://my.broker.local" />
 
             <div>Port</div>
             <label for="broker-port"></label><input id="broker-port" type="number" min="1" max="65535" value="1883" />
 
             <div>Username</div>
-            <label for="broker-user"></label><input id="broker-user" placeholder="optional" />
+            <label for="broker-user"></label><input id="broker-user" type="text" placeholder="optional" />
 
             <div>Password</div>
             <div class="hstack">
-                <label for="broker-pass"></label><input id="broker-pass" type="password" placeholder="not stored in SPIFFS" />
-                <button class="btn" id="btn-save-pass">Save Password</button>
+                <label for="broker-pass"></label><input id="broker-pass" type="password" placeholder="not stored in SPIFFS; leave blank to keep" />
             </div>
 
+            <div>Root Topic</div>
+            <label for="root-topic"></label><input id="root-topic" type="text" placeholder="e.g. mbx_root or home/mbx" />
         </div>
         <div class="hint" style="margin-top:.75rem;">When both IP and URL are provided, the IP is preferred for connection. Password is saved separately in secure NVS storage.</div>
+        <div class="divider"></div>
+        <div class="hstack">
+            <button class="btn" id="btn-test">Test Connection</button>
+            <span id="test-status" class="muted"></span>
+            <span style="flex:1 1 auto"></span>
+            <span id="save-status" class="muted"></span>
+        </div>
     </main>
 </div>
 

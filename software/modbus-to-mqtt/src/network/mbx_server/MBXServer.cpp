@@ -82,7 +82,6 @@ void MBXServer::configureRoutes() const {
         serveSPIFFSFile(req, "/conf/config.json", nullptr, HttpMediaTypes::JSON, _logger);
     });
 
-    // MQTT config
     server->on(Routes::PUT_MQTT_CONFIG, HTTP_PUT, [this](AsyncWebServerRequest *req) {
         logRequest(req);
     }, nullptr,[](AsyncWebServerRequest *req, uint8_t *data, size_t len, size_t index, size_t total) {
@@ -117,21 +116,19 @@ void MBXServer::configureRoutes() const {
         logRequest(req);
         MBXServerHandlers::getSystemStats(req, _logger);
     });
-    // MQTT test connection
+
     server->on(Routes::MQTT_TEST_CONNECT, HTTP_POST, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         MBXServerHandlers::handleMqttTestConnection(req);
     });
-    // OTA firmware upload (Basic Auth protected)
+
     server->on(Routes::OTA_FIRMWARE, HTTP_POST, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); return; }
-        // Response is sent by upload handler on final chunk
     }, [this](AsyncWebServerRequest *req, const String &fn, size_t index, uint8_t *data, size_t len, bool final) {
         MBXServerHandlers::handleOtaFirmwareUpload(req, fn, index, data, len, final, _logger);
     });
 
-    // OTA filesystem (SPIFFS) upload (Basic Auth protected)
     server->on(Routes::OTA_FILESYSTEM, HTTP_POST, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); return; }
@@ -280,7 +277,7 @@ void MBXServer::ensureConfigFile() const {
         _logger->logWarning("MBXServer::ensureConfigFile - MQTT config file not found. Creating new one");
         File file = SPIFFS.open("/conf/mqtt.json", FILE_WRITE);
         if (file) {
-            file.print("{\"broker_ip\":\"0.0.0.0\",\"broker_url\":\"\",\"broker_port\":\"1883\",\"user\":\"\"}");
+            file.print("{\"broker_ip\":\"0.0.0.0\",\"broker_url\":\"\",\"broker_port\":\"1883\",\"user\":\"\",\"root_topic\":\"mbx_root\"}");
             file.close();
         }
     }

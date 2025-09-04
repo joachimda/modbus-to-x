@@ -85,6 +85,10 @@ void MBXServerHandlers::setCommLink(CommLink *link) {
     g_comm.store(link, std::memory_order_release);
 }
 
+CommLink *MBXServerHandlers::getCommLink() {
+    return g_comm.load(std::memory_order_acquire);
+}
+
 void MBXServerHandlers::getSsidListAsJson(AsyncWebServerRequest *req) {
     auto *portal = g_portal.load(std::memory_order_acquire);
     if (!portal) {
@@ -172,20 +176,6 @@ void MBXServerHandlers::handleNetworkReset() {
     WiFiClass::mode(WIFI_MODE_APSTA);
 }
 
-void MBXServerHandlers::handleUpload(AsyncWebServerRequest *r, const String &fn, const size_t index, const uint8_t *data,
-                                     const size_t len, const bool final) {
-    static File uploadFile;
-    if (index == 0U) {
-        uploadFile = SPIFFS.open("/conf/config.json", FILE_WRITE);
-    }
-    if (uploadFile) {
-        uploadFile.write(data, len);
-    }
-    if (final && uploadFile) {
-        uploadFile.close();
-    }
-}
-
 void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
                                                   const size_t index,
                                                   const size_t total) {
@@ -217,6 +207,11 @@ void MBXServerHandlers::handlePutMqttConfigBody(AsyncWebServerRequest *req, cons
     }
     f.print(body);
     f.close();
+
+    // Hot-reload MQTT configuration
+    if (auto *link = g_comm.load(std::memory_order_acquire)) {
+        link->reconfigureFromFile();
+    }
 
     req->send(HttpResponseCodes::NO_CONTENT);
 }

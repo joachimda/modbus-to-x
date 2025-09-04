@@ -9,6 +9,10 @@ class CommLink {
 public:
     explicit CommLink(MqttSubscriptionHandler *subscriptionHandler, PubSubClient *mqttClient, Logger *logger);
 
+    static void handleMqttMessage(char *topic, const byte *payload, unsigned int length);
+
+    void addSubscriptionHandlers(const String &rootTopic) const;
+
     auto begin() -> bool;
 
     auto ensureMQTTConnection() const -> bool;
@@ -31,17 +35,19 @@ public:
     // One-shot connection attempt using current NVS prefs; no task spawn
     auto testConnectOnce() -> bool;
 
+    // Reload config from SPIFFS and reinitialize MQTT connection + subscriptions
+    void reconfigureFromFile();
+
 private:
     [[noreturn]] static void processMQTTAsync(void *parameter);
 
     void loadMQTTConfig();
 
-    char LOCAL_MQTT_BROKER[150] = "";
-    char LOCAL_MQTT_PORT[6] = "";
-    char LOCAL_MQTT_USER[32] = "";
-    char LOCAL_MQTT_PASSWORD[32] = "";
-    char LOCAL_MODBUS_MODE[3] = "";
-    int LOCAL_MODBUS_BAUD = 0;
+    char _mqttBroker[150] = "";
+    char _mqttPort[6] = "";
+    char _mqttUser[32] = "";
+    char _mqttPassword[32] = "";
+    String _mqttRootTopic = "";
     PubSubClient *_mqttClient;
     Logger *_logger;
     TaskHandle_t _mqttTaskHandle;

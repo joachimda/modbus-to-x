@@ -11,10 +11,10 @@ std::vector<String> MqttSubscriptionHandler::getHandlerTopics() const {
     return topics;
 }
 
-void MqttSubscriptionHandler::addHandler(const String& topic, TopicHandlerFunc func) {
+void MqttSubscriptionHandler::addHandler(const String& topic, TopicHandlerFunc handler) {
     HandlerEntry entry;
     entry.topic = topic;
-    entry.handlerFunc = std::move(func);
+    entry.handlerFunc = std::move(handler);
     _handlers.push_back(entry);
     _logger->logInformation((String("Handler added for topic: [")+ topic + "]").c_str());
 }
@@ -32,4 +32,9 @@ void MqttSubscriptionHandler::handle(const String& topic, const String& message)
     if (!foundHandler) {
         _logger->logWarning((String("MqttSubscriptionHandler::handle - No handler found for topic [") + topic + "]").c_str());
     }
+}
+
+void MqttSubscriptionHandler::clear() {
+    _handlers.clear();
+    _logger->logInformation("MqttSubscriptionHandler::clear - cleared all handlers");
 }

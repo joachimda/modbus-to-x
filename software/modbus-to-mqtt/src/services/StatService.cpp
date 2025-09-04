@@ -2,6 +2,7 @@
 
 #include <SPIFFS.h>
 #include <WiFi.h>
+#include "network/mbx_server/MBXServerHandlers.h"
 
 #ifndef FW_VERSION
 #define FW_VERSION "dev"
@@ -24,7 +25,7 @@ static const char *resetReasonToString(const esp_reset_reason_t r) {
 }
 
 static String getDeviceName(const String &mac, const String &chipModel) {
-    String deviceName = WiFi.getHostname() ? WiFi.getHostname() : "";
+    String deviceName = WiFiClass::getHostname() ? WiFiClass::getHostname() : "";
     if (deviceName.isEmpty()) {
         String macSuffix = mac.length() >= 8 ? mac.substring(mac.length() - 8) : mac;
         macSuffix.replace(":", "");
@@ -41,6 +42,7 @@ JsonDocument StatService::appendSystemStats(JsonDocument &document) {
     document["deviceName"] = getDeviceName(mac, chipModel);
     document["fwVersion"] = FW_VERSION;
     document["fwBuildDate"] = String(__DATE__) + " " + String(__TIME__);
+    document["buildDate"] = document["fwBuildDate"].as<String>();
     document["chipModel"] = chipModel;
     document["chipRevision"] = ESP.getChipRevision();
     document["cpuFreqMHz"] = ESP.getCpuFreqMHz();
@@ -70,10 +72,12 @@ JsonDocument StatService::appendHealthStats(JsonDocument &document) {
 }
 
 JsonDocument StatService::appendMQTTStats(JsonDocument &document) {
-    document["connected"] = false;
-    document["broker"] = "N/A";
+    CommLink *link = MBXServerHandlers::getCommLink();
+    const bool connected = (link && link->getMQTTState() == 0);
+    document["mqttConnected"] = connected;
+    document["broker"] = link ? String(link->getMqttBroker()) : "N/A";
     document["clientId"] = "N/A";
-    document["lastPublishIso"] = "";
+    document["lastPublishIso"] = "N/A";
     document["errorCount"] = 0;
     return document;
 }
@@ -95,6 +99,8 @@ JsonDocument StatService::appendNetworkStats(JsonDocument &document) {
 
     document["connected"] = staConnected;
     document["apMode"] = apMode;
+    document["wifiConnected"] = staConnected;
+    document["wifiApMode"] = apMode;
 
     document["ssid"] = staConnected ? WiFi.SSID() : "";
     document["ip"] = staConnected ? WiFi.localIP().toString() : (apMode ? WiFi.softAPIP().toString() : "");

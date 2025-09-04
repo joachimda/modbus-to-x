@@ -1,9 +1,8 @@
 {
   "version": 1,
-  "bus1": {
+  "bus": {
     "baud": 9600,
-    "serialFormat": "8N1",
-    "enableBias": true
+    "serialFormat": "8N1"
   },
   "devices": []
 }

@@ -1,0 +1,6 @@
+{
+  "broker_ip": "192.168.1.100",
+  "broker_url": "http://my.mqtt.broker.local",
+  "broker_port": "1883",
+  "user": "mqtt_user"
+}

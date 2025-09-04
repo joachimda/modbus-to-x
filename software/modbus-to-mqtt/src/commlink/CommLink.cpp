@@ -4,12 +4,11 @@
 #include "ESPAsyncWebServer.h"
 #include <atomic>
 #include "services/IndicatorService.h"
+#include <SPIFFS.h>
+#include <ArduinoJson.h>
 
 static std::atomic<bool> s_mqttEnabled{false};
 static CommLink *s_activeCommLink = nullptr;
-static constexpr auto DEFAULT_MQTT_BROKER_PORT = "1883";
-static constexpr auto DEFAULT_MQTT_BROKER_IP = "0.0.0.0";
-
 static constexpr auto MQTT_CLIENT_PREFIX = "MODBUS_CLIENT-";
 static constexpr auto MQTT_TASK_STACK = 4096;
 static constexpr auto MQTT_TASK_LOOP_DELAY_MS = 100;
@@ -30,8 +29,10 @@ void handleMqttMessage(char *topic, const byte *payload, const unsigned int leng
     }
 }
 
-auto CommLink::begin() -> bool {
+ auto CommLink::begin() -> bool {
     _mqttClient->setBufferSize(MQTT_BUFFER_SIZE);
+    // Load broker/port/user/pass from NVS with SPIFFS fallback
+    loadMQTTConfig();
 
     const char *broker = {LOCAL_MQTT_BROKER};
     _logger->logInformation(
@@ -45,35 +46,53 @@ auto CommLink::begin() -> bool {
     return startMqttTask();
 }
 
-void CommLink::loadMQTTConfig() {
-    preferences.begin(MQTT_PREFS_NAMESPACE, false);
+ void CommLink::loadMQTTConfig() {
+     // Read non-sensitive values from SPIFFS only
+     String server = "0.0.0.0";
+     String port = "1883";
+     String user;
+     if (SPIFFS.exists("/conf/mqtt.json")) {
+         File f = SPIFFS.open("/conf/mqtt.json", FILE_READ);
+         if (f) {
+             String text = f.readString();
+             f.close();
+             JsonDocument doc;
+             if (!deserializeJson(doc, text)) {
+                 String ip = doc["broker_ip"] | "";
+                 String url = doc["broker_url"] | "";
+                 String p = doc["broker_port"] | "1883";
+                 String u = doc["user"] | "";
+                 auto extractHost = [](const String &uurl) {
+                     if (uurl.length() == 0) return String("");
+                     int start = uurl.indexOf("://");
+                     start = (start >= 0) ? (start + 3) : 0;
+                     int slash = uurl.indexOf('/', start);
+                     int colon = uurl.indexOf(':', start);
+                     int end;
+                     if (slash >= 0 && colon >= 0) end = (slash < colon) ? slash : colon; else if (slash >= 0) end = slash; else if (colon >= 0) end = colon; else end = uurl.length();
+                     return uurl.substring(start, end);
+                 };
+                 ip.trim(); url.trim(); p.trim(); u.trim();
+                 if (ip.length() && ip != "0.0.0.0") server = ip; else if (url.length()) server = extractHost(url);
+                 if (p.length()) port = p;
+                 user = u;
+             }
+         }
+     }
+     // Apply to local buffers
+     strcpy(LOCAL_MQTT_BROKER, server.c_str());
+     strcpy(LOCAL_MQTT_PORT, port.c_str());
+     if (user.length()) strcpy(LOCAL_MQTT_USER, user.c_str()); else LOCAL_MQTT_USER[0] = '\0';
 
-    if (preferences.isKey("server")) {
-        strcpy(LOCAL_MQTT_BROKER, preferences.getString("server").c_str());
-    } else {
-        strcpy(LOCAL_MQTT_BROKER, DEFAULT_MQTT_BROKER_IP);
-    }
-
-    if (preferences.isKey("port")) {
-        strcpy(LOCAL_MQTT_PORT, preferences.getString("port").c_str());
-    } else {
-        strcpy(LOCAL_MQTT_PORT, DEFAULT_MQTT_BROKER_PORT);
-    }
-
-    if (preferences.isKey("user")) {
-        strcpy(LOCAL_MQTT_USER, preferences.getString("user").c_str());
-    } else {
-        LOCAL_MQTT_USER[0] = '\0';
-    }
-
-    if (preferences.isKey("pass")) {
-        strcpy(LOCAL_MQTT_PASSWORD, preferences.getString("pass").c_str());
-    } else {
-        LOCAL_MQTT_PASSWORD[0] = '\0';
-    }
-
-    preferences.end();
-}
+     // Read password from NVS only
+     preferences.begin(MQTT_PREFS_NAMESPACE, false);
+     if (preferences.isKey("pass")) {
+         strcpy(LOCAL_MQTT_PASSWORD, preferences.getString("pass").c_str());
+     } else {
+         LOCAL_MQTT_PASSWORD[0] = '\0';
+     }
+     preferences.end();
+ }
 
 auto CommLink::ensureMQTTConnection() const -> bool {
     String clientId = MQTT_CLIENT_PREFIX;
@@ -176,3 +195,11 @@ bool CommLink::isMQTTEnabled() {
 }
 
 
+bool CommLink::testConnectOnce() {
+    // Load settings and try a single connect, do not start task
+    loadMQTTConfig();
+    const char *broker = {LOCAL_MQTT_BROKER};
+    _logger->logInformation((String("Test connect to MQTT [") + broker + ":" + String(LOCAL_MQTT_PORT) + "]").c_str());
+    _mqttClient->setServer(broker, atoi(LOCAL_MQTT_PORT));
+    return ensureMQTTConnection();
+}

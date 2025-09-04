@@ -3,6 +3,8 @@
 #include <SPIFFS.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
+#include <Preferences.h>
+#include "Config.h"
 
 #include "constants/HttpMediaTypes.h"
 #include "constants/HttpResponseCodes.h"
@@ -24,6 +26,7 @@ auto constexpr NETWORK_RESET_DELAY_MS = 5000;
 
 std::atomic<NetworkPortal *> g_portal{nullptr};
 static std::atomic<MemoryLogger *> g_memlog{nullptr};
+static std::atomic<CommLink *> g_comm{nullptr};
 
 bool parseConnectPayload(uint8_t *data, size_t len, String &ssid, String &pass,
                          String &bssid, bool &save, WifiStaticConfig &st,
@@ -76,6 +79,10 @@ void MBXServerHandlers::setPortal(NetworkPortal *portal) {
 
 void MBXServerHandlers::setMemoryLogger(MemoryLogger *mem) {
     g_memlog.store(mem, std::memory_order_release);
+}
+
+void MBXServerHandlers::setCommLink(CommLink *link) {
+    g_comm.store(link, std::memory_order_release);
 }
 
 void MBXServerHandlers::getSsidListAsJson(AsyncWebServerRequest *req) {
@@ -195,6 +202,46 @@ void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, co
     }
 }
 
+void MBXServerHandlers::handlePutMqttConfigBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
+                                                const size_t index, const size_t total) {
+    static String body;
+    if (index == 0U) body = "";
+    body.concat(reinterpret_cast<const char *>(data), len);
+    if (index + len < total) return;
+
+    // Write non-sensitive config to SPIFFS
+    File f = SPIFFS.open("/conf/mqtt.json", FILE_WRITE);
+    if (!f) {
+        req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        return;
+    }
+    f.print(body);
+    f.close();
+
+    req->send(HttpResponseCodes::NO_CONTENT);
+}
+
+void MBXServerHandlers::handlePutMqttSecretBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
+                                                const size_t index, const size_t total) {
+    static String body;
+    if (index == 0U) body = "";
+    body.concat(reinterpret_cast<const char *>(data), len);
+    if (index + len < total) return;
+
+    JsonDocument doc;
+    const DeserializationError derr = deserializeJson(doc, body);
+    if (derr) {
+        req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        return;
+    }
+    const String pass = doc["password"] | "";
+    Preferences prefs;
+    prefs.begin(MQTT_PREFS_NAMESPACE, false);
+    prefs.putString("pass", pass);
+    prefs.end();
+    req->send(HttpResponseCodes::NO_CONTENT);
+}
+
 
 void MBXServerHandlers::handleWifiConnect(AsyncWebServerRequest *req, WifiConnectionController &wifi,
                                           const uint8_t *data, const size_t len,
@@ -286,6 +333,26 @@ void MBXServerHandlers::getLogs(AsyncWebServerRequest *req) {
     } else {
         req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::PLAIN_TEXT, "logging buffer unavailable");
     }
+}
+
+void MBXServerHandlers::handleMqttTestConnection(AsyncWebServerRequest *req) {
+    auto *link = g_comm.load(std::memory_order_acquire);
+    JsonDocument doc;
+    if (!link) {
+        doc["ok"] = false;
+        doc["error"] = "mqtt_unavailable";
+        String out; serializeJson(doc, out);
+        req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::JSON, out);
+        return;
+    }
+
+    const bool ok = link->testConnectOnce();
+    doc["ok"] = ok;
+    doc["broker"] = link->getMqttBroker();
+    doc["user"] = link->getMQTTUser();
+    doc["state"] = link->getMQTTState();
+    String out; serializeJson(doc, out);
+    req->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, out);
 }
 
 void MBXServerHandlers::handleDeviceReset(const Logger *logger) {

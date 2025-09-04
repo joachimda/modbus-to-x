@@ -6,11 +6,14 @@ public:
     constexpr static auto CONFIGURE = "/configure";
     constexpr static auto RESET_NETWORK = "/reset";
     constexpr static auto GET_MODBUS_CONFIG = "/conf/config.json";
+    constexpr static auto GET_MQTT_CONFIG = "/conf/mqtt.json";
 
     /* *
      * * Modbus Config API
      * * */
     constexpr static auto PUT_MODBUS_CONFIG = "/api/config/modbus";
+    constexpr static auto PUT_MQTT_CONFIG = "/api/config/mqtt";
+    constexpr static auto PUT_MQTT_SECRET = "/api/config/mqtt/secret";
 
     /* *
      * * WIFI API
@@ -31,6 +34,7 @@ public:
     constexpr static auto MQTT_STATS = "/api/stats/mqtt";
     constexpr static auto LOGS = "/api/logs";
     constexpr static auto DEVICE_RESET = "/api/system/reboot";
+    constexpr static auto MQTT_TEST_CONNECT = "/api/mqtt/test";
 
     /* *
      * * OTA API

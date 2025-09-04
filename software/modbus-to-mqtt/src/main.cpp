@@ -53,13 +53,13 @@ void setup() {
 
     IndicatorService::instance().begin();
 
-    //addSubscriptionHandlers();
-    //commLink.overrideUserConfig("espuser","test", "10.159.188.206","1883", "8N1", 9600);
 
-    //commLink.begin();
+    commLink.begin();
     logger.logDebug("setup() - Starting MBX Server");
     MBXServerHandlers::setMemoryLogger(&memoryLogger);
+    MBXServerHandlers::setCommLink(&commLink);
     mbxServer.begin();
+  
 
     logger.logDebug("setup() - Starting modbus manager");
     modbusManager.begin();

@@ -6,6 +6,7 @@
 #include "network/wifi/WifiConnectionController.h"
 #include "MemoryLogger.h"
 #include "services/OtaService.h"
+#include "commlink/CommLink.h"
 
 class MBXServerHandlers{
 public:
@@ -14,6 +15,8 @@ public:
     static void handleUpload(AsyncWebServerRequest *r, const String &fn, size_t index,
                             const uint8_t *data, size_t len, bool final);
     static void handlePutModbusConfigBody(AsyncWebServerRequest* req, const uint8_t* data, size_t len, size_t index, size_t total);
+    static void handlePutMqttConfigBody(AsyncWebServerRequest* req, const uint8_t* data, size_t len, size_t index, size_t total);
+    static void handlePutMqttSecretBody(AsyncWebServerRequest* req, const uint8_t* data, size_t len, size_t index, size_t total);
 
 
     static void handleNetworkReset();
@@ -24,9 +27,13 @@ public:
 
     static void getSystemStats(AsyncWebServerRequest * req, const Logger * logger);
     static void setMemoryLogger(MemoryLogger* mem);
+    static void setCommLink(CommLink* link);
     static void getLogs(AsyncWebServerRequest* req);
 
     static void handleDeviceReset(const Logger *logger);
+
+    // MQTT
+    static void handleMqttTestConnection(AsyncWebServerRequest *req);
 
     // OTA upload handlers
     static void handleOtaFirmwareUpload(AsyncWebServerRequest *r, const String &fn, size_t index,

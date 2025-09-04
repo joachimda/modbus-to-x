@@ -78,6 +78,24 @@ void MBXServer::configureRoutes() const {
         serveSPIFFSFile(req, "/conf/config.json", nullptr, HttpMediaTypes::JSON, _logger);
     });
 
+    // MQTT config
+    server->on(Routes::PUT_MQTT_CONFIG, HTTP_PUT, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+    }, nullptr,[](AsyncWebServerRequest *req, uint8_t *data, size_t len, size_t index, size_t total) {
+        MBXServerHandlers::handlePutMqttConfigBody(req, data, len, index, total);
+    });
+
+    server->on(Routes::PUT_MQTT_SECRET, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+    }, nullptr,[](AsyncWebServerRequest *req, uint8_t *data, size_t len, size_t index, size_t total) {
+        MBXServerHandlers::handlePutMqttSecretBody(req, data, len, index, total);
+    });
+
+    server->on(Routes::GET_MQTT_CONFIG, HTTP_GET, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        serveSPIFFSFile(req, "/conf/mqtt.json", nullptr, HttpMediaTypes::JSON, _logger);
+    });
+
     server->on(Routes::LOGS, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         MBXServerHandlers::getLogs(req);
@@ -94,6 +112,11 @@ void MBXServer::configureRoutes() const {
     server->on(Routes::SYSTEM_STATS, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         MBXServerHandlers::getSystemStats(req, _logger);
+    });
+    // MQTT test connection
+    server->on(Routes::MQTT_TEST_CONNECT, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        MBXServerHandlers::handleMqttTestConnection(req);
     });
     // OTA firmware upload (Basic Auth protected)
     server->on(Routes::OTA_FIRMWARE, HTTP_POST, [this](AsyncWebServerRequest *req) {
@@ -248,6 +271,14 @@ void MBXServer::ensureConfigFile() const {
 
         file.print("{}");
         file.close();
+    }
+    if (!SPIFFS.exists("/conf/mqtt.json")) {
+        _logger->logWarning("MBXServer::ensureConfigFile - MQTT config file not found. Creating new one");
+        File file = SPIFFS.open("/conf/mqtt.json", FILE_WRITE);
+        if (file) {
+            file.print("{\"broker_ip\":\"0.0.0.0\",\"broker_url\":\"\",\"broker_port\":\"1883\",\"user\":\"\"}");
+            file.close();
+        }
     }
 }
 

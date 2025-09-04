@@ -29,6 +29,8 @@ void MBXServer::begin() const {
         server->begin();
         IndicatorService::instance().setPortalMode(false);
         IndicatorService::instance().setWifiConnected(true);
+        // Enable MQTT in normal (non-portal) mode
+        CommLink::setMQTTEnabled(true);
         ArduinoOtaManager::begin(_logger);
     } else {
         g_wifi.begin("modbus-to-x");
@@ -38,6 +40,8 @@ void MBXServer::begin() const {
         configureAccessPointRoutes();
         server->begin();
         IndicatorService::instance().setPortalMode(true);
+        // Disable MQTT while portal is active to avoid transient connects
+        CommLink::setMQTTEnabled(false);
         portal.begin();
     }
 

@@ -27,11 +27,7 @@ public:
     /* *
      * * STATS API
      * * */
-    constexpr static auto NETWORK_STATS = "/api/stats/network";
     constexpr static auto SYSTEM_STATS = "/api/stats/system";
-    constexpr static auto STORAGE_STATS = "/api/stats/storage";
-    constexpr static auto MODBUS_STATS = "/api/stats/modbus";
-    constexpr static auto MQTT_STATS = "/api/stats/mqtt";
     constexpr static auto LOGS = "/api/logs";
     constexpr static auto DEVICE_RESET = "/api/system/reboot";
     constexpr static auto MQTT_TEST_CONNECT = "/api/mqtt/test";

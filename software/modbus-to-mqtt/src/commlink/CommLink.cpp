@@ -6,6 +6,7 @@
 #include "services/IndicatorService.h"
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
+#include <WiFi.h>
 
 static std::atomic<bool> s_mqttEnabled{false};
 static CommLink *s_activeCommLink = nullptr;
@@ -35,14 +36,12 @@ void handleMqttMessage(char *topic, const byte *payload, const unsigned int leng
     loadMQTTConfig();
 
     const char *broker = {LOCAL_MQTT_BROKER};
-    _logger->logInformation(
-        ("Connecting to MQTT broker [" + String(broker) + ":" + String(LOCAL_MQTT_PORT) + "]").c_str());
     _mqttClient->setServer(broker, atoi(LOCAL_MQTT_PORT));
-    if (!ensureMQTTConnection()) {
-        _logger->logError("MQTT connection failed");
-        IndicatorService::instance().setMqttConnected(false);
-    }
     _mqttClient->setCallback(handleMqttMessage);
+
+    // Do NOT attempt connection here; Wi‑Fi/LWIP may not be initialized yet.
+    // The background task will handle connecting once Wi‑Fi is up.
+    setMQTTEnabled(true);
     return startMqttTask();
 }
 
@@ -97,6 +96,11 @@ void handleMqttMessage(char *topic, const byte *payload, const unsigned int leng
 auto CommLink::ensureMQTTConnection() const -> bool {
     String clientId = MQTT_CLIENT_PREFIX;
     clientId += String(random(RND_SEED), HEX);
+    if (LOCAL_MQTT_BROKER[0] == '\0' || String(LOCAL_MQTT_BROKER) == "0.0.0.0") {
+        _logger->logWarning("MQTT broker not configured; skipping connection attempt");
+        return false;
+    }
+    _logger->logInformation((String("Connecting to MQTT broker [") + LOCAL_MQTT_BROKER + ":" + String(LOCAL_MQTT_PORT) + "]").c_str());
     const bool connected = _mqttClient->connect(clientId.c_str(), LOCAL_MQTT_USER, LOCAL_MQTT_PASSWORD);
     if (!connected) {
         for (int i = 0; i < 3; i++) {
@@ -123,6 +127,13 @@ auto CommLink::ensureMQTTConnection() const -> bool {
     while (true) {
 
         if (!CommLink::isMQTTEnabled()) {
+            vTaskDelay(delayTicks);
+            continue;
+        }
+
+        // Only interact with MQTT when Wi‑Fi is connected
+        if (WiFiClass::status() != WL_CONNECTED) {
+            IndicatorService::instance().setMqttConnected(false);
             vTaskDelay(delayTicks);
             continue;
         }
@@ -201,5 +212,9 @@ bool CommLink::testConnectOnce() {
     const char *broker = {LOCAL_MQTT_BROKER};
     _logger->logInformation((String("Test connect to MQTT [") + broker + ":" + String(LOCAL_MQTT_PORT) + "]").c_str());
     _mqttClient->setServer(broker, atoi(LOCAL_MQTT_PORT));
+    if (WiFiClass::status() != WL_CONNECTED) {
+        _logger->logError("MQTT test connect requested but Wi-Fi not connected");
+        return false;
+    }
     return ensureMQTTConnection();
 }

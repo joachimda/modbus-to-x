@@ -304,6 +304,8 @@ void MBXServerHandlers::handleWifiApOff(AsyncWebServerRequest *req) {
         delay(800);
         WiFiClass::mode(WIFI_MODE_STA);
         IndicatorService::instance().setPortalMode(false);
+        // Re-enable MQTT now that portal is off and STA is active
+        CommLink::setMQTTEnabled(true);
         vTaskDelete(nullptr);
     }, "apOff", 2048, nullptr, 1, nullptr, APP_CPU_NUM);
 }

@@ -26,7 +26,7 @@ auto constexpr NETWORK_RESET_DELAY_MS = 5000;
 
 std::atomic<NetworkPortal *> g_portal{nullptr};
 static std::atomic<MemoryLogger *> g_memlog{nullptr};
-static std::atomic<CommLink *> g_comm{nullptr};
+static std::atomic<MqttManager *> g_comm{nullptr};
 
 bool parseConnectPayload(uint8_t *data, size_t len, String &ssid, String &pass,
                          String &bssid, bool &save, WifiStaticConfig &st,
@@ -81,11 +81,11 @@ void MBXServerHandlers::setMemoryLogger(MemoryLogger *mem) {
     g_memlog.store(mem, std::memory_order_release);
 }
 
-void MBXServerHandlers::setCommLink(CommLink *link) {
-    g_comm.store(link, std::memory_order_release);
+void MBXServerHandlers::setMqttManager(MqttManager *mqttManager) {
+    g_comm.store(mqttManager, std::memory_order_release);
 }
 
-CommLink *MBXServerHandlers::getCommLink() {
+MqttManager *MBXServerHandlers::getMqttManager() {
     return g_comm.load(std::memory_order_acquire);
 }
 
@@ -299,8 +299,8 @@ void MBXServerHandlers::handleWifiApOff(AsyncWebServerRequest *req) {
         delay(800);
         WiFiClass::mode(WIFI_MODE_STA);
         IndicatorService::instance().setPortalMode(false);
-        // Re-enable MQTT now that portal is off and STA is active
-        CommLink::setMQTTEnabled(true);
+        // Re-enable MQTT now that portal is off, and STA is active
+        MqttManager::setMQTTEnabled(true);
         vTaskDelete(nullptr);
     }, "apOff", 2048, nullptr, 1, nullptr, APP_CPU_NUM);
 }
@@ -311,7 +311,7 @@ void MBXServerHandlers::getSystemStats(AsyncWebServerRequest *req, const Logger 
          + String(req->methodToString()) + " request on " + req->url()).c_str());
 
     JsonDocument doc;
-    doc = StatService::appendSystemStats(doc);
+    doc = StatService::appendSystemStats(doc, logger);
     doc = StatService::appendModbusStats(doc);
     doc = StatService::appendMQTTStats(doc);
     doc = StatService::appendNetworkStats(doc);

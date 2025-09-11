@@ -1,5 +1,5 @@
-#include <DNSServer.h>
-#include "commlink/CommLink.h"
+#include "mqtt/MqttManager.h"
+
 #include "Config.h"
 #include "ESPAsyncWebServer.h"
 #include <atomic>
@@ -8,11 +8,9 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 
-#include "commlink/MqttSubscriptions.h"
-
 static std::atomic<bool> s_mqttEnabled{false};
-static CommLink *s_activeCommLink = nullptr;
-static constexpr auto MQTT_CLIENT_PREFIX = "MBX_CLIENT-";
+static MqttManager *s_activeMqttManager = nullptr;
+static  String mqtt_client_prefix = "MBX_CLIENT-";
 static constexpr auto MQTT_TASK_STACK = 4096;
 static constexpr auto MQTT_TASK_LOOP_DELAY_MS = 100;
 static constexpr auto RND_SEED = 0xffff;
@@ -22,15 +20,15 @@ static constexpr auto default_mqtt_root_topic = "mbx_root";
 static const String system_subscription_network_reset = "/system/network/reset";
 static const String system_subscription_echo = "/system/log/echo";
 
-CommLink::CommLink(MqttSubscriptionHandler *subscriptionHandler, PubSubClient *mqttClient, Logger *logger)
+MqttManager::MqttManager(MqttSubscriptionHandler *subscriptionHandler, PubSubClient *mqttClient, Logger *logger)
     : _mqttClient(mqttClient),
       _logger(logger),
       _mqttTaskHandle(nullptr),
       _subscriptionHandler(subscriptionHandler){
-    s_activeCommLink = this;
+    s_activeMqttManager = this;
 }
 
-auto CommLink::begin() -> bool {
+auto MqttManager::begin() -> bool {
     _mqttClient->setBufferSize(MQTT_BUFFER_SIZE);
     loadMQTTConfig();
 
@@ -45,7 +43,7 @@ auto CommLink::begin() -> bool {
     return startMqttTask();
 }
 
-void CommLink::loadMQTTConfig() {
+void MqttManager::loadMQTTConfig() {
     String server = default_mqtt_broker;
     String user, port, rootTopic = "";
     if (SPIFFS.exists("/conf/mqtt.json")) {
@@ -120,16 +118,16 @@ void CommLink::loadMQTTConfig() {
     preferences.end();
 }
 
-auto CommLink::ensureMQTTConnection() const -> bool {
-    String clientId = MQTT_CLIENT_PREFIX;
-    clientId += String(random(RND_SEED), HEX);
+
+auto MqttManager::ensureMQTTConnection() const -> bool {
+    auto clientId = String(mqtt_client_prefix + String(random(RND_SEED), HEX));
     if (_mqttBroker[0] == '\0' || String(_mqttBroker) == default_mqtt_broker) {
-        _logger->logWarning("MQTT broker not configured; skipping connection attempt");
+        _logger->logWarning("[MQTT] Broker not configured; skipping connection attempt");
         return false;
     }
     _logger->logInformation(
         (String("Connecting to MQTT broker [") + _mqttBroker + ":" + String(_mqttPort) + "]").c_str());
-    const bool connected = _mqttClient->connect(clientId.c_str(), _mqttUser, _mqttPassword);
+    const bool connected = _mqttClient->connect(_clientId.c_str(), _mqttUser, _mqttPassword);
     if (!connected) {
             _logger->logError(("MQTT connect failed, rc=" + String(_mqttClient->state())).c_str());
     } else {
@@ -143,14 +141,14 @@ auto CommLink::ensureMQTTConnection() const -> bool {
     return connected;
 }
 
-void CommLink::handleMqttMessage(char *topic, const byte *payload, const unsigned int length) {
-    if (s_activeCommLink != nullptr) {
+void MqttManager::handleMqttMessage(char *topic, const byte *payload, const unsigned int length) {
+    if (s_activeMqttManager != nullptr) {
         const auto topicStr = String(topic);
-        s_activeCommLink->onMqttMessage(topicStr, payload, length);
+        s_activeMqttManager->onMqttMessage(topicStr, payload, length);
     }
 }
 
-void CommLink::addSubscriptionHandlers(const String &rootTopic) const {
+void MqttManager::addSubscriptionHandlers(const String &rootTopic) const {
     _subscriptionHandler->addHandler(rootTopic + system_subscription_network_reset, [this](const String &) {
         _logger->logInformation("[MQTT][Subscriptions] Network reset requested by MQTT message");
     });
@@ -161,8 +159,8 @@ void CommLink::addSubscriptionHandlers(const String &rootTopic) const {
     });
 }
 
-[[noreturn]] void CommLink::processMQTTAsync(void *parameter) {
-    const auto *commLink = static_cast<CommLink *>(parameter);
+[[noreturn]] void MqttManager::processMQTTAsync(void *parameter) {
+    const auto *mqtt_manager = static_cast<MqttManager *>(parameter);
     constexpr TickType_t delayTicks = MQTT_TASK_LOOP_DELAY_MS / portTICK_PERIOD_MS;
     static unsigned long lastReconnectAttempt = 0;
     while (true) {
@@ -178,24 +176,24 @@ void CommLink::addSubscriptionHandlers(const String &rootTopic) const {
             continue;
         }
 
-        const bool connectedNow = commLink->_mqttClient->connected();
+        const bool connectedNow = mqtt_manager->_mqttClient->connected();
         IndicatorService::instance().setMqttConnected(connectedNow);
         if (!connectedNow) {
-            commLink->_logger->logError("MQTT disconnected, attempting reconnect");
+            mqtt_manager->_logger->logError("MQTT disconnected, attempting reconnect");
             const unsigned long now = millis();
             if (now - lastReconnectAttempt >= MQTT_RECONNECT_INTERVAL_MS) {
                 lastReconnectAttempt = now;
-                if (!commLink->ensureMQTTConnection()) {
-                    commLink->_logger->logError("MQTT reconnect attempt failed in task loop");
+                if (!mqtt_manager->ensureMQTTConnection()) {
+                    mqtt_manager->_logger->logError("MQTT reconnect attempt failed in task loop");
                 }
             }
         }
-        commLink->_mqttClient->loop();
+        mqtt_manager->_mqttClient->loop();
         vTaskDelay(delayTicks);
     }
 }
 
-bool CommLink::startMqttTask() {
+bool MqttManager::startMqttTask() {
     const BaseType_t result = xTaskCreatePinnedToCore(
         processMQTTAsync,
         "processMQTTAsync",
@@ -212,41 +210,41 @@ bool CommLink::startMqttTask() {
     return true;
 }
 
-bool CommLink::mqttPublish(const char *topic, const char *payload) const {
+bool MqttManager::mqttPublish(const char *topic, const char *payload) const {
     return _mqttClient->publish(topic, payload);
 }
 
-void CommLink::onMqttMessage(const String &topic, const uint8_t *payload, const size_t length) const {
+void MqttManager::onMqttMessage(const String &topic, const uint8_t *payload, const size_t length) const {
     String message;
     message.reserve(length);
     for (size_t i = 0; i < length; i++) {
         message += static_cast<char>(payload[i]);
     }
     _subscriptionHandler->handle(topic, message);
-    _logger->logDebug("CommLink::onMqttMessage - Received MQTT message");
+    _logger->logDebug("MqttManager::onMqttMessage - Received MQTT message");
 }
 
-char *CommLink::getMqttBroker() {
+char *MqttManager::getMqttBroker() {
     return _mqttBroker;
 }
 
-int CommLink::getMQTTState() const {
+int MqttManager::getMQTTState() const {
     return _mqttClient->state();
 }
 
-char *CommLink::getMQTTUser() {
+char *MqttManager::getMQTTUser() {
     return _mqttUser;
 }
 
-void CommLink::setMQTTEnabled(const bool enabled) {
+void MqttManager::setMQTTEnabled(const bool enabled) {
     s_mqttEnabled.store(enabled, std::memory_order_release);
 }
 
-bool CommLink::isMQTTEnabled() {
+bool MqttManager::isMQTTEnabled() {
     return s_mqttEnabled.load(std::memory_order_acquire);
 }
 
-bool CommLink::testConnectOnce() {
+bool MqttManager::testConnectOnce() {
     // Load settings and try connecting once, do not start the task
     loadMQTTConfig();
     const char *broker = {_mqttBroker};
@@ -259,7 +257,7 @@ bool CommLink::testConnectOnce() {
     return ensureMQTTConnection();
 }
 
-void CommLink::reconfigureFromFile() {
+void MqttManager::reconfigureFromFile() {
     // Temporarily pause MQTT processing loop
     setMQTTEnabled(false);
     IndicatorService::instance().setMqttConnected(false);
@@ -287,6 +285,10 @@ void CommLink::reconfigureFromFile() {
 
     // If Wi-Fi is up, try to connect and resubscribe immediately
     if (WiFiClass::status() == WL_CONNECTED) {
-        ensureMQTTConnection();
+        bool connected = false;
+        connected = ensureMQTTConnection();
+        if (!connected) {
+            _logger->logError("[MQTT] Reconfigure failed to connect");
+        }
     }
 }

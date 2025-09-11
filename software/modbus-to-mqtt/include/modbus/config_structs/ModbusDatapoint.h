@@ -17,4 +17,4 @@ struct ModbusDatapoint {
     ModbusDataType dataType;
     String unit;
 };
-#endif //MBREGISTER_H
+#endif

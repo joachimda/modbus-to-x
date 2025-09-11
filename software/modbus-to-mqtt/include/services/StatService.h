@@ -2,9 +2,11 @@
 #define MODBUS_TO_MQTT_STATSERVICE_H
 #include <ArduinoJson.h>
 
+#include "Logger.h"
+
 class StatService {
   public:
-  static JsonDocument appendSystemStats(JsonDocument & document);
+  static JsonDocument appendSystemStats(JsonDocument & document, const Logger *logger);
 
   static JsonDocument appendNetworkStats(JsonDocument &document);
 

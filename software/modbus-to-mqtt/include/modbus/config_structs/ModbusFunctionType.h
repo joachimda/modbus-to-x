@@ -9,4 +9,4 @@ enum ModbusFunctionType {
     WRITE_COIL = 5,
     WRITE_HOLDING = 6,
 };
-#endif //MBREGISTERTYPE_H
+#endif

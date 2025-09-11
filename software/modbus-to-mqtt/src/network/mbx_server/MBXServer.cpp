@@ -30,7 +30,7 @@ void MBXServer::begin() const {
         IndicatorService::instance().setPortalMode(false);
         IndicatorService::instance().setWifiConnected(true);
         // Enable MQTT in normal (non-portal) mode
-        CommLink::setMQTTEnabled(true);
+        MqttManager::setMQTTEnabled(true);
         ArduinoOtaManager::begin(_logger);
     } else {
         g_wifi.begin("modbus-to-x");
@@ -41,7 +41,7 @@ void MBXServer::begin() const {
         server->begin();
         IndicatorService::instance().setPortalMode(true);
         // Disable MQTT while portal is active to avoid transient connects
-        CommLink::setMQTTEnabled(false);
+        MqttManager::setMQTTEnabled(false);
         portal.begin();
     }
 
@@ -124,15 +124,15 @@ void MBXServer::configureRoutes() const {
 
     server->on(Routes::OTA_FIRMWARE, HTTP_POST, [this](AsyncWebServerRequest *req) {
         logRequest(req);
-        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); return; }
-    }, [this](AsyncWebServerRequest *req, const String &fn, size_t index, uint8_t *data, size_t len, bool final) {
+        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); }
+    }, [this](AsyncWebServerRequest *req, const String &fn, const size_t index, uint8_t *data, const size_t len, const bool final) {
         MBXServerHandlers::handleOtaFirmwareUpload(req, fn, index, data, len, final, _logger);
     });
 
     server->on(Routes::OTA_FILESYSTEM, HTTP_POST, [this](AsyncWebServerRequest *req) {
         logRequest(req);
-        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); return; }
-    }, [this](AsyncWebServerRequest *req, const String &fn, size_t index, uint8_t *data, size_t len, bool final) {
+        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); }
+    }, [this](AsyncWebServerRequest *req, const String &fn, const size_t index, uint8_t *data, const size_t len, bool final) {
         MBXServerHandlers::handleOtaFilesystemUpload(req, fn, index, data, len, final, _logger);
     });
     server->onNotFound([this](AsyncWebServerRequest *req) {
@@ -162,13 +162,12 @@ void MBXServer::configureAccessPointRoutes() const {
         MBXServerHandlers::getSsidListAsJson(req);
     });
 
-    // POST with JSON body
     server->on(Routes::POST_WIFI_CONNECT, HTTP_POST,
-               [this](AsyncWebServerRequest *req) {
+               [this](const AsyncWebServerRequest *req) {
                    logRequest(req);
                },
                nullptr,
-               [](AsyncWebServerRequest *req, uint8_t *data, size_t len, size_t index, size_t total) {
+               [](AsyncWebServerRequest *req, const uint8_t *data, const size_t len, const size_t index, const size_t total) {
                    MBXServerHandlers::handleWifiConnect(req, g_wifi, data, len, index, total);
                }
     );
@@ -192,17 +191,16 @@ void MBXServer::configureAccessPointRoutes() const {
         MBXServerHandlers::handleWifiCancel(req, g_wifi);
     });
 
-    // Allow OTA in portal mode too
     server->on(Routes::OTA_FIRMWARE, HTTP_POST, [this](AsyncWebServerRequest *req) {
         logRequest(req);
-        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); return; }
-    }, [this](AsyncWebServerRequest *req, const String &fn, size_t index, uint8_t *data, size_t len, bool final) {
+        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); }
+    }, [this](AsyncWebServerRequest *req, const String &fn, const size_t index, uint8_t *data, const size_t len, const bool final) {
         MBXServerHandlers::handleOtaFirmwareUpload(req, fn, index, data, len, final, _logger);
     });
     server->on(Routes::OTA_FILESYSTEM, HTTP_POST, [this](AsyncWebServerRequest *req) {
         logRequest(req);
-        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); return; }
-    }, [this](AsyncWebServerRequest *req, const String &fn, size_t index, uint8_t *data, size_t len, bool final) {
+        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); }
+    }, [this](AsyncWebServerRequest *req, const String &fn, const size_t index, uint8_t *data, const size_t len, const bool final) {
         MBXServerHandlers::handleOtaFilesystemUpload(req, fn, index, data, len, final, _logger);
     });
     _logger->logDebug("MBXServer::configureAccessPointRoutes - end");

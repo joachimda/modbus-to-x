@@ -1,4 +1,4 @@
-#include "commlink/MqttSubscriptionHandler.h"
+#include "mqtt/MqttSubscriptionHandler.h"
 #include <utility>
 
 MqttSubscriptionHandler::MqttSubscriptionHandler(Logger *logger) : _logger(logger){}

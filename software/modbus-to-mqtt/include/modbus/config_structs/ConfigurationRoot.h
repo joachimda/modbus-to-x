@@ -7,5 +7,5 @@ struct ConfigurationRoot {
     Bus bus;
     std::vector<ModbusDevice> devices;
 };
-#endif //MODBUS_TO_MQTT_MODBUSROOT_H
+#endif
 

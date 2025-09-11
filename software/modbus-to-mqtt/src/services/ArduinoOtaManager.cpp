@@ -12,11 +12,11 @@ void ArduinoOtaManager::begin(Logger *logger) {
     ArduinoOTA
         .onStart([] {
             IndicatorService::instance().setOtaActive(true);
-            if (g_logger) g_logger->logInformation("ArduinoOTA: Start");
+            if (g_logger) g_logger->logInformation("Dev-OTA: Start");
         })
         .onEnd([] {
             IndicatorService::instance().setOtaActive(false);
-            if (g_logger) g_logger->logInformation("ArduinoOTA: End");
+            if (g_logger) g_logger->logInformation("Dev-OTA: End");
         })
         .onProgress([](const unsigned int progress, const unsigned int total) {
             (void)progress; (void)total;
@@ -27,7 +27,7 @@ void ArduinoOtaManager::begin(Logger *logger) {
 
     ArduinoOTA.setPassword(DEV_OTA_ARDUINO_PASS);
     ArduinoOTA.begin();
-    if (g_logger) g_logger->logInformation("ArduinoOTA: Ready");
+    if (g_logger) g_logger->logInformation("Dev-OTA: Ready");
 }
 
 void ArduinoOtaManager::loop() {

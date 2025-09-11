@@ -24,14 +24,17 @@ ModbusManager::ModbusManager(Logger *logger) : _logger(logger) {
 bool ModbusManager::begin() {
     if (loadConfiguration()) {
         BUS_ACTIVE.store(true, std::memory_order_release);
+        initializeWiring();
+        _logger->logInformation("ModbusManager::begin - RS485 bus is ACTIVE");
         return true;
     }
     BUS_ACTIVE.store(false, std::memory_order_release);
+    _logger->logInformation("ModbusManager::begin - RS485 bus is INACTIVE");
     return false;
 }
 
 bool ModbusManager::loadConfiguration() {
-    const char *path = "/conf/config.json";
+    auto path = "/conf/config.json";
     if (!SPIFFS.exists(path)) {
         _logger->logDebug("Configuration file not found '/conf/config.json'");
         // fallback to defaults
@@ -58,7 +61,6 @@ bool ModbusManager::loadConfiguration() {
         return false;
     }
 
-    // Helpers to parse enums
     auto parseFunction = [](const int fn) -> ModbusFunctionType {
         switch (fn) {
             case 1: return READ_COIL;
@@ -159,17 +161,27 @@ void ModbusManager::initializeWiring() const {
 
     _logger->logDebug("ModbusManager::initialize - Exit");
 }
-void ModbusManager::loop(){
+
+void ModbusManager::loop() {
     if (BUS_ACTIVE.load(std::memory_order_acquire)) {
+        _logger->logDebug("ModbusManager::loop - ACTIVE Entry");
         bool anySuccess = false;
+        _logger->logDebug(("ModbusManager::loop - Found devices: " + String(_modbusRoot.devices.size())).c_str());
+
         for (auto &dev: _modbusRoot.devices) {
             anySuccess = readModbusDevice(dev) || anySuccess;
         }
         IndicatorService::instance().setModbusConnected(anySuccess);
     }
+    else {
+        _logger->logDebug("ModbusManager::loop - INACTIVE Entry");
+        IndicatorService::instance().setModbusConnected(false);
+    }
+
 }
 
 bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
+    _logger->logDebug(("ModbusManager::readModbusDevice - Reading Device: " + String(dev.name)).c_str());
 
     node.begin(dev.slaveId, Serial1);
     node.preTransmission(preTransmissionHandler);
@@ -178,7 +190,7 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
     uint8_t result;
     bool successOnThisDevice = false;
     for (auto &dp: dev.datapoints) {
-        _logger->logDebug(("ModbusManager::readRegisters - Reading register: " + String(dp.name)).c_str());
+        _logger->logDebug(("ModbusManager::readModbusDevice - Sending Command - Func: " + String(dp.function) + String(dp.name)+ "@" + String(dp.address)).c_str());
         switch (dp.function) {
             case READ_COIL:
                 result = node.readCoils(dp.address, dp.numOfRegisters);
@@ -194,7 +206,9 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
                 break;
             default:
                 result = -1;
-                _logger->logError(("ModbusManager::readRegisters - Function: " + String(dp.function) + " is not valid in this scope.").c_str());
+                _logger->logError(
+                    ("ModbusManager::readRegisters - Function: " + String(dp.function) + " is not valid in this scope.")
+                    .c_str());
         }
 
         if (result == ModbusMaster::ku8MBSuccess) {
@@ -203,10 +217,9 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
             const float rawData = node.getResponseBuffer(0);
             const float value = rawData * dp.scale;
             auto payload = String(value);
-        }
-        else {
+        } else {
             _logger->logError(
-                ("Error reading register: " + String(dp.name) + " Error code: " + String(result)).c_str());
+                ("Error reading register: " + String(dp.name) + " Error code: " + String(result) + " Raw Data: " + String(rawdata)).c_str());
         }
     }
     return successOnThisDevice;

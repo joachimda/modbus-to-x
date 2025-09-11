@@ -24,7 +24,7 @@ static const char *resetReasonToString(const esp_reset_reason_t r) {
     }
 }
 
-static String getDeviceName(const String &mac, const String &chipModel) {
+static String getDeviceName(const String &mac, const String &chipModel, const Logger *logger) {
     String deviceName = WiFiClass::getHostname() ? WiFiClass::getHostname() : "";
     if (deviceName.isEmpty()) {
         String macSuffix = mac.length() >= 8 ? mac.substring(mac.length() - 8) : mac;
@@ -35,11 +35,11 @@ static String getDeviceName(const String &mac, const String &chipModel) {
     return deviceName;
 }
 
-JsonDocument StatService::appendSystemStats(JsonDocument &document) {
+JsonDocument StatService::appendSystemStats(JsonDocument &document, const Logger *logger) {
     const String mac = WiFi.macAddress();
     const auto chipModel = ESP.getChipModel();
 
-    document["deviceName"] = getDeviceName(mac, chipModel);
+    document["deviceName"] = getDeviceName(mac, chipModel, logger);
     document["fwVersion"] = FW_VERSION;
     document["fwBuildDate"] = String(__DATE__) + " " + String(__TIME__);
     document["buildDate"] = document["fwBuildDate"].as<String>();
@@ -72,7 +72,7 @@ JsonDocument StatService::appendHealthStats(JsonDocument &document) {
 }
 
 JsonDocument StatService::appendMQTTStats(JsonDocument &document) {
-    CommLink *link = MBXServerHandlers::getCommLink();
+    MqttManager *link = MBXServerHandlers::getMqttManager();
     const bool connected = (link && link->getMQTTState() == 0);
     document["mqttConnected"] = connected;
     document["broker"] = link ? String(link->getMqttBroker()) : "N/A";

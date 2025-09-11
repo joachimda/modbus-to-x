@@ -1,13 +1,13 @@
-#ifndef COMMLINK_H
-#define COMMLINK_H
+#ifndef MQTT_MANAGER_H
+#define MQTT_MANAGER_H
 
 #include <PubSubClient.h>
-#include <commlink/MqttSubscriptionHandler.h>
+#include <mqtt/MqttSubscriptionHandler.h>
 #include <Preferences.h>
 
-class CommLink {
+class MqttManager {
 public:
-    explicit CommLink(MqttSubscriptionHandler *subscriptionHandler, PubSubClient *mqttClient, Logger *logger);
+    explicit MqttManager(MqttSubscriptionHandler *subscriptionHandler, PubSubClient *mqttClient, Logger *logger);
 
     static void handleMqttMessage(char *topic, const byte *payload, unsigned int length);
 
@@ -48,6 +48,8 @@ private:
     char _mqttUser[32] = "";
     char _mqttPassword[32] = "";
     String _mqttRootTopic = "";
+    String _clientId = "";
+
     PubSubClient *_mqttClient;
     Logger *_logger;
     TaskHandle_t _mqttTaskHandle;
@@ -55,4 +57,4 @@ private:
     Preferences preferences;
 };
 
-#endif //COMMLINK_H
+#endif

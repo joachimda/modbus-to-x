@@ -1,26 +1,26 @@
 #include <Arduino.h>
 #include <SPIFFS.h>
-#include "commlink/CommLink.h"
-#include "MqttLogger.h"
 #include "MemoryLogger.h"
 #include "SerialLogger.h"
 #include "modbus/ModbusManager.h"
 #include "network/mbx_server/MBXServer.h"
 #include "Config.h"
 #include <network/mbx_server/MBXServerHandlers.h>
+
+#include "mqtt/MqttSubscriptionHandler.h"
 #include "services/IndicatorService.h"
 
 Logger logger;
-MemoryLogger memoryLogger(300);
-MqttSubscriptionHandler subscriptionHandler(&logger);
+MemoryLogger memory_logger(300);
+MqttSubscriptionHandler mqtt_subscription_Handler(&logger);
 WiFiClient wifiClient;
-PubSubClient pubSubClient(wifiClient);
-CommLink commLink(&subscriptionHandler, &pubSubClient, &logger);
-SerialLogger serialLogger(Serial);
-ModbusManager modbusManager(&logger);
+PubSubClient pubsub_client(wifiClient);
+MqttManager mqtt_manager(&mqtt_subscription_Handler, &pubsub_client, &logger);
+SerialLogger serial_logger(Serial);
+ModbusManager modbus_manager(&logger);
 AsyncWebServer server(80);
 DNSServer dns;
-MBXServer mbxServer(&server, &dns, &logger);
+MBXServer mbx_server(&server, &dns, &logger);
 
 void setupEnvironment() {
     logger.useDebug(true);
@@ -37,27 +37,28 @@ void setupFs(const Logger * l ) {
 
 void setup() {
     setupEnvironment();
-    logger.addTarget(&serialLogger);
-    logger.addTarget(&memoryLogger);
+    logger.addTarget(&serial_logger);
+    logger.addTarget(&memory_logger);
     logger.logDebug("setup() - logger initialized");
     setupFs(&logger);
 
     IndicatorService::instance().begin();
 
-    commLink.begin();
+    mqtt_manager.begin();
     logger.logDebug("setup() - Starting MBX Server");
-    MBXServerHandlers::setMemoryLogger(&memoryLogger);
-    MBXServerHandlers::setCommLink(&commLink);
-    mbxServer.begin();
+    MBXServerHandlers::setMemoryLogger(&memory_logger);
+    MBXServerHandlers::setMqttManager(&mqtt_manager);
+    mbx_server.begin();
 
     logger.logDebug("setup() - Starting modbus manager");
-    modbusManager.begin();
+    modbus_manager.begin();
     logger.logDebug("setup() - complete");
 }
 
 void loop() {
     MBXServer::loop();
+    modbus_manager.loop();
     // mb_manager.readRegisters();
-    // commLink.mqttPublish("log", ("Datapoints available: " + String(numData)).c_str());
+    // mqtt_manager.mqttPublish("log", ("Datapoints available: " + String(numData)).c_str());
     delay(500);
 }

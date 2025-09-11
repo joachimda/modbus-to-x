@@ -3373,230 +3373,6 @@
 				)
 			)
 		)
-		(symbol "Memory_EEPROM:AT24CS64-XHM"
-			(exclude_from_sim no)
-			(in_bom yes)
-			(on_board yes)
-			(property "Reference" "U"
-				(at -7.62 6.35 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "Value" "AT24CS64-XHM"
-				(at 2.54 -6.35 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(justify left)
-				)
-			)
-			(property "Footprint" "Package_SO:TSSOP-8_4.4x3mm_P0.65mm"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Datasheet" "http://ww1.microchip.com/downloads/en/DeviceDoc/Atmel-8870-SEEPROM-AT24CS64-Datasheet.pdf"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Description" "I2C Serial EEPROM, 64Kb (8192x8) with Unique Serial Number, TSSOP8"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "ki_keywords" "I2C Serial EEPROM Nonvolatile Memory"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "ki_fp_filters" "TSSOP*4.4x3mm*P0.65mm*"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(symbol "AT24CS64-XHM_1_1"
-				(rectangle
-					(start -7.62 5.08)
-					(end 7.62 -5.08)
-					(stroke
-						(width 0.254)
-						(type default)
-					)
-					(fill
-						(type background)
-					)
-				)
-				(pin input line
-					(at -10.16 2.54 0)
-					(length 2.54)
-					(name "A0"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "1"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin input line
-					(at -10.16 0 0)
-					(length 2.54)
-					(name "A1"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "2"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin input line
-					(at -10.16 -2.54 0)
-					(length 2.54)
-					(name "A2"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "3"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin power_in line
-					(at 0 -7.62 90)
-					(length 2.54)
-					(name "GND"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "4"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin bidirectional line
-					(at 10.16 2.54 180)
-					(length 2.54)
-					(name "SDA"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "5"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin input line
-					(at 10.16 0 180)
-					(length 2.54)
-					(name "SCL"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "6"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin input line
-					(at 10.16 -2.54 180)
-					(length 2.54)
-					(name "WP"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "7"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin power_in line
-					(at 0 7.62 270)
-					(length 2.54)
-					(name "VCC"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "8"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-			)
-		)
 		(symbol "Regulator_Linear:AMS1117-3.3"
 			(exclude_from_sim no)
 			(in_bom yes)
@@ -4935,12 +4711,6 @@
 		(uuid "407974cf-0cc8-4a58-9a1b-da9681aab09b")
 	)
 	(junction
-		(at 30.48 137.16)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "42570c8a-3e63-49a6-80d5-25949f85b665")
-	)
-	(junction
 		(at 60.96 95.25)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -5037,12 +4807,6 @@
 		(uuid "8c516a98-e78b-447c-a312-265e602506b6")
 	)
 	(junction
-		(at 72.39 138.43)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "8d7279c9-bde1-42e2-90a9-fb2cf0fa8c77")
-	)
-	(junction
 		(at 139.7 43.18)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -5103,7 +4867,7 @@
 		(uuid "aab9d323-3eed-4f93-a49a-483bdd44d9bf")
 	)
 	(junction
-		(at 115.57 153.67)
+		(at 25.4 160.02)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "ac2f7618-742d-4caf-ba4b-2b0cf5bb4ad9")
@@ -5211,32 +4975,12 @@
 		(uuid "26129389-4451-44fb-9acb-6fcc58997d24")
 	)
 	(no_connect
-		(at 26.67 148.59)
-		(uuid "2e098318-d95c-4e6e-8c74-913f06a30082")
-	)
-	(no_connect
-		(at 46.99 148.59)
-		(uuid "350e9514-47df-40a4-8e60-9381010c6832")
-	)
-	(no_connect
-		(at 26.67 146.05)
-		(uuid "422a8ec0-cae0-4200-bad8-108769ca8f0f")
-	)
-	(no_connect
 		(at 232.41 85.09)
 		(uuid "459bc292-6d1a-4f66-964d-0cac0e3cedb6")
 	)
 	(no_connect
-		(at 67.31 148.59)
-		(uuid "4bc5e54f-b575-484a-a9ec-4ba115ce0acf")
-	)
-	(no_connect
 		(at 232.41 69.85)
 		(uuid "544f842c-99b4-4443-b171-7d4fbc218795")
-	)
-	(no_connect
-		(at 67.31 143.51)
-		(uuid "571694dd-cf1d-4c0d-a53f-4b0277eb18b2")
 	)
 	(no_connect
 		(at 232.41 36.83)
@@ -5257,10 +5001,6 @@
 	(no_connect
 		(at 232.41 72.39)
 		(uuid "d4e3a60d-3f49-4651-bb53-0404d21eb604")
-	)
-	(no_connect
-		(at 87.63 148.59)
-		(uuid "e13d36ea-2626-4e47-b43a-f7f05c667b80")
 	)
 	(no_connect
 		(at 232.41 80.01)
@@ -5378,7 +5118,7 @@
 	)
 	(wire
 		(pts
-			(xy 115.57 154.94) (xy 115.57 153.67)
+			(xy 25.4 161.29) (xy 25.4 160.02)
 		)
 		(stroke
 			(width 0)
@@ -5448,16 +5188,6 @@
 	)
 	(wire
 		(pts
-			(xy 55.88 143.51) (xy 46.99 143.51)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "378d4b48-98d0-42bc-892a-92526dab56f3")
-	)
-	(wire
-		(pts
 			(xy 146.05 43.18) (xy 152.4 43.18)
 		)
 		(stroke
@@ -5495,16 +5225,6 @@
 			(type default)
 		)
 		(uuid "43c78203-0440-43cf-b76f-4a7a6544c3e3")
-	)
-	(wire
-		(pts
-			(xy 96.52 146.05) (xy 87.63 146.05)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "442c3653-5ed0-4776-998d-f988b461aea8")
 	)
 	(wire
 		(pts
@@ -5585,16 +5305,6 @@
 			(type default)
 		)
 		(uuid "5787170b-b27b-460c-a9f2-d4dc684cd1d2")
-	)
-	(wire
-		(pts
-			(xy 30.48 137.16) (xy 36.83 137.16)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "5b2f06fd-3c33-42f2-b644-457c885203d9")
 	)
 	(wire
 		(pts
@@ -5988,7 +5698,7 @@
 	)
 	(wire
 		(pts
-			(xy 110.49 153.67) (xy 115.57 153.67)
+			(xy 20.32 160.02) (xy 25.4 160.02)
 		)
 		(stroke
 			(width 0)
@@ -6018,16 +5728,6 @@
 	)
 	(wire
 		(pts
-			(xy 36.83 137.16) (xy 36.83 138.43)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a745bb34-6b58-4130-84c3-8da01e964bd0")
-	)
-	(wire
-		(pts
 			(xy 270.51 67.31) (xy 270.51 69.85)
 		)
 		(stroke
@@ -6035,16 +5735,6 @@
 			(type default)
 		)
 		(uuid "a762dd97-a6e1-4612-8a86-ca361c1ebe93")
-	)
-	(wire
-		(pts
-			(xy 59.69 146.05) (xy 67.31 146.05)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a7bd19a4-952e-48e0-9f7f-f5da64d78243")
 	)
 	(wire
 		(pts
@@ -6095,16 +5785,6 @@
 			(type default)
 		)
 		(uuid "aaef444c-555b-4161-a71e-a3ff38f08813")
-	)
-	(wire
-		(pts
-			(xy 55.88 146.05) (xy 46.99 146.05)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "aba7405d-a138-4ba6-bcfc-cfba9d15e55b")
 	)
 	(wire
 		(pts
@@ -6168,7 +5848,7 @@
 	)
 	(wire
 		(pts
-			(xy 115.57 153.67) (xy 120.65 153.67)
+			(xy 25.4 160.02) (xy 30.48 160.02)
 		)
 		(stroke
 			(width 0)
@@ -6185,26 +5865,6 @@
 			(type default)
 		)
 		(uuid "c069b6f3-f1f0-45ec-b2c3-02a80e277382")
-	)
-	(wire
-		(pts
-			(xy 30.48 130.81) (xy 30.48 137.16)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c21ee49b-a61e-4575-9735-b2d0c9f9448f")
-	)
-	(wire
-		(pts
-			(xy 72.39 138.43) (xy 77.47 138.43)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c23c5ab6-a3fb-4ab2-8765-c234ee46768c")
 	)
 	(wire
 		(pts
@@ -6265,16 +5925,6 @@
 			(type default)
 		)
 		(uuid "cbe61344-9853-4404-981b-14c002839191")
-	)
-	(wire
-		(pts
-			(xy 72.39 130.81) (xy 72.39 138.43)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "cca52c71-6146-41dc-802c-2c5f4719695e")
 	)
 	(wire
 		(pts
@@ -6498,16 +6148,6 @@
 	)
 	(wire
 		(pts
-			(xy 96.52 143.51) (xy 87.63 143.51)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "f75424d6-e878-4602-ba88-4e8cf1f0d37a")
-	)
-	(wire
-		(pts
 			(xy 55.88 102.87) (xy 60.96 102.87)
 		)
 		(stroke
@@ -6555,16 +6195,6 @@
 			(type default)
 		)
 		(uuid "fd463219-d26a-4f77-9022-6433e2e6a5d5")
-	)
-	(wire
-		(pts
-			(xy 20.32 143.51) (xy 26.67 143.51)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "fee22052-3148-451b-b0ab-9f960f03b562")
 	)
 	(wire
 		(pts
@@ -6693,8 +6323,8 @@
 		(uuid 5fd73572-cce9-4d91-8412-06e8640832d9)
 	)
 	(rectangle
-		(start 104.775 128.27)
-		(end 130.175 160.655)
+		(start 14.605 134.62)
+		(end 40.005 167.005)
 		(stroke
 			(width 0)
 			(type solid)
@@ -6763,18 +6393,6 @@
 			(type none)
 		)
 		(uuid ae00b33d-f0b5-4e50-8565-c3b99b657883)
-	)
-	(rectangle
-		(start 14.605 128.27)
-		(end 102.87 160.655)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(fill
-			(type none)
-		)
-		(uuid b624e4d2-10e0-4a3e-ac70-9ea903c78dde)
 	)
 	(rectangle
 		(start 50.8 168.91)
@@ -6855,16 +6473,6 @@
 			)
 		)
 		(uuid "03146014-a585-409a-9054-0803d4ef63ac")
-	)
-	(text "EEPROM\n"
-		(exclude_from_sim no)
-		(at 58.42 130.81 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "2d48c404-bfd9-447f-8bd7-995bffd2acd5")
 	)
 	(text "Power LED Indicator"
 		(exclude_from_sim no)
@@ -6968,7 +6576,7 @@
 	)
 	(text "Status LEDs"
 		(exclude_from_sim no)
-		(at 116.84 130.81 0)
+		(at 26.67 137.16 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -7019,7 +6627,7 @@
 		(uuid "02cfa6c7-e22c-4cf2-aa29-850bbdfe78ed")
 	)
 	(label "LED_C"
-		(at 110.49 138.43 90)
+		(at 20.32 144.78 90)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -7150,17 +6758,6 @@
 		)
 		(uuid "31487847-7b10-4e91-9484-cce41745a48b")
 	)
-	(label "VDD33"
-		(at 30.48 130.81 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "385d1290-82a3-456f-bab6-bb6e63a7f238")
-	)
 	(label "IO_0"
 		(at 205.74 106.68 0)
 		(fields_autoplaced yes)
@@ -7226,28 +6823,6 @@
 			(justify left bottom)
 		)
 		(uuid "4fc58faa-085f-446e-858b-1f1d1549a84f")
-	)
-	(label "SCL_BUS"
-		(at 96.52 146.05 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "5700a188-e920-45df-846c-c138799abfc1")
-	)
-	(label "SCL_BUS"
-		(at 55.88 146.05 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "5ab47d37-506d-4dba-80ab-ff3de27028de")
 	)
 	(label "TX_0"
 		(at 270.51 52.07 0)
@@ -7327,7 +6902,7 @@
 		(uuid "77a90002-6267-4efe-a774-50048e29bfa2")
 	)
 	(label "LED_A"
-		(at 120.65 138.43 90)
+		(at 30.48 144.78 90)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -7347,17 +6922,6 @@
 			(justify right bottom)
 		)
 		(uuid "7817a68e-5ce5-4a4c-a6a3-3cc79a22e725")
-	)
-	(label "SDA_BUS"
-		(at 96.52 143.51 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "7854bf38-36e7-4f94-8b81-ea8d8469747f")
 	)
 	(label "RX_0"
 		(at 132.08 184.15 180)
@@ -7447,17 +7011,6 @@
 		)
 		(uuid "9ffe57a4-8e68-43f5-994c-c55916b6bfa7")
 	)
-	(label "VDD33"
-		(at 72.39 130.81 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "a8af5763-547d-4353-aef0-118ca7858538")
-	)
 	(label "SCL_BUS"
 		(at 270.51 54.61 0)
 		(fields_autoplaced yes)
@@ -7490,17 +7043,6 @@
 			(justify right bottom)
 		)
 		(uuid "b9a9098d-22c8-4217-ab63-c88bbf80600e")
-	)
-	(label "SDA_BUS"
-		(at 55.88 143.51 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "bc7ab02a-e7e1-4d61-b783-be06fbad2e73")
 	)
 	(label "TX_{2}"
 		(at 270.51 34.29 0)
@@ -7569,7 +7111,7 @@
 		(uuid "e046e9f4-9b0e-4efd-ae79-74e904e6ee7b")
 	)
 	(label "LED_B"
-		(at 115.57 138.43 90)
+		(at 25.4 144.78 90)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -7601,17 +7143,6 @@
 		)
 		(uuid "f5f4159d-1994-4518-add1-091948daa096")
 	)
-	(label "VDD33"
-		(at 59.69 146.05 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "f64353e2-50a7-493b-b7af-3956fb7a975f")
-	)
 	(label "RX_{2}"
 		(at 213.36 119.38 180)
 		(fields_autoplaced yes)
@@ -7622,17 +7153,6 @@
 			(justify right bottom)
 		)
 		(uuid "f6a5f406-62ba-434d-af5b-2d0137ffb0d3")
-	)
-	(label "VDD33"
-		(at 20.32 143.51 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "f75454c5-e1e2-4204-88c2-9e2587dfb4ef")
 	)
 	(label "GPIO12"
 		(at 232.41 59.69 180)
@@ -8580,7 +8100,7 @@
 	)
 	(symbol
 		(lib_id "Device:LED")
-		(at 110.49 149.86 90)
+		(at 20.32 156.21 90)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -8588,7 +8108,7 @@
 		(dnp no)
 		(uuid "1ec8f8c5-6d7f-4905-b805-4f5a1d030014")
 		(property "Reference" "D4"
-			(at 107.696 147.574 90)
+			(at 17.526 153.924 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8597,7 +8117,7 @@
 			)
 		)
 		(property "Value" "LED"
-			(at 105.918 150.368 90)
+			(at 15.748 156.718 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8607,7 +8127,7 @@
 			)
 		)
 		(property "Footprint" "LED_SMD:LED_0402_1005Metric_Pad0.77x0.64mm_HandSolder"
-			(at 110.49 149.86 0)
+			(at 20.32 156.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8616,7 +8136,7 @@
 			)
 		)
 		(property "Datasheet" "https://www.mouser.dk/datasheet/2/588/asset_pdf_5057771-3418946.pdf"
-			(at 110.49 149.86 0)
+			(at 20.32 156.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8625,7 +8145,7 @@
 			)
 		)
 		(property "Description" "LED White SMD"
-			(at 110.49 149.86 0)
+			(at 20.32 156.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8634,7 +8154,7 @@
 			)
 		)
 		(property "PartNo" "LW QH8G-Q2OO-3K5L-1"
-			(at 110.49 149.86 90)
+			(at 20.32 156.21 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8643,7 +8163,7 @@
 			)
 		)
 		(property "ProductCode" ""
-			(at 110.49 149.86 0)
+			(at 20.32 156.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8667,73 +8187,8 @@
 		)
 	)
 	(symbol
-		(lib_id "power:GND")
-		(at 22.86 137.16 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "228da5c3-70bd-411b-a538-e64a1987bbdf")
-		(property "Reference" "#PWR033"
-			(at 22.86 143.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 20.066 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 22.86 137.16 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 22.86 137.16 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 22.86 137.16 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "eb414914-1e3f-4be0-a5a4-139aeab7da0b")
-		)
-		(instances
-			(project "modbus-to-x"
-				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
-					(reference "#PWR033")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Device:R")
-		(at 115.57 142.24 0)
+		(at 25.4 148.59 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -8741,7 +8196,7 @@
 		(dnp no)
 		(uuid "230c4562-a73a-4062-88c3-4a434e27abb3")
 		(property "Reference" "R17"
-			(at 113.284 144.018 90)
+			(at 23.114 150.368 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8750,7 +8205,7 @@
 			)
 		)
 		(property "Value" "2K"
-			(at 115.57 143.764 90)
+			(at 25.4 150.114 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8759,7 +8214,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0603_1608Metric_Pad0.98x0.95mm_HandSolder"
-			(at 113.792 142.24 90)
+			(at 23.622 148.59 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8768,7 +8223,7 @@
 			)
 		)
 		(property "Datasheet" "https://media.distrelec.com/Web/Downloads/_t/ds/RND_155T_Thin_Film_Resistors_eng_tds.pdf"
-			(at 115.57 142.24 0)
+			(at 25.4 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8777,7 +8232,7 @@
 			)
 		)
 		(property "Description" "Resistor Thin film   2 KOhm      ±0.1%   SMD 0603 1/6W"
-			(at 115.57 142.24 0)
+			(at 25.4 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8786,7 +8241,7 @@
 			)
 		)
 		(property "PartNo" "RND 155TC0325B2001T5H"
-			(at 115.57 142.24 0)
+			(at 25.4 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8795,7 +8250,7 @@
 			)
 		)
 		(property "ProductCode" ""
-			(at 115.57 142.24 0)
+			(at 25.4 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10086,7 +9541,7 @@
 	)
 	(symbol
 		(lib_id "power:GND")
-		(at 115.57 154.94 0)
+		(at 25.4 161.29 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -10094,7 +9549,7 @@
 		(dnp no)
 		(uuid "4946ab9f-e8dd-4b37-a4dd-2309fecb8938")
 		(property "Reference" "#PWR041"
-			(at 115.57 161.29 0)
+			(at 25.4 167.64 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10103,7 +9558,7 @@
 			)
 		)
 		(property "Value" "GND"
-			(at 115.57 159.004 0)
+			(at 25.4 165.354 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10111,7 +9566,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 115.57 154.94 0)
+			(at 25.4 161.29 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10120,7 +9575,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 115.57 154.94 0)
+			(at 25.4 161.29 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10129,7 +9584,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 115.57 154.94 0)
+			(at 25.4 161.29 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10665,71 +10120,6 @@
 			(project ""
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "U3")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 64.77 138.43 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "5165dc2a-ef5e-4df0-8765-dbde2329c924")
-		(property "Reference" "#PWR032"
-			(at 64.77 144.78 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 62.865 141.732 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 64.77 138.43 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 64.77 138.43 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 64.77 138.43 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "e5971d14-1b5b-4671-87c7-a09147a84f75")
-		)
-		(instances
-			(project "modbus-to-x"
-				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
-					(reference "#PWR032")
 					(unit 1)
 				)
 			)
@@ -11635,102 +11025,6 @@
 		)
 	)
 	(symbol
-		(lib_id "Device:C")
-		(at 68.58 138.43 270)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "83125040-8a43-4766-b63c-80e837076de6")
-		(property "Reference" "C9"
-			(at 67.31 134.874 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "0.1uF"
-			(at 62.103 137.414 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Capacitor_SMD:C_1206_3216Metric_Pad1.33x1.80mm_HandSolder"
-			(at 64.77 139.3952 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "https://content.kemet.com/datasheets/KEM_C1002_X7R_SMD.pdf"
-			(at 68.58 138.43 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "0.1 µF ±10% 50V Ceramic Capacitor X7R 1206 (3216 Metric)"
-			(at 68.58 138.43 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "PartNo" "C1206C104K5RACTU"
-			(at 68.58 138.43 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Voltage" "50V"
-			(at 68.58 138.43 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "ProductCode" ""
-			(at 68.58 138.43 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "2"
-			(uuid "0e7d6edf-d84e-4ec8-8dd1-a8e02e2bda8d")
-		)
-		(pin "1"
-			(uuid "d427ee7b-764a-4657-a63c-4ba92f74642b")
-		)
-		(instances
-			(project "modbus-to-x"
-				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
-					(reference "C9")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Device:LED")
 		(at 106.68 189.23 180)
 		(unit 1)
@@ -11953,72 +11247,6 @@
 	)
 	(symbol
 		(lib_id "power:GND")
-		(at 77.47 153.67 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "8a67d3ec-e974-4e72-bc26-d258f30e3704")
-		(property "Reference" "#PWR019"
-			(at 77.47 160.02 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 77.47 158.75 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 77.47 153.67 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 77.47 153.67 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 77.47 153.67 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "93ddc313-0995-49c4-b990-5d24e111c314")
-		)
-		(instances
-			(project "modbus-to-x"
-				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
-					(reference "#PWR019")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
 		(at 111.76 189.23 0)
 		(unit 1)
 		(exclude_from_sim no)
@@ -12214,7 +11442,7 @@
 	)
 	(symbol
 		(lib_id "Device:LED")
-		(at 115.57 149.86 90)
+		(at 25.4 156.21 90)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -12222,7 +11450,7 @@
 		(dnp no)
 		(uuid "94b71da9-4884-4687-a1c4-4f3bee7b8de4")
 		(property "Reference" "D5"
-			(at 112.776 147.574 90)
+			(at 22.606 153.924 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12231,7 +11459,7 @@
 			)
 		)
 		(property "Value" "LED"
-			(at 111.506 150.114 90)
+			(at 21.336 156.464 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12241,7 +11469,7 @@
 			)
 		)
 		(property "Footprint" "LED_SMD:LED_0402_1005Metric_Pad0.77x0.64mm_HandSolder"
-			(at 115.57 149.86 0)
+			(at 25.4 156.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12250,7 +11478,7 @@
 			)
 		)
 		(property "Datasheet" "https://www.mouser.dk/datasheet/2/588/asset_pdf_5057771-3418946.pdf"
-			(at 115.57 149.86 0)
+			(at 25.4 156.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12259,7 +11487,7 @@
 			)
 		)
 		(property "Description" "LED White SMD"
-			(at 115.57 149.86 0)
+			(at 25.4 156.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12268,7 +11496,7 @@
 			)
 		)
 		(property "PartNo" "LW QH8G-Q2OO-3K5L-1"
-			(at 115.57 149.86 90)
+			(at 25.4 156.21 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12277,7 +11505,7 @@
 			)
 		)
 		(property "ProductCode" ""
-			(at 115.57 149.86 0)
+			(at 25.4 156.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12601,72 +11829,6 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "R12")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 36.83 153.67 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "9c7fe071-e4d1-4727-996e-32edf023c212")
-		(property "Reference" "#PWR018"
-			(at 36.83 160.02 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 36.83 158.75 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 36.83 153.67 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 36.83 153.67 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 36.83 153.67 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "b785e75e-0797-4c9d-a625-6a7fee76e62e")
-		)
-		(instances
-			(project "modbus-to-x"
-				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
-					(reference "#PWR018")
 					(unit 1)
 				)
 			)
@@ -13037,202 +12199,8 @@
 		)
 	)
 	(symbol
-		(lib_id "Memory_EEPROM:AT24CS64-XHM")
-		(at 36.83 146.05 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "ab74a739-01e1-4614-a787-e0c4470495ca")
-		(property "Reference" "U5"
-			(at 39.0241 135.89 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "AT24CS64-XHM"
-			(at 39.0241 138.43 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Package_SO:TSSOP-8_4.4x3mm_P0.65mm"
-			(at 36.83 146.05 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "http://ww1.microchip.com/downloads/en/DeviceDoc/Atmel-8870-SEEPROM-AT24CS64-Datasheet.pdf"
-			(at 36.83 146.05 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "I2C Serial EEPROM, 64Kb (8192x8) with Unique Serial Number, TSSOP8"
-			(at 36.83 146.05 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "PartNo" "AT24CS64"
-			(at 36.83 146.05 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "6"
-			(uuid "41d69645-dbaa-4b88-b615-6f19064f25ec")
-		)
-		(pin "8"
-			(uuid "2af5485e-77c0-4bd4-9670-d7693a12daab")
-		)
-		(pin "3"
-			(uuid "ef224070-6236-4e81-aa23-50ee9a0c88b3")
-		)
-		(pin "1"
-			(uuid "e610391b-3269-4149-8207-2a743fcb7580")
-		)
-		(pin "7"
-			(uuid "7a87ffff-2795-4c7c-9486-155b654976d2")
-		)
-		(pin "5"
-			(uuid "a1b4248f-938d-4980-8bde-202addc61927")
-		)
-		(pin "4"
-			(uuid "f8cf35ab-5886-4de0-bf94-857fd63b4176")
-		)
-		(pin "2"
-			(uuid "38bfa8bc-4839-44fc-a0b1-249830750ae1")
-		)
-		(instances
-			(project ""
-				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
-					(reference "U5")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Memory_EEPROM:AT24CS64-XHM")
-		(at 77.47 146.05 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "abc0b37e-40f6-4355-b07c-75269ab848c8")
-		(property "Reference" "U6"
-			(at 79.6641 135.89 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "AT24CS64-XHM"
-			(at 79.6641 138.43 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Package_SO:TSSOP-8_4.4x3mm_P0.65mm"
-			(at 77.47 146.05 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "http://ww1.microchip.com/downloads/en/DeviceDoc/Atmel-8870-SEEPROM-AT24CS64-Datasheet.pdf"
-			(at 77.47 146.05 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "I2C Serial EEPROM, 64Kb (8192x8) with Unique Serial Number, TSSOP8"
-			(at 77.47 146.05 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "PartNo" "AT24CS64"
-			(at 77.47 146.05 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "2"
-			(uuid "78b43e01-54a2-49f0-8c37-d03f4f561813")
-		)
-		(pin "5"
-			(uuid "1d3750af-1b30-45b3-9b00-4533f5264269")
-		)
-		(pin "4"
-			(uuid "10228af8-5341-498b-9233-498da6b0c501")
-		)
-		(pin "8"
-			(uuid "5074186c-0b2c-45f1-98aa-706ebbfc6c38")
-		)
-		(pin "3"
-			(uuid "d1b219cf-5896-4ea6-99bb-141bcea5ad8e")
-		)
-		(pin "6"
-			(uuid "1f41787c-a6c1-4639-89e5-1b48f8eb8fa4")
-		)
-		(pin "7"
-			(uuid "e0ed6023-e5c8-443b-979d-69e414864d99")
-		)
-		(pin "1"
-			(uuid "9099f3f7-eff5-4291-b860-c2f308406682")
-		)
-		(instances
-			(project ""
-				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
-					(reference "U6")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "Device:LED")
-		(at 120.65 149.86 90)
+		(at 30.48 156.21 90)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -13240,7 +12208,7 @@
 		(dnp no)
 		(uuid "ac743274-9e58-437a-96e4-1b3a460b6412")
 		(property "Reference" "D6"
-			(at 117.856 147.574 90)
+			(at 27.686 153.924 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13249,7 +12217,7 @@
 			)
 		)
 		(property "Value" "LED"
-			(at 115.316 151.638 90)
+			(at 25.146 157.988 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13259,7 +12227,7 @@
 			)
 		)
 		(property "Footprint" "LED_SMD:LED_0402_1005Metric_Pad0.77x0.64mm_HandSolder"
-			(at 120.65 149.86 0)
+			(at 30.48 156.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13268,7 +12236,7 @@
 			)
 		)
 		(property "Datasheet" "https://www.mouser.dk/datasheet/2/588/asset_pdf_5057771-3418946.pdf"
-			(at 120.65 149.86 0)
+			(at 30.48 156.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13277,7 +12245,7 @@
 			)
 		)
 		(property "Description" "LED White SMD"
-			(at 120.65 149.86 0)
+			(at 30.48 156.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13286,7 +12254,7 @@
 			)
 		)
 		(property "PartNo" "LW QH8G-Q2OO-3K5L-1"
-			(at 120.65 149.86 90)
+			(at 30.48 156.21 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13295,7 +12263,7 @@
 			)
 		)
 		(property "ProductCode" ""
-			(at 120.65 149.86 0)
+			(at 30.48 156.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13658,7 +12626,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 110.49 142.24 0)
+		(at 20.32 148.59 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -13666,7 +12634,7 @@
 		(dnp no)
 		(uuid "b8c3dec5-a592-436e-88cb-2c458332b7b5")
 		(property "Reference" "R16"
-			(at 108.204 144.018 90)
+			(at 18.034 150.368 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13675,7 +12643,7 @@
 			)
 		)
 		(property "Value" "2K"
-			(at 110.49 143.764 90)
+			(at 20.32 150.114 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13684,7 +12652,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0603_1608Metric_Pad0.98x0.95mm_HandSolder"
-			(at 108.712 142.24 90)
+			(at 18.542 148.59 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13693,7 +12661,7 @@
 			)
 		)
 		(property "Datasheet" "https://media.distrelec.com/Web/Downloads/_t/ds/RND_155T_Thin_Film_Resistors_eng_tds.pdf"
-			(at 110.49 142.24 0)
+			(at 20.32 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13702,7 +12670,7 @@
 			)
 		)
 		(property "Description" "Resistor Thin film   2 KOhm      ±0.1%   SMD 0603 1/6W"
-			(at 110.49 142.24 0)
+			(at 20.32 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13711,7 +12679,7 @@
 			)
 		)
 		(property "PartNo" "RND 155TC0325B2001T5H"
-			(at 110.49 142.24 0)
+			(at 20.32 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13720,7 +12688,7 @@
 			)
 		)
 		(property "ProductCode" ""
-			(at 110.49 142.24 0)
+			(at 20.32 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14365,102 +13333,6 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "#PWR02")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:C")
-		(at 26.67 137.16 90)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "cbdbac30-214e-4f67-9c6c-5af01436df8f")
-		(property "Reference" "C23"
-			(at 28.067 133.858 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "0.1uF"
-			(at 25.4 136.144 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Capacitor_SMD:C_1206_3216Metric_Pad1.33x1.80mm_HandSolder"
-			(at 30.48 136.1948 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "https://content.kemet.com/datasheets/KEM_C1002_X7R_SMD.pdf"
-			(at 26.67 137.16 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "0.1 µF ±10% 50V Ceramic Capacitor X7R 1206 (3216 Metric)"
-			(at 26.67 137.16 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "PartNo" "C1206C104K5RACTU"
-			(at 26.67 137.16 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Voltage" "50V"
-			(at 26.67 137.16 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "ProductCode" ""
-			(at 26.67 137.16 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "2"
-			(uuid "c15b293b-a8e2-4342-be54-b716f4a893c0")
-		)
-		(pin "1"
-			(uuid "7fc5e9ad-2a5a-46ba-8105-631fb1744f4c")
-		)
-		(instances
-			(project "modbus-to-x"
-				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
-					(reference "C23")
 					(unit 1)
 				)
 			)
@@ -15662,7 +14534,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 120.65 142.24 0)
+		(at 30.48 148.59 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -15670,7 +14542,7 @@
 		(dnp no)
 		(uuid "f06f69ea-0703-4bc6-bb37-2652ef91618c")
 		(property "Reference" "R18"
-			(at 118.618 143.764 90)
+			(at 28.448 150.114 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15679,7 +14551,7 @@
 			)
 		)
 		(property "Value" "2K"
-			(at 120.65 143.764 90)
+			(at 30.48 150.114 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15688,7 +14560,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0603_1608Metric_Pad0.98x0.95mm_HandSolder"
-			(at 118.872 142.24 90)
+			(at 28.702 148.59 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15697,7 +14569,7 @@
 			)
 		)
 		(property "Datasheet" "https://media.distrelec.com/Web/Downloads/_t/ds/RND_155T_Thin_Film_Resistors_eng_tds.pdf"
-			(at 120.65 142.24 0)
+			(at 30.48 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15706,7 +14578,7 @@
 			)
 		)
 		(property "Description" "Resistor Thin film   2 KOhm      ±0.1%   SMD 0603 1/6W"
-			(at 120.65 142.24 0)
+			(at 30.48 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15715,7 +14587,7 @@
 			)
 		)
 		(property "PartNo" "RND 155TC0325B2001T5H"
-			(at 120.65 142.24 0)
+			(at 30.48 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15724,7 +14596,7 @@
 			)
 		)
 		(property "ProductCode" ""
-			(at 120.65 142.24 0)
+			(at 30.48 148.59 0)
 			(effects
 				(font
 					(size 1.27 1.27)

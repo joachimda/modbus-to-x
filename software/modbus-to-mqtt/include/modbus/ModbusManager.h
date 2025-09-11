@@ -1,8 +1,10 @@
 #ifndef MODBUSMANAGER_H
 #define MODBUSMANAGER_H
+#include <Preferences.h>
 #include <vector>
+
+#include "Logger.h"
 #include "config_structs/ModbusDatapoint.h"
-#include "commlink/CommLink.h"
 #include "ModbusMaster.h"
 #include "config_structs/ConfigurationRoot.h"
 
@@ -32,4 +34,4 @@ private:
 
     ConfigurationRoot _modbusRoot{};
 };
-#endif //MODBUSMANAGER_H
+#endif

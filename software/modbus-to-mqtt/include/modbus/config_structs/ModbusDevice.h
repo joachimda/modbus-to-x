@@ -11,4 +11,4 @@ struct ModbusDevice {
     std::vector<ModbusDatapoint> datapoints;
 };
 
-#endif //MODBUS_TO_MQTT_MODBUSDEVICE_H
+#endif

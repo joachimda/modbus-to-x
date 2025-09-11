@@ -12,4 +12,4 @@ enum ModbusDataType {
     FLOAT32 = 8,
 };
 
-#endif //MBDATATYPE_H
+#endif

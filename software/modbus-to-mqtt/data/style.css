@@ -251,7 +251,6 @@ summary {
 }
 
 .page {
-    /*max-width: 1100px; */
     max-width: 1200px;
     margin: 0 auto;
     padding: 1rem;
@@ -390,6 +389,75 @@ summary {
 .muted {
     color: var(--muted);
     opacity: 0.7;
+}
+
+/* Footer logo on index page */
+.footer-logo {
+    margin: 1rem auto 0;
+    text-align: center;
+}
+
+.footer-logo img {
+    max-width: 240px;
+    width: 60%;
+    height: auto;
+}
+
+/* Footer links (GitHub button) */
+.footer-links {
+    margin: .75rem auto 0;
+    text-align: center;
+}
+
+.githubBtn {
+    width: 45px;
+    height: 45px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background-color: transparent;
+    position: relative;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: all .3s;
+    text-decoration: none;
+}
+
+.svgContainer {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: transparent;
+    backdrop-filter: blur(0px);
+    letter-spacing: 0.8px;
+    border-radius: 10px;
+    transition: all .3s;
+    border: 1px solid rgba(156, 156, 156, 0.466);
+}
+
+.BG {
+    position: absolute;
+    content: "";
+    width: 100%;
+    height: 100%;
+    background: #181818;
+    z-index: -1;
+    border-radius: 10px;
+    pointer-events: none;
+    transition: all .3s;
+}
+
+.githubBtn:hover .BG {
+    transform: rotate(35deg);
+    transform-origin: bottom;
+}
+
+.githubBtn:hover .svgContainer {
+    background-color: rgba(156, 156, 156, 0.466);
+    backdrop-filter: blur(4px);
 }
 
 #jsonBox.code {
@@ -659,7 +727,6 @@ summary {
     flex: 1 1 auto;
 }
 
-/* Modal */
 .modal-backdrop {
     position: fixed;
     inset: 0;
@@ -676,7 +743,6 @@ summary {
     width: 100%;
 }
 
-/* Generic code block */
 .code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     font-size: 13px;
@@ -717,4 +783,322 @@ summary {
 
 .terminal .lvl-err {
     color: #fca5a5;
+}
+
+
+/*Copyright - 2025 vinodjangid07 (Vinod Jangid)*/
+/*Source: https://uiverse.io/vinodjangid07/wonderful-squid-57 */
+/*Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:*/
+/*The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.*/
+/*THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.*/
+/*********************************************/
+/* Modifications by Joachim Andersen, 2025
+/*********************************************/
+.circleButton {
+    width: 50px;
+    height: 50px;
+    border: none;
+    border-radius: 50%;
+    background-color: rgb(27, 27, 27);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    transition-duration: .3s;
+    box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.11);
+}
+
+.downloadButton,
+.uploadButton {
+    flex-direction: column;
+}
+
+.circleButton:hover {
+    background-color: rgb(150, 94, 255);
+    transition-duration: .3s;
+}
+.downloadSvgIcon {
+    fill: rgb(214, 178, 255);
+}
+
+.downloadIcon {
+    width: 18px;
+    height: 5px;
+    border-bottom: 2px solid rgb(182, 143, 255);
+    border-left: 2px solid rgb(182, 143, 255);
+    border-right: 2px solid rgb(182, 143, 255);
+}
+
+.downloadButton:hover {
+    background-color: rgb(150, 94, 255);
+    transition-duration: .3s;
+}
+
+.downloadButton:hover .downloadIcon {
+    border-bottom: 2px solid rgb(235, 235, 235);
+    border-left: 2px solid rgb(235, 235, 235);
+    border-right: 2px solid rgb(235, 235, 235);
+}
+
+.downloadButton:hover .downloadSvgIcon {
+    fill: rgb(255, 255, 255);
+    animation: dl-btn-slide-in-top 0.6s cubic-bezier(0.250, 0.460, 0.450, 0.940) both;
+}
+
+@keyframes dl-btn-slide-in-top {
+    0% {
+        transform: translateY(-10px);
+        opacity: 0;
+    }
+
+    100% {
+        transform: translateY(0px);
+        opacity: 1;
+    }
+}
+
+.tooltip {
+    position: absolute;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    background-color: rgb(12, 12, 12);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition-duration: .2s;
+    pointer-events: none;
+    letter-spacing: 1px;
+    white-space: nowrap;
+    z-index: 10;
+}
+
+.tooltip::before {
+    content: "";
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    background-color: rgb(12, 12, 12);
+    bottom: -3px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+}
+.downloadButton:hover .tooltip {
+    opacity: 1;
+    transition-duration: .3s;
+}
+
+.reloadButton:hover .tooltip {
+    opacity: 1;
+    transition-duration: .3s;
+}
+
+.uploadButton:hover .tooltip {
+    opacity: 1;
+    transition-duration: .3s;
+}
+
+.uploadSvgIcon {
+    fill: rgb(214, 178, 255);
+}
+
+.uploadIcon {
+    width: 18px;
+    height: 5px;
+    border-bottom: 2px solid rgb(182, 143, 255);
+    border-left: 2px solid rgb(182, 143, 255);
+    border-right: 2px solid rgb(182, 143, 255);
+}
+
+.uploadButton:hover {
+    background-color: rgb(150, 94, 255);
+    transition-duration: .3s;
+}
+
+.uploadButton:hover .uploadIcon {
+    border-bottom: 2px solid rgb(235, 235, 235);
+    border-left: 2px solid rgb(235, 235, 235);
+    border-right: 2px solid rgb(235, 235, 235);
+}
+
+.uploadButton:hover .uploadSvgIcon {
+    fill: rgb(255, 255, 255);
+    animation: ul-btn-slide-out-top 0.6s cubic-bezier(0.250, 0.460, 0.450, 0.940) both;
+}
+
+@keyframes ul-btn-slide-out-top {
+    0% {
+        transform: translateY(0px);
+        opacity: 1;
+    }
+    100% {
+        transform: translateY(-10px);
+        opacity: 0;
+    }
+}
+
+.reloadIcon {
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgb(214, 178, 255);
+    border-radius: 50%;
+    position: relative;
+    animation: none;
+}
+
+.reloadIcon::after {
+    content: "";
+    display: block;
+    width: 8px;
+    height: 8px;
+    position: absolute;
+    box-sizing: border-box;
+    border-bottom: 2px solid rgb(214, 178, 255);
+    border-left: 2px solid rgb(214, 178, 255);
+    bottom: -2px;
+    right: -2px;
+    box-shadow: -4px 2px 0 2px rgb(27, 27, 27);
+}
+
+.reloadButton:hover {
+    background-color: rgb(150, 94, 255);
+    transition-duration: .3s; }
+
+.reloadButton:hover .reloadIcon {
+    border-color: rgb(255, 255, 255);
+    animation: spin 2s linear infinite;
+}
+
+.reloadButton:hover .reloadIcon::after {
+    border-color: rgb(255, 255, 255);
+    box-shadow: -3px 3px 0 3px rgb(150, 94, 255);
+}
+
+@keyframes reload-spin {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.bin-button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 55px;
+    height: 55px;
+    border-radius: 15px;
+    background-color: rgb(255, 95, 95);
+    cursor: pointer;
+    border: 3px solid rgb(255, 201, 201);
+    transition-duration: 0.3s;
+}
+.bin-bottom {
+    width: 15px;
+}
+.bin-top {
+    width: 17px;
+    transform-origin: right;
+    transition-duration: 0.3s;
+}
+.bin-button:hover .bin-top {
+    transform: rotate(45deg);
+}
+.bin-button:hover {
+    background-color: rgb(255, 0, 0);
+}
+.bin-button:active {
+    transform: scale(0.9);
+}
+
+.backSvgIcon {
+    width: 20px;
+    height: 20px;
+    fill: rgb(214, 178, 255);
+    transition: transform 0.3s ease, fill 0.3s ease;
+}
+
+.backButton:hover .backSvgIcon {
+    fill: rgb(255, 255, 255);
+    transform: translateX(-3px);
+}
+
+.validateSvgIcon {
+    width: 22px;
+    height: 22px;
+    color: rgb(214, 178, 255);
+    transition: transform 0.3s ease, color 0.3s ease;
+}
+
+.validateButton:hover .validateSvgIcon {
+    color: rgb(255, 255, 255);
+    transform: scale(1.2) rotate(-5deg);
+}
+
+.saveSvgIcon {
+    width: 20px;
+    height: 20px;
+    color: rgb(214, 178, 255);
+    transition: transform 0.3s ease, color 0.3s ease;
+}
+
+.saveButton:hover .saveSvgIcon {
+    color: rgb(255, 255, 255);
+    transform: scale(1.2);
+}
+
+.configureSvgIcon {
+    width: 22px;
+    height: 22px;
+    color: rgb(214, 178, 255);
+    transition: transform 0.3s ease, color 0.3s ease;
+}
+
+.configureButton:hover .configureSvgIcon {
+    color: rgb(255, 255, 255);
+    transform: rotate(10deg);
+}
+.circleButton:hover .tooltip,
+
+.circleButton:focus-visible .tooltip {
+    opacity: 1;
+    transition-duration: .3s;
+}
+
+.mqttSvgIcon {
+    width: 22px;
+    height: 22px;
+    color: rgb(214, 178, 255);
+    transition: transform 0.3s ease, color 0.3s ease;
+}
+
+.mqttButton:hover .mqttSvgIcon {
+    color: rgb(255, 255, 255);
+    transform: scale(1.1) rotate(5deg);
+}
+.rebootSvgIcon {
+    width: 22px;
+    height: 22px;
+    color: rgb(214, 178, 255);
+    transition: transform 0.6s ease, color 0.3s ease;
+}
+
+.rebootButton:hover .rebootSvgIcon {
+    color: rgb(255, 255, 255);
+    transform: rotate(360deg);
+}
+.networkSvgIcon {
+    width: 22px;
+    height: 22px;
+    color: rgb(214, 178, 255);
+    transition: transform 0.3s ease, color 0.3s ease;
+}
+
+.networkButton:hover .networkSvgIcon {
+    color: rgb(255, 255, 255);
+    transform: scale(1.5);
 }

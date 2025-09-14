@@ -35,6 +35,7 @@ public:
 
     // Find the slaveId for a datapoint id (unique across devices). Returns 0 if not found.
     uint8_t findSlaveIdByDatapointId(const String &dpId) const;
+    static const char *statusToString(uint8_t code);
 
 private:
     bool readModbusDevice(const ModbusDevice &dev);
@@ -46,7 +47,6 @@ private:
     static void postTransmissionHandler();
 
     // Diagnostics helpers
-    static const char *statusToString(uint8_t code);
     static const char *functionToString(ModbusFunctionType fn);
     std::vector<ModbusDatapoint> _modbusRegisters;
     ModbusMaster node;

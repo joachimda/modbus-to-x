@@ -363,7 +363,6 @@ void MBXServerHandlers::handleMqttTestConnection(AsyncWebServerRequest *req) {
 }
 
 void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
-    // Parse required query params
     auto getParam = [&](const char *name, String &out) -> bool {
         if (!req->hasParam(name)) return false;
         out = req->getParam(name)->value();
@@ -392,7 +391,7 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
 
     // Execute against Modbus
     JsonDocument doc;
-    ModbusManager *mb = MBXServerHandlers::getModbusManager();
+    ModbusManager *mb = getModbusManager();
     if (!mb) {
         doc["ok"] = false;
         doc["error"] = "modbus_unavailable";

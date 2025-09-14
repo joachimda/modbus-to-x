@@ -10,12 +10,12 @@
 
 static std::atomic<bool> BUS_ACTIVE{false};
 static const std::map<String, uint32_t> communicationModes = {
-    {"8N1", SERIAL_8N1},
-    {"8N2", SERIAL_8N2},
-    {"8E1", SERIAL_8E1},
-    {"8E2", SERIAL_8E2},
-    {"8O1", SERIAL_8O1},
-    {"8O2", SERIAL_8O2}
+        {"8N1", SERIAL_8N1},
+        {"8N2", SERIAL_8N2},
+        {"8E1", SERIAL_8E1},
+        {"8E2", SERIAL_8E2},
+        {"8O1", SERIAL_8O1},
+        {"8O2", SERIAL_8O2}
 };
 
 ModbusManager::ModbusManager(Logger *logger) : _logger(logger) {
@@ -38,7 +38,21 @@ public:
         return s;
     }
     // Stream interface
-    int available() override { return _inner.available(); }
+    int available() override {
+#if RS485_DROP_LEADING_ZERO
+        if (_capture && !_sawFirstByte) {
+            // Non-blocking purge of leading 0x00 bytes
+            while (_inner.available() > 0) {
+                int pk = _inner.peek();
+                if (pk != 0x00) break;
+                // Drop zero
+                (void)_inner.read();
+                // Do not record in capture buffer and do not set _sawFirstByte
+            }
+        }
+#endif
+        return _inner.available();
+    }
     int read() override {
         int b = _inner.read();
 #if RS485_DROP_LEADING_ZERO
@@ -48,15 +62,14 @@ public:
             uint32_t waited = 0;
             int drops = 0;
             while (b == 0x00 && drops < 8) {
-                // If more bytes are available, consume next immediately
                 if (_inner.available() > 0) {
                     b = _inner.read();
                     drops++;
                     continue;
                 }
-                // Else, wait a short time for the real first byte
                 if (waited >= RS485_FIRSTBYTE_WAIT_US) {
-                    break; // give up; return 0x00
+                    // Do not propagate a zero as first byte; report "no data"
+                    return -1;
                 }
                 delayMicroseconds(20);
                 waited += 20;
@@ -65,11 +78,27 @@ public:
 #endif
         if (_capture && b >= 0 && _bufLen < sizeof(_buf)) {
             _buf[_bufLen++] = static_cast<uint8_t>(b);
-            _sawFirstByte = true;
+            if (!_sawFirstByte && b != 0x00) {
+                _sawFirstByte = true;
+            }
+        } else if (_capture && !_sawFirstByte && b == 0x00) {
+            // Explicitly ignore zero as first byte for state tracking
         }
         return b;
     }
-    int peek() override { return _inner.peek(); }
+    int peek() override {
+#if RS485_DROP_LEADING_ZERO
+        if (_capture && !_sawFirstByte) {
+            // Purge any leading zeros so peek exposes the first non-zero
+            while (_inner.available() > 0) {
+                int pk = _inner.peek();
+                if (pk != 0x00) break;
+                (void)_inner.read(); // drop zero
+            }
+        }
+#endif
+        return _inner.peek();
+    }
     void flush() override { _inner.flush(); }
     size_t write(uint8_t ch) override { return _inner.write(ch); }
     size_t write(const uint8_t *buffer, size_t size) override { return _inner.write(buffer, size); }
@@ -152,14 +181,22 @@ bool ModbusManager::loadConfiguration() {
         }
         String s = v.as<const char *>();
         s.toLowerCase();
-        if (s == "text") return TEXT;
-        if (s == "int16") return INT16;
-        if (s == "int32") return INT32;
-        if (s == "int64") return INT64;
-        if (s == "uint16") return UINT16;
-        if (s == "uint32") return UINT32;
-        if (s == "uint64") return UINT64;
-        if (s == "float32") return FLOAT32;
+        if (s == "text") { return TEXT;
+        }
+        if (s == "int16") { return INT16;
+        }
+        if (s == "int32") { return INT32;
+        }
+        if (s == "int64") { return INT64;
+        }
+        if (s == "uint16") { return UINT16;
+        }
+        if (s == "uint32") { return UINT32;
+        }
+        if (s == "uint64") { return UINT64;
+        }
+        if (s == "float32") { return FLOAT32;
+        }
         return UINT16;
     };
 
@@ -232,19 +269,13 @@ void ModbusManager::initializeWiring() const {
 
 void ModbusManager::loop() {
     if (BUS_ACTIVE.load(std::memory_order_acquire)) {
-        _logger->logDebug("ModbusManager::loop - ACTIVE Entry");
         bool anySuccess = false;
-        _logger->logDebug(("ModbusManager::loop - Found devices: " + String(_modbusRoot.devices.size())).c_str());
 
         for (auto &dev: _modbusRoot.devices) {
             anySuccess = readModbusDevice(dev) || anySuccess;
         }
         IndicatorService::instance().setModbusConnected(anySuccess);
-        if (!anySuccess && !_scanAttempted) {
-            _scanAttempted = true;
-            _logger->logInformation("ModbusManager::loop - No successful reads; scanning slave IDs 1..16 (Fn=04, Addr=2)");
-            // Try a safe probe: Input Register (FC04) at address 2, 1 register
-            scanSlaveIds(1, 16, READ_INPUT, 2, 1);
+        if (!anySuccess) {
         }
     }
     else {
@@ -256,7 +287,7 @@ void ModbusManager::loop() {
 
 bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
     _logger->logDebug(("ModbusManager::readModbusDevice - Reading Device: " + String(dev.name) + " SlaveId: " + String(dev.slaveId)).c_str());
-        float rawData = -99;
+    float rawData = -99;
 
     // Use tee stream to capture incoming bytes for diagnostics
     if (g_teeSerial1) {
@@ -291,8 +322,8 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
             default:
                 result = -1;
                 _logger->logError(
-                    ("ModbusManager::readRegisters - Function: " + String(dp.function) + " is not valid in this scope.")
-                    .c_str());
+                        ("ModbusManager::readRegisters - Function: " + String(dp.function) + " is not valid in this scope.")
+                                .c_str());
         }
         if (result == ModbusMaster::ku8MBSuccess) {
             successOnThisDevice = true;
@@ -335,7 +366,7 @@ void ModbusManager::postTransmissionHandler() {
     delayMicroseconds(RS485_DIR_GUARD_US);
 }
 
-const char *ModbusManager::statusToString(uint8_t code) {
+auto ModbusManager::statusToString(uint8_t code) -> const char * {
     switch (code) {
         case 0x00: return "Success";
         case 0x01: return "IllegalFunction(0x01)";
@@ -350,7 +381,7 @@ const char *ModbusManager::statusToString(uint8_t code) {
     }
 }
 
-const char *ModbusManager::functionToString(ModbusFunctionType fn) {
+auto ModbusManager::functionToString(ModbusFunctionType fn) -> const char * {
     switch (fn) {
         case READ_COIL: return "FC01-READ_COIL";
         case READ_DISCRETE: return "FC02-READ_DISCRETE";
@@ -359,50 +390,5 @@ const char *ModbusManager::functionToString(ModbusFunctionType fn) {
         case WRITE_COIL: return "FC05-WRITE_COIL";
         case WRITE_HOLDING: return "FC06-WRITE_HOLDING";
         default: return "FC-UNKNOWN";
-    }
-}
-
-void ModbusManager::scanSlaveIds(uint8_t startId, uint8_t endId,
-                                 ModbusFunctionType fn, uint16_t address, uint8_t numRegs) {
-    if (startId < 1) startId = 1;
-    if (endId > 247) endId = 247;
-    if (endId < startId) return;
-
-    node.preTransmission(preTransmissionHandler);
-    node.postTransmission(postTransmissionHandler);
-
-    for (uint8_t id = startId; id <= endId; ++id) {
-        node.begin(id, Serial1);
-        uint8_t res = 0xFF;
-        switch (fn) {
-            case READ_COIL:
-                res = node.readCoils(address, numRegs);
-                break;
-            case READ_DISCRETE:
-                res = node.readDiscreteInputs(address, numRegs);
-                break;
-            case READ_HOLDING:
-                res = node.readHoldingRegisters(address, numRegs);
-                break;
-            case READ_INPUT:
-            default:
-                res = node.readInputRegisters(address, numRegs);
-                break;
-        }
-
-        if (res == ModbusMaster::ku8MBSuccess) {
-            uint16_t val = node.getResponseBuffer(0);
-            _logger->logInformation((String("Scan: slave ") + String(id) + " responded OK (" +
-                                     functionToString(fn) + ", addr=" + String(address) +
-                                     ", val=" + String(val) + ")").c_str());
-        } else if (res >= 0x01 && res <= 0x04) {
-            _logger->logInformation((String("Scan: slave ") + String(id) +
-                                     " responded with exception " + statusToString(res) +
-                                     " (" + functionToString(fn) + ", addr=" + String(address) + ")").c_str());
-        } else {
-            _logger->logDebug((String("Scan: slave ") + String(id) +
-                               " no response (" + statusToString(res) + ")").c_str());
-        }
-        delay(50);
     }
 }

@@ -30,15 +30,10 @@ private:
     // Diagnostics helpers
     static const char *statusToString(uint8_t code);
     static const char *functionToString(ModbusFunctionType fn);
-    void scanSlaveIds(uint8_t startId, uint8_t endId,
-                      ModbusFunctionType fn, uint16_t address, uint8_t numRegs);
-
     std::vector<ModbusDatapoint> _modbusRegisters;
     ModbusMaster node;
     Logger *_logger;
     Preferences preferences;
-
     ConfigurationRoot _modbusRoot{};
-    bool _scanAttempted{false};
 };
 #endif

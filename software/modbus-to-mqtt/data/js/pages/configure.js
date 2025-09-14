@@ -514,9 +514,15 @@ function showDatapointEditor() {
         resEl.textContent = (func === 5 || func === 6) ? "Writing…" : "Reading…";
         try {
             const r = await safeJson(`${API.POST_MODBUS_EXECUTE}?${q.toString()}`, { method: 'POST' });
-            const value = (r?.result && (r.result.value ?? r.result?.raw?.[0])) ?? r.value ?? '(n/a)';
             const raw = r?.result?.raw;
-            let msg = `OK: ${value} ${datapoint.unit || ""}`;
+            const value = (r?.result && (r.result.value ?? r.result?.raw?.[0])) ?? r.value ?? '(n/a)';
+            const scale = Number($("#dp-scale").value);
+            const numVal = Number(value);
+            const scaled = (Number.isFinite(numVal) && Number.isFinite(scale) && scale !== 1)
+                ? (numVal * scale)
+                : value;
+
+            let msg = `OK: ${scaled} ${datapoint.unit || ""}`;
             if (Array.isArray(raw)) {
                 msg += ` raw=[${raw.join(', ')}]`;
             }

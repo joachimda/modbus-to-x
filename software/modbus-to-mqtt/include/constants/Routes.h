@@ -32,6 +32,23 @@ public:
     constexpr static auto DEVICE_RESET = "/api/system/reboot";
     constexpr static auto MQTT_TEST_CONNECT = "/api/mqtt/test";
 
+
+    /* *
+     * * MODBUS API
+     * * */
+
+    /*
+     * Query params example:
+     * {
+     *   "devId": 1,
+     *   "dpId": 3,
+     *   "func_code": 4,
+     *   "addr": "123",
+     *   "len": 1
+     * }
+     */
+    constexpr static auto POST_MODBUS_EXECUTE = "/api/modbus/execute";
+
     /* *
      * * OTA API
      * * */

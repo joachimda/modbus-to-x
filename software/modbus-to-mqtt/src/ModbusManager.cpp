@@ -112,6 +112,7 @@ private:
 };
 
 static TeeStream *g_teeSerial1 = nullptr;
+static std::atomic<bool> g_modbusBusy{false};
 
 bool ModbusManager::begin() {
     if (loadConfiguration()) {
@@ -286,6 +287,11 @@ void ModbusManager::loop() {
 }
 
 bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
+    // mark bus busy to avoid concurrent ad-hoc commands
+    bool was = false;
+    if (!g_modbusBusy.compare_exchange_strong(was, true, std::memory_order_acq_rel)) {
+        return false;
+    }
     _logger->logDebug(("ModbusManager::readModbusDevice - Reading Device: " + String(dev.name) + " SlaveId: " + String(dev.slaveId)).c_str());
     float rawData = -99;
 
@@ -345,6 +351,7 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
                                ", code=" + String(result) + " (" + statusToString(result) + ")" + rxDump).c_str());
         }
     }
+    g_modbusBusy.store(false, std::memory_order_release);
     return successOnThisDevice;
 }
 
@@ -358,6 +365,7 @@ void ModbusManager::preTransmissionHandler() {
 }
 
 void ModbusManager::postTransmissionHandler() {
+    Serial1.flush();
     // Disable TX, enable RX; start capture
     digitalWrite(RS485_DE_PIN, LOW);
     digitalWrite(RS485_RE_PIN, LOW);
@@ -377,6 +385,7 @@ auto ModbusManager::statusToString(uint8_t code) -> const char * {
         case 0xE1: return "InvalidFunction(0xE1)";
         case 0xE2: return "ResponseTimedOut(0xE2)";
         case 0xE3: return "InvalidCRC(0xE3)";
+        case 0xE4: return "Busy";
         default: return "Unknown";
     }
 }
@@ -391,4 +400,100 @@ auto ModbusManager::functionToString(ModbusFunctionType fn) -> const char * {
         case WRITE_HOLDING: return "FC06-WRITE_HOLDING";
         default: return "FC-UNKNOWN";
     }
+}
+
+uint8_t ModbusManager::executeCommand(uint8_t slaveId,
+                                      const int function,
+                                      const uint16_t addr,
+                                      const uint16_t len,
+                                      const uint16_t writeValue,
+                                      const bool hasWriteValue,
+                                      uint16_t *outBuf,
+                                      const uint16_t outBufCap,
+                                      uint16_t &outCount,
+                                      String &rxDump) {
+    outCount = 0;
+    rxDump = "";
+    const bool expectedWrite = (function == 5 || function == 6);
+    if (expectedWrite && !hasWriteValue) {
+        return ModbusMaster::ku8MBIllegalDataValue;
+    }
+    const bool expectedRead = (function >= 1 && function <= 4);
+    if (!expectedRead && !expectedWrite) {
+        return ModbusMaster::ku8MBIllegalFunction;
+    }
+
+    // Best-effort ensure wiring is initialized
+    if (!g_teeSerial1) {
+        if (_modbusRoot.bus.baud == 0) {
+            _modbusRoot.bus.baud = DEFAULT_MODBUS_BAUD_RATE;
+            _modbusRoot.bus.serialFormat = DEFAULT_MODBUS_MODE;
+        }
+        initializeWiring();
+    }
+
+    // guard against concurrent access
+    bool was = false;
+    if (!g_modbusBusy.compare_exchange_strong(was, true, std::memory_order_acq_rel)) {
+        return 0xE4; // busy
+    }
+
+    if (g_teeSerial1) g_teeSerial1->enableCapture(true);
+
+    // Configure node
+    if (g_teeSerial1) {
+        node.begin(slaveId, *g_teeSerial1);
+    } else {
+        node.begin(slaveId, Serial1);
+    }
+    node.preTransmission(preTransmissionHandler);
+    node.postTransmission(postTransmissionHandler);
+
+    uint8_t status = ModbusMaster::ku8MBIllegalFunction;
+    switch (function) {
+        case 1: status = node.readCoils(addr, len); break;
+        case 2: status = node.readDiscreteInputs(addr, len); break;
+        case 3: status = node.readHoldingRegisters(addr, len); break;
+        case 4: status = node.readInputRegisters(addr, len); break;
+        case 5: {
+            const uint16_t v = (writeValue ? 0xFF00 : 0x0000);
+            node.beginTransmission(addr);
+            node.send(v);
+            status = node.writeSingleCoil(addr, v);
+            break;
+        }
+        case 6: {
+            node.beginTransmission(addr);
+            node.send(writeValue);
+            status = node.writeSingleRegister(addr, writeValue);
+            break;
+        }
+        default:
+            status = ModbusMaster::ku8MBIllegalFunction;
+            break;
+    }
+
+    if (status == ModbusMaster::ku8MBSuccess && expectedRead && outBuf && outBufCap > 0) {
+        const uint16_t n = (len < outBufCap) ? len : outBufCap;
+        for (uint16_t i = 0; i < n; ++i) {
+            outBuf[i] = node.getResponseBuffer(i);
+        }
+        outCount = n;
+    }
+
+    if (g_teeSerial1) {
+        rxDump = g_teeSerial1->dumpHex();
+    }
+
+    g_modbusBusy.store(false, std::memory_order_release);
+    return status;
+}
+
+uint8_t ModbusManager::findSlaveIdByDatapointId(const String &dpId) const {
+    for (const auto &dev : _modbusRoot.devices) {
+        for (const auto &dp : dev.datapoints) {
+            if (dp.id == dpId) return dev.slaveId;
+        }
+    }
+    return 0;
 }

@@ -15,7 +15,7 @@
 // Guard delay around RS485 direction changes (in microseconds)
 // Helps transceiver settle and ensures RX is enabled before responses arrive.
 #ifndef RS485_DIR_GUARD_US
-#define RS485_DIR_GUARD_US 500
+#define RS485_DIR_GUARD_US 1000
 #endif
 
 // Drop one or more leading 0x00 bytes seen immediately at start of RX.
@@ -29,7 +29,7 @@
 // first non-zero byte to arrive so we can substitute it as the first byte.
 // In most cases, 500-2000us is sufficient.
 #ifndef RS485_FIRSTBYTE_WAIT_US
-#define RS485_FIRSTBYTE_WAIT_US 1500
+#define RS485_FIRSTBYTE_WAIT_US 2500
 #endif
 
 #ifndef LED_A_PIN

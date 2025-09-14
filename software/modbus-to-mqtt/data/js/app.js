@@ -9,6 +9,7 @@ export const API = {
     PUT_MQTT_CONFIG: '/api/config/mqtt',
     PUT_MQTT_SECRET: '/api/config/mqtt/secret',
     POST_MQTT_TEST: '/api/mqtt/test',
+    POST_MODBUS_EXECUTE: '/api/modbus/execute',
     POST_SYSTEM_RESET: '/api/system/reboot',
 };
 

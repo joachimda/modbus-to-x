@@ -7,6 +7,8 @@
 #include "MemoryLogger.h"
 #include "mqtt/MqttManager.h"
 
+class ModbusManager; // fwd
+
 class MBXServerHandlers {
 public:
     static void setPortal(NetworkPortal *portal);
@@ -42,11 +44,18 @@ public:
 
     static MqttManager *getMqttManager();
 
+    static void setModbusManager(ModbusManager *modbusManager);
+    static ModbusManager *getModbusManager();
+
     static void getLogs(AsyncWebServerRequest *req);
 
     static void handleDeviceReset(const Logger *logger);
 
     static void handleMqttTestConnection(AsyncWebServerRequest *req);
+
+    // Execute a Modbus test command from UI (placeholder implementation)
+    // Expects query params: devId, dpId, func_code, addr, len
+    static void handleModbusExecute(AsyncWebServerRequest *req);
 
     static void handleOtaFirmwareUpload(AsyncWebServerRequest *r, const String &fn, size_t index,
                                         uint8_t *data, size_t len, bool final, const Logger *logger);

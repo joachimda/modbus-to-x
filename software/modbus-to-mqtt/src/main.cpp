@@ -48,6 +48,7 @@ void setup() {
     logger.logDebug("setup() - Starting MBX Server");
     MBXServerHandlers::setMemoryLogger(&memory_logger);
     MBXServerHandlers::setMqttManager(&mqtt_manager);
+    MBXServerHandlers::setModbusManager(&modbus_manager);
     mbx_server.begin();
 
     logger.logDebug("setup() - Starting modbus manager");

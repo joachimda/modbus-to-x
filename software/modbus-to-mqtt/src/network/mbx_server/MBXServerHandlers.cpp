@@ -12,6 +12,7 @@
 #include "services/StatService.h"
 #include "services/OtaService.h"
 #include "services/IndicatorService.h"
+#include "modbus/ModbusManager.h"
 
 auto constexpr OTA_FS_UPLOAD_BEGIN_FAIL_RESP = R"({"error":"ota_begin_failed"})";
 auto constexpr OTA_FW_UPLOAD_BEGIN_FAIL_RESP = R"({"error":"ota_begin_failed"})";
@@ -27,6 +28,7 @@ auto constexpr NETWORK_RESET_DELAY_MS = 5000;
 std::atomic<NetworkPortal *> g_portal{nullptr};
 static std::atomic<MemoryLogger *> g_memlog{nullptr};
 static std::atomic<MqttManager *> g_comm{nullptr};
+static std::atomic<ModbusManager *> g_mb{nullptr};
 
 bool parseConnectPayload(uint8_t *data, size_t len, String &ssid, String &pass,
                          String &bssid, bool &save, WifiStaticConfig &st,
@@ -87,6 +89,14 @@ void MBXServerHandlers::setMqttManager(MqttManager *mqttManager) {
 
 MqttManager *MBXServerHandlers::getMqttManager() {
     return g_comm.load(std::memory_order_acquire);
+}
+
+void MBXServerHandlers::setModbusManager(ModbusManager *modbusManager) {
+    g_mb.store(modbusManager, std::memory_order_release);
+}
+
+ModbusManager *MBXServerHandlers::getModbusManager() {
+    return g_mb.load(std::memory_order_acquire);
 }
 
 void MBXServerHandlers::getSsidListAsJson(AsyncWebServerRequest *req) {
@@ -333,7 +343,7 @@ void MBXServerHandlers::getLogs(AsyncWebServerRequest *req) {
 }
 
 void MBXServerHandlers::handleMqttTestConnection(AsyncWebServerRequest *req) {
-    auto *link = g_comm.load(std::memory_order_acquire);
+    auto *link = MBXServerHandlers::getMqttManager();
     JsonDocument doc;
     if (!link) {
         doc["ok"] = false;
@@ -350,6 +360,83 @@ void MBXServerHandlers::handleMqttTestConnection(AsyncWebServerRequest *req) {
     doc["state"] = link->getMQTTState();
     String out; serializeJson(doc, out);
     req->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, out);
+}
+
+void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
+    // Parse required query params
+    auto getParam = [&](const char *name, String &out) -> bool {
+        if (!req->hasParam(name)) return false;
+        out = req->getParam(name)->value();
+        return out.length() > 0;
+    };
+
+    String devId, dpId, sFunc, sAddr, sLen;
+    if (!getParam("devId", devId) || !getParam("dpId", dpId)
+        || !getParam("func_code", sFunc) || !getParam("addr", sAddr)
+        || !getParam("len", sLen)) {
+        req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        return;
+    }
+
+    const long func = sFunc.toInt();
+    const long addr = sAddr.toInt();
+    const long len = sLen.toInt();
+    if (func <= 0 || addr < 0 || len <= 0) {
+        req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        return;
+    }
+
+    // Optional value for write operations (ignored here but echoed back)
+    String sValue;
+    if (req->hasParam("value")) sValue = req->getParam("value")->value();
+
+    // Execute against Modbus
+    JsonDocument doc;
+    ModbusManager *mb = MBXServerHandlers::getModbusManager();
+    if (!mb) {
+        doc["ok"] = false;
+        doc["error"] = "modbus_unavailable";
+        sendJson(req, doc);
+        return;
+    }
+
+    // Resolve slave id by datapoint
+    uint8_t slave = mb->findSlaveIdByDatapointId(dpId);
+    if (slave == 0) slave = MODBUS_SLAVE_ID;
+
+    uint16_t outBuf[16]{};
+    uint16_t outCount = 0;
+    String rxDump;
+    uint16_t writeVal = 0;
+    bool hasWriteVal = false;
+    if (sValue.length()) {
+        if (sValue.equalsIgnoreCase("true") || sValue == "1") writeVal = 1;
+        else if (sValue.equalsIgnoreCase("false") || sValue == "0") writeVal = 0;
+        else writeVal = static_cast<uint16_t>(sValue.toInt());
+        hasWriteVal = true;
+    }
+
+    const uint8_t status = mb->executeCommand(slave, (int)func, (uint16_t)addr, (uint16_t)len,
+                                              writeVal, hasWriteVal,
+                                              outBuf, 16, outCount, rxDump);
+
+    doc["ok"] = (status == 0);
+    doc["code"] = status;
+    doc["state"] = ModbusManager::statusToString(status);
+    doc["devId"] = devId;
+    doc["dpId"] = dpId;
+    doc["request"]["func_code"] = func;
+    doc["request"]["addr"] = addr;
+    doc["request"]["len"] = len;
+    if (sValue.length()) doc["request"]["value"] = sValue;
+    if (rxDump.length()) doc["rx_dump"] = rxDump;
+    if (outCount > 0) {
+        JsonArray raw = doc["result"]["raw"].to<JsonArray>();
+        for (uint16_t i = 0; i < outCount; ++i) raw.add(outBuf[i]);
+        doc["result"]["value"] = outBuf[0];
+    }
+
+    sendJson(req, doc);
 }
 
 void MBXServerHandlers::handleDeviceReset(const Logger *logger) {

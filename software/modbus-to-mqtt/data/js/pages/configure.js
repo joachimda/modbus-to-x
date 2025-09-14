@@ -483,34 +483,55 @@ function showDatapointEditor() {
         showDeviceEditor();
     };
 
-    // test read/write
+    // Test command (read/write based on selected function)
     $("#btn-dp-test-read").onclick = async () => {
-        $('#dp-test-result').textContent = "Reading…";
+        const func = Number($("#dp-func").value);
+        const addr = Number($("#dp-addr").value);
+        const len = Number($("#dp-len").value);
+        const writeVal = $("#dp-test-value").value.trim();
+
+        if (!Number.isInteger(addr) || addr < 0) {
+            return alert("Invalid address");
+        }
+        if (!Number.isInteger(len) || len <= 0) {
+            return alert("Invalid length");
+        }
+
+        const q = new URLSearchParams({
+            devId: String(selection.deviceId),
+            dpId: String(datapoint.id),
+            func_code: String(func),
+            addr: String(addr),
+            len: String(len),
+        });
+        if ((func === 5 || func === 6) && writeVal.length) {
+            q.set('value', writeVal);
+        }
+
+        const btn = $("#btn-dp-test-read");
+        const resEl = $("#dp-test-result");
+        btn.disabled = true;
+        resEl.textContent = (func === 5 || func === 6) ? "Writing…" : "Reading…";
         try {
-            const r = await safeJson(`/api/modbus/test-read?id=${encodeURIComponent(datapoint.id)}`);
-            $("#dp-test-result").textContent = `Value: ${r.value} ${datapoint.unit || ""}`;
+            const r = await safeJson(`${API.POST_MODBUS_EXECUTE}?${q.toString()}`, { method: 'POST' });
+            const value = (r?.result && (r.result.value ?? r.result?.raw?.[0])) ?? r.value ?? '(n/a)';
+            const raw = r?.result?.raw;
+            let msg = `OK: ${value} ${datapoint.unit || ""}`;
+            if (Array.isArray(raw)) {
+                msg += ` raw=[${raw.join(', ')}]`;
+            }
+            resEl.textContent = msg;
         } catch (e) {
-            $("#dp-test-result").textContent = `Error: ${e.message}`;
+            resEl.textContent = `Error: ${e.message}`;
+        } finally {
+            btn.disabled = false;
         }
     };
-    $("#btn-dp-test-write").onclick = async () => {
-        const val = $("#dp-test-value").value.trim();
-        if (!val) return alert("Provide a value to write");
-        $('#dp-test-result').textContent = "Writing…";
-        try {
-            await safeJson(`/api/modbus/test-write`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    id: datapoint.id,
-                    value: isNaN(Number(val)) ? val : Number(val)
-                })
-            });
-            $("#dp-test-result").textContent = "Write OK";
-        } catch (e) {
-            $("#dp-test-result").textContent = `Error: ${e.message}`;
-        }
-    };
+    // Guard in case a write-only button exists in markup later
+    const writeBtn = document.querySelector('#btn-dp-test-write');
+    if (writeBtn) {
+        writeBtn.onclick = () => document.querySelector('#btn-dp-test-read').click();
+    }
 }
 
 /*

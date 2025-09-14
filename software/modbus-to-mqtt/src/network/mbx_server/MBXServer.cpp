@@ -66,6 +66,7 @@ void MBXServer::configureRoutes() const {
         req->send(SPIFFS, "/pages/configure.html", HttpMediaTypes::HTML);
     });
 
+
     server->on("/__stream/index", HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         streamSPIFFSFileChunked(req, "/index.html", HttpMediaTypes::HTML);
@@ -120,6 +121,11 @@ void MBXServer::configureRoutes() const {
     server->on(Routes::MQTT_TEST_CONNECT, HTTP_POST, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         MBXServerHandlers::handleMqttTestConnection(req);
+    });
+
+    server->on(Routes::POST_MODBUS_EXECUTE, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        MBXServerHandlers::handleModbusExecute(req);
     });
 
     server->on(Routes::OTA_FIRMWARE, HTTP_POST, [this](AsyncWebServerRequest *req) {

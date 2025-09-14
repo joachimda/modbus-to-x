@@ -12,6 +12,26 @@
 #define RS485_RE_PIN 15
 #endif
 
+// Guard delay around RS485 direction changes (in microseconds)
+// Helps transceiver settle and ensures RX is enabled before responses arrive.
+#ifndef RS485_DIR_GUARD_US
+#define RS485_DIR_GUARD_US 500
+#endif
+
+// Drop one or more leading 0x00 bytes seen immediately at start of RX.
+// Some RS485 transceivers or wiring transitions can produce a spurious 0x00
+// which misaligns the Modbus frame. Enable to filter these.
+#ifndef RS485_DROP_LEADING_ZERO
+#define RS485_DROP_LEADING_ZERO 1
+#endif
+
+// When dropping leading zeros, wait up to this many microseconds for the
+// first non-zero byte to arrive so we can substitute it as the first byte.
+// In most cases, 500-2000us is sufficient.
+#ifndef RS485_FIRSTBYTE_WAIT_US
+#define RS485_FIRSTBYTE_WAIT_US 1500
+#endif
+
 #ifndef LED_A_PIN
 #define LED_A_PIN 26
 #endif

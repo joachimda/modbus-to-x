@@ -10,25 +10,34 @@
 
 static std::atomic<bool> BUS_ACTIVE{false};
 static const std::map<String, uint32_t> communicationModes = {
-        {"8N1", SERIAL_8N1},
-        {"8N2", SERIAL_8N2},
-        {"8E1", SERIAL_8E1},
-        {"8E2", SERIAL_8E2},
-        {"8O1", SERIAL_8O1},
-        {"8O2", SERIAL_8O2}
+    {"8N1", SERIAL_8N1},
+    {"8N2", SERIAL_8N2},
+    {"8E1", SERIAL_8E1},
+    {"8E2", SERIAL_8E2},
+    {"8O1", SERIAL_8O1},
+    {"8O2", SERIAL_8O2}
 };
 
 ModbusManager::ModbusManager(Logger *logger) : _logger(logger) {
 }
 
-// Lightweight wrapper around Stream to capture RX bytes for diagnostics
 class TeeStream : public Stream {
 public:
-    TeeStream(Stream &inner, Logger *logger) : _inner(inner), _logger(logger) {}
-    void enableCapture(bool en) { _capture = en; if (en) { _bufLen = 0; _sawFirstByte = false; } }
-    String dumpHex() {
-        if (_bufLen == 0) return String("");
-        String s; s.reserve(_bufLen * 3 + 8);
+    TeeStream(Stream &inner, Logger *logger) : _inner(inner), _logger(logger) {
+    }
+
+    void enableCapture(const bool en) {
+        _capture = en;
+        if (en) {
+            _bufLen = 0;
+            _sawFirstByte = false;
+        }
+    }
+
+    String dumpHex() const {
+        if (_bufLen == 0) return {""};
+        String s;
+        s.reserve(_bufLen * 3 + 8);
         s = " RX=";
         for (size_t i = 0; i < _bufLen; ++i) {
             if (_buf[i] < 16) s += "0";
@@ -37,27 +46,28 @@ public:
         }
         return s;
     }
-    // Stream interface
+
     int available() override {
 #if RS485_DROP_LEADING_ZERO
         if (_capture && !_sawFirstByte) {
             // Non-blocking purge of leading 0x00 bytes
             while (_inner.available() > 0) {
-                int pk = _inner.peek();
+                const int pk = _inner.peek();
                 if (pk != 0x00) break;
                 // Drop zero
-                (void)_inner.read();
-                // Do not record in capture buffer and do not set _sawFirstByte
+                (void) _inner.read();
+                // Do not record in the capture buffer and do not set _sawFirstByte
             }
         }
 #endif
         return _inner.available();
     }
+
     int read() override {
         int b = _inner.read();
 #if RS485_DROP_LEADING_ZERO
         if (_capture && !_sawFirstByte) {
-            // Drop leading 0x00 bytes; if next byte isn't immediately available,
+            // Drop leading 0x00 bytes; if the next byte isn't immediately available,
             // wait briefly for it to arrive to avoid returning a spurious 0x00.
             uint32_t waited = 0;
             int drops = 0;
@@ -68,7 +78,7 @@ public:
                     continue;
                 }
                 if (waited >= RS485_FIRSTBYTE_WAIT_US) {
-                    // Do not propagate a zero as first byte; report "no data"
+                    // Do not propagate a zero as the first byte; report "no data"
                     return -1;
                 }
                 delayMicroseconds(20);
@@ -82,26 +92,33 @@ public:
                 _sawFirstByte = true;
             }
         } else if (_capture && !_sawFirstByte && b == 0x00) {
-            // Explicitly ignore zero as first byte for state tracking
+            // Explicitly ignore zero as the first byte for state tracking
         }
         return b;
     }
+
     int peek() override {
 #if RS485_DROP_LEADING_ZERO
         if (_capture && !_sawFirstByte) {
             // Purge any leading zeros so peek exposes the first non-zero
             while (_inner.available() > 0) {
-                int pk = _inner.peek();
+                const int pk = _inner.peek();
                 if (pk != 0x00) break;
-                (void)_inner.read(); // drop zero
+                (void) _inner.read(); // drop zero
             }
         }
 #endif
         return _inner.peek();
     }
+
     void flush() override { _inner.flush(); }
-    size_t write(uint8_t ch) override { return _inner.write(ch); }
-    size_t write(const uint8_t *buffer, size_t size) override { return _inner.write(buffer, size); }
+    size_t write(const uint8_t ch) override {
+        return _inner.write(ch);
+    }
+    size_t write(const uint8_t *buffer, const size_t size) override {
+        return _inner.write(buffer, size);
+    }
+
 private:
     Stream &_inner;
     Logger *_logger;
@@ -182,21 +199,29 @@ bool ModbusManager::loadConfiguration() {
         }
         String s = v.as<const char *>();
         s.toLowerCase();
-        if (s == "text") { return TEXT;
+        if (s == "text") {
+            return TEXT;
         }
-        if (s == "int16") { return INT16;
+        if (s == "int16") {
+            return INT16;
         }
-        if (s == "int32") { return INT32;
+        if (s == "int32") {
+            return INT32;
         }
-        if (s == "int64") { return INT64;
+        if (s == "int64") {
+            return INT64;
         }
-        if (s == "uint16") { return UINT16;
+        if (s == "uint16") {
+            return UINT16;
         }
-        if (s == "uint32") { return UINT32;
+        if (s == "uint32") {
+            return UINT32;
         }
-        if (s == "uint64") { return UINT64;
+        if (s == "uint64") {
+            return UINT64;
         }
-        if (s == "float32") { return FLOAT32;
+        if (s == "float32") {
+            return FLOAT32;
         }
         return UINT16;
     };
@@ -235,6 +260,16 @@ bool ModbusManager::loadConfiguration() {
                     dp.scale = static_cast<float>(p["scale"] | 1.0);
                     dp.dataType = parseDataType(p["dataType"]);
                     dp.unit = String(p["unit"] | "");
+                    // Optional per-datapoint poll interval (seconds in JSON) -> ms in runtime
+                    // Accept both poll_interval (seconds) and poll_interval_ms (milliseconds) if provided
+                    if (p["poll_interval_ms"].is<unsigned long>()) {
+                        const uint32_t ms = static_cast<uint32_t>(p["poll_interval_ms"].as<unsigned long>());
+                        dp.pollIntervalMs = ms;
+                    } else {
+                        const uint32_t sec = static_cast<uint32_t>(p["poll_interval"].as<unsigned long>());
+                        dp.pollIntervalMs = sec * 1000UL;
+                    }
+                    dp.nextDueAtMs = 0;
                     dev.datapoints.push_back(dp);
                 }
             }
@@ -271,28 +306,39 @@ void ModbusManager::initializeWiring() const {
 void ModbusManager::loop() {
     if (BUS_ACTIVE.load(std::memory_order_acquire)) {
         bool anySuccess = false;
+        bool anyAttempted = false;
 
+        const uint32_t now = millis();
         for (auto &dev: _modbusRoot.devices) {
+            // Check if any datapoint on this device is due
+            bool due = false;
+            for (const auto &dp: dev.datapoints) {
+                if (dp.pollIntervalMs == 0 || now >= dp.nextDueAtMs) { due = true; break; }
+            }
+            if (!due) continue;
+            anyAttempted = true;
             anySuccess = readModbusDevice(dev) || anySuccess;
         }
-        IndicatorService::instance().setModbusConnected(anySuccess);
+        if (anyAttempted) {
+            IndicatorService::instance().setModbusConnected(anySuccess);
+        }
         if (!anySuccess) {
         }
-    }
-    else {
+    } else {
         _logger->logDebug("ModbusManager::loop - INACTIVE Entry");
         IndicatorService::instance().setModbusConnected(false);
     }
-
 }
 
 bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
-    // mark bus busy to avoid concurrent ad-hoc commands
+    // mark bus busy to avoid concurrent adhoc commands
     bool was = false;
     if (!g_modbusBusy.compare_exchange_strong(was, true, std::memory_order_acq_rel)) {
         return false;
     }
-    _logger->logDebug(("ModbusManager::readModbusDevice - Reading Device: " + String(dev.name) + " SlaveId: " + String(dev.slaveId)).c_str());
+    _logger->logDebug(
+        ("ModbusManager::readModbusDevice - Reading Device: " + String(dev.name) + " SlaveId: " + String(dev.slaveId)).
+        c_str());
     float rawData = -99;
 
     // Use tee stream to capture incoming bytes for diagnostics
@@ -306,7 +352,12 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
 
     uint8_t result;
     bool successOnThisDevice = false;
-    for (auto &dp: dev.datapoints) {
+    const uint32_t now = millis();
+    for (auto &dp: const_cast<ModbusDevice &>(dev).datapoints) {
+        // Skip if not due yet
+        if (dp.pollIntervalMs > 0 && now < dp.nextDueAtMs) {
+            continue;
+        }
         _logger->logDebug((String("ModbusManager::readModbusDevice - Sending Command - Func: ") +
                            String(functionToString(dp.function)) + ", Name: " + String(dp.name) +
                            ", Addr: " + String(dp.address) + ", Regs: " + String(dp.numOfRegisters) +
@@ -328,8 +379,8 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
             default:
                 result = -1;
                 _logger->logError(
-                        ("ModbusManager::readRegisters - Function: " + String(dp.function) + " is not valid in this scope.")
-                                .c_str());
+                    ("ModbusManager::readRegisters - Function: " + String(dp.function) + " is not valid in this scope.")
+                    .c_str());
         }
         if (result == ModbusMaster::ku8MBSuccess) {
             successOnThisDevice = true;
@@ -337,7 +388,7 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
             rawData = node.getResponseBuffer(0);
             const float value = rawData * dp.scale;
             auto payload = String(value);
-            _logger->logInformation(("Modbus OK - " + String(dev.name) + ": " + String(dp.name) +
+            _logger->logDebug(("Modbus OK - " + String(dev.name) + ": " + String(dp.name) +
                                      " = " + payload + " (raw=" + String(rawData) + ")").c_str());
         } else {
             // Dump captured RX bytes for diagnostics
@@ -349,6 +400,12 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
                                ", slave=" + String(dev.slaveId) +
                                ", bus=" + String(_modbusRoot.bus.baud) + "," + _modbusRoot.bus.serialFormat +
                                ", code=" + String(result) + " (" + statusToString(result) + ")" + rxDump).c_str());
+        }
+        // Schedule next read regardless of success to avoid hammering bus
+        if (dp.pollIntervalMs > 0) {
+            dp.nextDueAtMs = now + dp.pollIntervalMs;
+        } else {
+            dp.nextDueAtMs = 0; // always due
         }
     }
     g_modbusBusy.store(false, std::memory_order_release);
@@ -372,6 +429,28 @@ void ModbusManager::postTransmissionHandler() {
     if (g_teeSerial1) g_teeSerial1->enableCapture(true);
     // Small guard so RX is ready before the slave replies
     delayMicroseconds(RS485_DIR_GUARD_US);
+}
+
+bool ModbusManager::reconfigureFromFile() {
+    _logger->logInformation("ModbusManager::reconfigureFromFile - begin");
+    // Stop regular loop polling
+    BUS_ACTIVE.store(false, std::memory_order_release);
+    // Wait briefly if a read is in progress
+    for (int i = 0; i < 50; ++i) {
+        if (!g_modbusBusy.load(std::memory_order_acquire)) break;
+        delay(5);
+    }
+
+    const bool ok = loadConfiguration();
+    if (ok) {
+        initializeWiring();
+        BUS_ACTIVE.store(true, std::memory_order_release);
+        _logger->logInformation("ModbusManager::reconfigureFromFile - applied and active");
+    } else {
+        BUS_ACTIVE.store(false, std::memory_order_release);
+        _logger->logError("ModbusManager::reconfigureFromFile - failed to load config; bus inactive");
+    }
+    return ok;
 }
 
 auto ModbusManager::statusToString(uint8_t code) -> const char * {
@@ -451,12 +530,16 @@ uint8_t ModbusManager::executeCommand(uint8_t slaveId,
 
     uint8_t status = ModbusMaster::ku8MBIllegalFunction;
     switch (function) {
-        case 1: status = node.readCoils(addr, len); break;
-        case 2: status = node.readDiscreteInputs(addr, len); break;
-        case 3: status = node.readHoldingRegisters(addr, len); break;
-        case 4: status = node.readInputRegisters(addr, len); break;
+        case 1: status = node.readCoils(addr, len);
+            break;
+        case 2: status = node.readDiscreteInputs(addr, len);
+            break;
+        case 3: status = node.readHoldingRegisters(addr, len);
+            break;
+        case 4: status = node.readInputRegisters(addr, len);
+            break;
         case 5: {
-            const uint16_t v = (writeValue ? 0xFF00 : 0x0000);
+            const uint16_t v = writeValue ? 0xFF00 : 0x0000;
             node.beginTransmission(addr);
             node.send(v);
             status = node.writeSingleCoil(addr, v);
@@ -490,8 +573,8 @@ uint8_t ModbusManager::executeCommand(uint8_t slaveId,
 }
 
 uint8_t ModbusManager::findSlaveIdByDatapointId(const String &dpId) const {
-    for (const auto &dev : _modbusRoot.devices) {
-        for (const auto &dp : dev.datapoints) {
+    for (const auto &dev: _modbusRoot.devices) {
+        for (const auto &dp: dev.datapoints) {
             if (dp.id == dpId) return dev.slaveId;
         }
     }

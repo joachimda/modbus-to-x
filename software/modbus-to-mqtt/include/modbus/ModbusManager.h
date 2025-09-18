@@ -18,10 +18,12 @@ public:
 
     void loop();
 
-    // Execute an ad-hoc Modbus command against a slave.
-    // - For read functions (1..4), fills outBuf with up to outBufCap words and sets outCount.
-    // - For write functions (5..6), uses writeValue if hasWriteValue=true; outCount will be 0 on success.
-    // Returns ModbusMaster status code (0 on success).
+    /**
+     Execute an adhoc Modbus command against a slave.
+     For read functions (1..4), fills outBuf with up to outBufCap words and sets outCount.
+     For write functions (5..6), writeValue is used if hasWriteValue=true; outCount will be 0 on success.
+     Returns ModbusMaster status code (0 on success).
+    */
     uint8_t executeCommand(uint8_t slaveId,
                            int function,
                            uint16_t addr,
@@ -33,9 +35,13 @@ public:
                            uint16_t &outCount,
                            String &rxDump);
 
-    // Find the slaveId for a datapoint id (unique across devices). Returns 0 if not found.
     uint8_t findSlaveIdByDatapointId(const String &dpId) const;
+
     static const char *statusToString(uint8_t code);
+
+    // Reload /conf/config.json at runtime and reinitialize wiring.
+    // Returns true if new config loaded and bus stays active.
+    bool reconfigureFromFile();
 
 private:
     bool readModbusDevice(const ModbusDevice &dev);
@@ -46,8 +52,8 @@ private:
 
     static void postTransmissionHandler();
 
-    // Diagnostics helpers
     static const char *functionToString(ModbusFunctionType fn);
+
     std::vector<ModbusDatapoint> _modbusRegisters;
     ModbusMaster node;
     Logger *_logger;

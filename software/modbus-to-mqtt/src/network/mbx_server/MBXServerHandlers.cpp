@@ -198,6 +198,10 @@ void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, co
     }
     if (index + len == total) {
         if (bodyFile) bodyFile.close();
+        // Hot-reload Modbus configuration
+        if (auto *mb = g_mb.load(std::memory_order_acquire)) {
+            mb->reconfigureFromFile();
+        }
         req->send(HttpResponseCodes::NO_CONTENT);
     }
 }
@@ -335,8 +339,14 @@ void MBXServerHandlers::getSystemStats(AsyncWebServerRequest *req, const Logger 
 
 void MBXServerHandlers::getLogs(AsyncWebServerRequest *req) {
     if (auto *mem = g_memlog.load(std::memory_order_acquire)) {
-        const String text = mem->toText();
-        req->send(HttpResponseCodes::OK, "text/plain; charset=utf-8", text);
+        // Stream logs to avoid large temporary String allocations
+        auto *stream = req->beginResponseStream("text/plain; charset=utf-8");
+        const auto copy = mem->lines();
+        for (const auto &line : copy) {
+            stream->print(line);
+            stream->print('\n');
+        }
+        req->send(stream);
     } else {
         req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::PLAIN_TEXT, "logging buffer unavailable");
     }

@@ -32,10 +32,8 @@ public:
     static void setMQTTEnabled(bool enabled);
     static auto isMQTTEnabled() -> bool;
 
-    // One-shot connection attempt using current NVS prefs; no task spawn
     auto testConnectOnce() -> bool;
 
-    // Reload config from SPIFFS and reinitialize MQTT connection + subscriptions
     void reconfigureFromFile();
 
 private:

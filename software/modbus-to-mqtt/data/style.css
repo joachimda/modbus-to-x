@@ -162,7 +162,29 @@ input[type="password"]:focus {
     box-shadow: 0 0 0 2px rgba(47, 111, 237, .15);
     background: #fff;
 }
-
+body.configure .node.active {
+    background: #eef2ff;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.18);
+}
+body.configure .node.active::before {
+    content: "";
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #6366f1;
+    margin-right: 6px;
+    vertical-align: 2px;
+}
+body.configure .node { transition: background .15s, box-shadow .15s, border-color .15s; }
+body.configure .node:hover { border-color: #c7d2fe; }
+body.configure .node.device.active .inline-actions { display: flex; }
+body.configure .tree .list { margin-top: .25rem; }
+body.configure .tree .node { display: grid; grid-template-columns: 1fr auto; align-items: start; }
+body.configure .tree .node > .meta { grid-column: 1 / -1; }
+body.configure .tree .node.device > .meta { grid-column: 1 / 2; }
+body.configure .tree .node .inline-actions { grid-column: 2 / 3; }
 .node .meta {
     color: #777;
     font-size: .85rem;

@@ -34,17 +34,6 @@
                 </svg>
                 <span class="tooltip">Back</span>
             </button>
-            <button class="circleButton validateButton" id="btn-validate">
-                <svg class="validateSvgIcon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M4 12.6111L8.92308 17.5L20 6.5"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"/>
-                </svg>
-                <span class="tooltip">Validate</span>
-            </button>
             <!--Copyright - 2025 vinodjangid07 (Vinod Jangid)
         Source: https://uiverse.io/vinodjangid07/wonderful-squid-57
         Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:*/
@@ -241,6 +230,10 @@
                     <div>Unit</div>
                     <label for="dp-unit"></label>
                     <input id="dp-unit" placeholder="e.g. °C, Pa, %" />
+
+                    <div>Poll Interval (s)</div>
+                    <label for="dp-poll"></label>
+                    <input id="dp-poll" type="number" min="0" step="1" value="0" />
 
                     <div>MQTT Topic</div>
                     <label for="dp-topic"></label>

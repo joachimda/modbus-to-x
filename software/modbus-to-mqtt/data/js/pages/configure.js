@@ -58,7 +58,10 @@ function schemaToUi(json) {
             type: String(p.dataType || "uint16"),
             scale: Number(p.scale ?? 1) || 1,
             unit: p.unit || "",
-            topic: p.topic || ""
+            topic: p.topic || "",
+            poll_secs: (Number.isFinite(Number(p?.poll_interval))
+                ? Number(p.poll_interval)
+                : (Number.isFinite(Number(p?.poll_interval_ms)) ? Math.round(Number(p.poll_interval_ms)/1000) : 0))
         })) : []
     }));
 
@@ -84,6 +87,7 @@ function uiToSchema(uiModel) {
                 dataType: String(p.type || "uint16"),
                 scale: Number(p.scale ?? 1) || 1,
                 unit: p.unit || "",
+                ...(Number.isFinite(Number(p.poll_secs)) && Number(p.poll_secs) > 0 ? { poll_interval: Number(p.poll_secs) } : {}),
                 ...(p.precision != null ? {
                     precision: Number(p.precision)
                 } : {})
@@ -127,6 +131,9 @@ function validateSchemaConfig(cfg) {
             if (!Number.isInteger(p.address) || p.address < 0 || p.address > 65535) {
                 errors.push(`Datapoint ${p.id}: address 0-65535`);
             }
+            if (p.poll_interval != null && (!Number.isInteger(p.poll_interval) || p.poll_interval < 0)) {
+                errors.push(`Datapoint ${p.id}: poll_interval must be >= 0 seconds`);
+            }
             if (!Number.isInteger(p.numOfRegisters) || p.numOfRegisters < 1 || p.numOfRegisters > 125) {
                 errors.push(`Datapoint ${p.id}: numOfRegisters 1-125`);
             }
@@ -143,7 +150,6 @@ function validateSchemaConfig(cfg) {
 
 async function load() {
     const cfg = await safeJson(STATIC_FILES.MODBUS_CONFIG_JSON);
-    // Map any incoming shape to the UI model
     model = schemaToUi(cfg);
     BUS_ID = (model.buses?.[0]?.id) || BUS_ID;
     selection = {
@@ -232,6 +238,7 @@ function buildTree() {
         selection = {
             kind:"bus", deviceId:null, datapointId:null
         };
+        buildTree();
         showBusEditor();
     };
 
@@ -258,6 +265,7 @@ function buildTree() {
             selection = {
                 kind:"device", deviceId:d.id, datapointId:null
             };
+            buildTree();
             showDeviceEditor();
         };
 
@@ -285,6 +293,7 @@ function buildTree() {
                 selection = {
                     kind:"dp", deviceId:d.id, datapointId:p.id
                 };
+                buildTree();
                 showDatapointEditor();
             };
             if (matches(q, [p.id, p.name, p.func, p.address]))
@@ -311,7 +320,8 @@ function addDatapointToCurrentDevice() {
         type: "uint16",
         scale: 1,
         unit: "",
-        topic: ""
+        topic: "",
+        poll_secs: 0
     });
     selection = {
         kind:"dp", deviceId:d.id, datapointId: unique
@@ -398,6 +408,7 @@ function renderDeviceDatapointTable(d) {
             selection = {
                 kind:"dp", deviceId: selection.deviceId, datapointId: b.dataset.dp
             };
+            buildTree();
             showDatapointEditor();
         })
     );
@@ -426,6 +437,18 @@ function showDatapointEditor() {
     $("#dp-scale").value = datapoint.scale ?? 1;
     $("#dp-unit").value = datapoint.unit || "";
     $("#dp-topic").value = datapoint.topic || "";
+    $("#dp-poll").value = Number.isFinite(Number(datapoint.poll_secs)) ? Number(datapoint.poll_secs) : 0;
+    const updateTestValueVisibility = () => {
+        const func = Number($("#dp-func").value);
+        const isWrite = (func === 5 || func === 6);
+        const input = $("#dp-test-value");
+        const label = document.querySelector('label[for="dp-test-value"]');
+        if (input) input.style.display = isWrite ? "" : "none";
+        if (label) label.style.display = "none"; // keep label hidden; placeholder explains usage
+    };
+    updateTestValueVisibility();
+    $("#dp-func").onchange = updateTestValueVisibility;
+
     $("#btn-dp-save").onclick = () => {
         const newDevId = $("#dp-device").value;
         const name = $("#dp-name").value.trim();
@@ -445,6 +468,7 @@ function showDatapointEditor() {
         datapoint.scale = Number($("#dp-scale").value);
         datapoint.unit = ($("#dp-unit").value || "").trim();
         datapoint.topic = ($("#dp-topic").value || "").trim();
+        datapoint.poll_secs = Math.max(0, Number($("#dp-poll").value) || 0);
 
         // move and rename if a device changed
         if (newDevId !== selection.deviceId) {
@@ -642,24 +666,6 @@ $("#btn-dev-add-dp").onclick = () => {
         return;
     }
     addDatapointToCurrentDevice();
-};
-
-$("#btn-validate").onclick = async () => {
-    try {
-        const cfg = uiToSchema(model);
-        const v = validateSchemaConfig(cfg);
-        if (!v.ok) {
-            return alert(`Validation errors:\n${v.errors.join("\n")}`);
-        }
-        const res = await safeJson("/api/config/validate", {
-            method: "POST", headers: { "Content-Type":"application/json" },
-            body: JSON.stringify(cfg),
-        });
-        alert(res.ok ? "Validation OK" : `Validation errors:\n${(res.errors||[]).join("\n")}`);
-    }
-    catch (e) {
-        err(e);
-    }
 };
 
 $("#btn-export").onclick = () => {

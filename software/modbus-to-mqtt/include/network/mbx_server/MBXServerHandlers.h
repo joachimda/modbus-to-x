@@ -53,8 +53,10 @@ public:
 
     static void handleMqttTestConnection(AsyncWebServerRequest *req);
 
-    // Execute a Modbus test command from UI (placeholder implementation)
-    // Expects query params: devId, dpId, func_code, addr, len
+    /**
+     Execute a Modbus test command
+     params: devId, dpId, func_code, addr, len
+    */
     static void handleModbusExecute(AsyncWebServerRequest *req);
 
     static void handleOtaFirmwareUpload(AsyncWebServerRequest *r, const String &fn, size_t index,

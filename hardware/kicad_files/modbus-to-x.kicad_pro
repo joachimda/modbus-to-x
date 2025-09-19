@@ -60,31 +60,7 @@
       ],
       "drc_exclusions": [
         [
-          "lib_footprint_mismatch|107527600|115214400|a3d72208-bb62-4048-8d21-97229dae6c3e|00000000-0000-0000-0000-000000000000",
-          ""
-        ],
-        [
-          "lib_footprint_mismatch|117402200|115445700|a5a3da89-1ff8-4d51-acc4-390394466efe|00000000-0000-0000-0000-000000000000",
-          ""
-        ],
-        [
-          "lib_footprint_mismatch|117531800|87410400|ed4cae6f-1424-4ae9-a7a5-58be1b5e04bc|00000000-0000-0000-0000-000000000000",
-          ""
-        ],
-        [
-          "lib_footprint_mismatch|121335800|123118000|4ad16d76-f084-462d-b0db-5c4144b7f3dd|00000000-0000-0000-0000-000000000000",
-          ""
-        ],
-        [
-          "lib_footprint_mismatch|123325800|123118000|b9eb40fb-4446-44a9-a118-bc2ab4abe084|00000000-0000-0000-0000-000000000000",
-          ""
-        ],
-        [
-          "lib_footprint_mismatch|125315800|123118000|468c465a-fe46-4eaf-a481-d3e4ee526372|00000000-0000-0000-0000-000000000000",
-          ""
-        ],
-        [
-          "lib_footprint_mismatch|127305800|123118000|5233d271-3fed-42e2-874c-65d974fc035b|00000000-0000-0000-0000-000000000000",
+          "net_conflict|117531800|97655400|ed4cae6f-1424-4ae9-a7a5-58be1b5e04bc|00000000-0000-0000-0000-000000000000",
           ""
         ]
       ],
@@ -484,6 +460,7 @@
       "single_global_label": "ignore",
       "unannotated": "error",
       "unconnected_wire_endpoint": "warning",
+      "undefined_netclass": "error",
       "unit_value_mismatch": "error",
       "unresolved_variable": "error",
       "wire_dangling": "error"

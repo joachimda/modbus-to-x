@@ -10,4 +10,5 @@
   (lib (name "DSS4160U-7")(type "KiCad")(uri "${KIPRJMOD}/lib/symbols/DSS4160U-7.kicad_sym")(options "")(descr "Bipolar (BJT) Transistor NPN 60 V 1 A 150MHz 400 mW Surface Mount SOT-323"))
   (lib (name "Buck Converter TPS563208DDCT")(type "KiCad")(uri "${KIPRJMOD}/lib/symbols/TPS563208DDCT.kicad_sym")(options "")(descr "Buck Switching Regulator IC Positive Adjustable 0.768V 1 Output 3A SOT-23-6 Thin, TSOT-23-6"))
   (lib (name "Inductor SRN8040-2R2Y")(type "KiCad")(uri "${KIPRJMOD}/lib/symbols/SRN8040-2R2Y.kicad_sym")(options "")(descr "2.2 µH Shielded Drum Core, Wirewound Inductor 6.3 A 13mOhm Max Nonstandard"))
+  (lib (name "Adafruit 3983 Mini Soft Touch Switch")(type "KiCad")(uri "${KIPRJMOD}/lib/symbols/3983_MINI_SOFT_TOUCH_PB_SWTCH.kicad_sym")(options "")(descr "Pushbutton Switch Standard Surface Mount"))
 )

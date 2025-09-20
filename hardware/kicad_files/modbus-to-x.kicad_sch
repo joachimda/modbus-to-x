@@ -1239,6 +1239,179 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "Device:Crystal"
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 1.016)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "Y"
+				(at 0 3.81 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "Crystal"
+				(at 0 -3.81 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "~"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "Two pin crystal"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "quartz ceramic resonator oscillator"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_fp_filters" "Crystal*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "Crystal_0_1"
+				(polyline
+					(pts
+						(xy -2.54 0) (xy -1.905 0)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy -1.905 -1.27) (xy -1.905 1.27)
+					)
+					(stroke
+						(width 0.508)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(rectangle
+					(start -1.143 2.54)
+					(end 1.143 -2.54)
+					(stroke
+						(width 0.3048)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 1.905 -1.27) (xy 1.905 1.27)
+					)
+					(stroke
+						(width 0.508)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 2.54 0) (xy 1.905 0)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "Crystal_1_1"
+				(pin passive line
+					(at -3.81 0 0)
+					(length 1.27)
+					(name "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 3.81 0 180)
+					(length 1.27)
+					(name "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "Device:L"
 			(pin_numbers
 				(hide yes)
@@ -4423,6 +4596,18 @@
 		(uuid b80d6f9b-7c06-4af1-af3c-20c66e6dfd8e)
 	)
 	(rectangle
+		(start 97.79 134.62)
+		(end 124.46 167.005)
+		(stroke
+			(width 0)
+			(type solid)
+		)
+		(fill
+			(type none)
+		)
+		(uuid bdf4a214-b024-43c0-8c58-46c5775fdba8)
+	)
+	(rectangle
 		(start 60.325 169.545)
 		(end 81.915 195.58)
 		(stroke
@@ -4486,6 +4671,16 @@
 		)
 		(uuid "3713de1b-394f-4741-879c-9e49ebcb1204")
 	)
+	(text "XTAL"
+		(exclude_from_sim no)
+		(at 109.982 136.652 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "86d32afb-c488-4b01-9dc7-5886e5e016bb")
+	)
 	(text "I2C Pull-Up"
 		(exclude_from_sim no)
 		(at 26.67 172.72 0)
@@ -4508,7 +4703,7 @@
 	)
 	(text "Boot/Reset Buttons"
 		(exclude_from_sim no)
-		(at 143.51 172.466 0)
+		(at 143.51 172.72 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -4589,6 +4784,12 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "2b787a56-f02f-4bc2-9f2c-d875437eecc3")
+	)
+	(junction
+		(at 109.855 143.51)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "2ea33686-bb3e-419f-a94d-9afd40d24dc3")
 	)
 	(junction
 		(at 27.94 50.8)
@@ -4783,6 +4984,12 @@
 		(uuid "ebede2a9-fe12-4cfb-a3b9-ce6ef13d3c4f")
 	)
 	(junction
+		(at 109.855 151.13)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "f2277537-f902-41e9-b7b3-13fbeb2325bc")
+	)
+	(junction
 		(at 60.96 105.41)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -4833,10 +5040,6 @@
 		(uuid "544f842c-99b4-4443-b171-7d4fbc218795")
 	)
 	(no_connect
-		(at 232.41 54.61)
-		(uuid "6599af1f-3191-4468-9536-fda634243525")
-	)
-	(no_connect
 		(at 232.41 36.83)
 		(uuid "7324409d-1783-4c69-a50a-598fd8dc7e66")
 	)
@@ -4859,10 +5062,6 @@
 	(no_connect
 		(at 270.51 41.91)
 		(uuid "b7ecfe89-f891-4698-8a55-eab8a802482c")
-	)
-	(no_connect
-		(at 232.41 44.45)
-		(uuid "b95f2f82-97f9-4c3f-9dc6-0600d976fafd")
 	)
 	(no_connect
 		(at 232.41 74.93)
@@ -4903,6 +5102,16 @@
 			(type default)
 		)
 		(uuid "05307d95-b719-473a-901a-66cbf09aedee")
+	)
+	(wire
+		(pts
+			(xy 104.14 151.13) (xy 109.855 151.13)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0aa31812-fb5c-41c6-9659-c88ccb7495d4")
 	)
 	(wire
 		(pts
@@ -5166,6 +5375,16 @@
 	)
 	(wire
 		(pts
+			(xy 109.855 143.51) (xy 118.11 143.51)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4f0ded2d-d974-47f9-beaa-4a1cef553e75")
+	)
+	(wire
+		(pts
 			(xy 76.2 190.5) (xy 74.93 190.5)
 		)
 		(stroke
@@ -5233,6 +5452,16 @@
 			(type default)
 		)
 		(uuid "60fd7025-a91a-4e61-afb6-f8379d15890f")
+	)
+	(wire
+		(pts
+			(xy 109.855 152.4) (xy 109.855 151.13)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "61b3d081-17b1-4926-9669-f38d03c60ba6")
 	)
 	(wire
 		(pts
@@ -5356,6 +5585,16 @@
 	)
 	(wire
 		(pts
+			(xy 104.14 143.51) (xy 109.855 143.51)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "72d14b76-7c31-4864-a9c3-a12ead259200")
+	)
+	(wire
+		(pts
 			(xy 26.67 190.5) (xy 25.4 190.5)
 		)
 		(stroke
@@ -5443,6 +5682,16 @@
 			(type default)
 		)
 		(uuid "87561092-9557-4682-a829-dcf4cd8a1a17")
+	)
+	(wire
+		(pts
+			(xy 118.11 152.4) (xy 118.11 143.51)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8a1d79a9-8afe-4379-9c49-bd422671ea27")
 	)
 	(wire
 		(pts
@@ -6004,6 +6253,16 @@
 		)
 		(uuid "164a8881-1aa2-4968-a629-327af7d9175f")
 	)
+	(label "LED_A"
+		(at 232.41 54.61 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "17b06484-69f6-4a05-81cb-cd5b2add233f")
+	)
 	(label "TX_{2}"
 		(at 20.32 111.76 0)
 		(effects
@@ -6054,16 +6313,6 @@
 		)
 		(uuid "26729ac9-9bcd-442e-af6d-b5b26f47d007")
 	)
-	(label "LED_C"
-		(at 232.41 46.99 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "270f7c5b-c56a-4fac-aa0c-e38775326a9a")
-	)
 	(label "RS485_DE_RE"
 		(at 17.78 106.68 0)
 		(effects
@@ -6073,6 +6322,26 @@
 			(justify left bottom)
 		)
 		(uuid "27b3b155-ca41-4074-bed6-2b4dbfa0c567")
+	)
+	(label "LED_B"
+		(at 232.41 52.07 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "3859e67d-848a-4ae5-a2ab-1b99db3ec8e3")
+	)
+	(label "LED_C"
+		(at 232.41 49.53 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "3d58e3bf-bbcc-4a43-9362-ef6b1121b3ad")
 	)
 	(label "SCL_BUS"
 		(at 26.67 190.5 0)
@@ -6154,6 +6423,16 @@
 		)
 		(uuid "7e72b9be-3196-4012-a591-b623f59c4483")
 	)
+	(label "X32P"
+		(at 104.14 143.51 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "83533710-81bd-4073-8f9d-f24db1566a37")
+	)
 	(label "DTR"
 		(at 224.79 151.13 0)
 		(effects
@@ -6163,6 +6442,16 @@
 			(justify left bottom)
 		)
 		(uuid "89bd155d-56ea-44a8-ab73-cf3dec9c25c8")
+	)
+	(label "X32P"
+		(at 232.41 44.45 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "8b3ff7f2-14a4-481c-9ab6-233214ea75f1")
 	)
 	(label "IO_0"
 		(at 80.01 138.43 0)
@@ -6204,6 +6493,16 @@
 		)
 		(uuid "9ffe57a4-8e68-43f5-994c-c55916b6bfa7")
 	)
+	(label "X32N"
+		(at 104.14 151.13 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "aa8721a8-98d6-42f7-b01f-844b2754aa90")
+	)
 	(label "RX_0"
 		(at 224.79 146.05 0)
 		(effects
@@ -6234,6 +6533,16 @@
 		)
 		(uuid "b8ac25e8-97df-4748-a4a4-37bd341d6404")
 	)
+	(label "X32N"
+		(at 232.41 46.99 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "bdca2a31-2bf6-4d09-b973-ce9a1e454460")
+	)
 	(label "TX_{2}"
 		(at 270.51 34.29 0)
 		(effects
@@ -6243,16 +6552,6 @@
 			(justify left bottom)
 		)
 		(uuid "be4d9a20-321a-4473-bea2-bbaad9f1abbb")
-	)
-	(label "LED_A"
-		(at 232.41 52.07 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "c191c622-3a00-435a-ae8c-fc51e5487edf")
 	)
 	(label "VDD33"
 		(at 41.91 82.55 0)
@@ -6273,16 +6572,6 @@
 			(justify left bottom)
 		)
 		(uuid "c6f74097-bc7f-4439-b478-ea970ede591b")
-	)
-	(label "LED_B"
-		(at 232.41 49.53 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "d723c271-1fd4-47fd-b3ec-bffe5efa019e")
 	)
 	(label "SDA_BUS"
 		(at 26.67 193.04 0)
@@ -7798,6 +8087,93 @@
 		)
 	)
 	(symbol
+		(lib_name "C_1")
+		(lib_id "Device:C")
+		(at 109.855 156.21 180)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "3bb791e5-2906-492f-b99e-1a78595f8740")
+		(property "Reference" "C3"
+			(at 109.601 154.178 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "12pF"
+			(at 109.474 158.496 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric_Pad0.74x0.62mm_HandSolder"
+			(at 108.8898 152.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.yageo.com/upload/media/product/productsearch/datasheet/mlcc/UPY-GP_NP0_16V-to-50V_18.pdf"
+			(at 109.855 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "22 µF ±20% 6.3V Ceramic Capacitor X5R 0603 (1608 Metric)"
+			(at 109.855 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Voltage" "50V"
+			(at 111.76 160.274 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "PartNo" "CC0402FRNP09BN120"
+			(at 109.855 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "e4d9046d-71f2-4b94-be6b-55bb12e61d0d")
+		)
+		(pin "1"
+			(uuid "ba3098d0-0d49-43e7-8252-fbd0479e6b73")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "C3")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:R")
 		(at 72.39 156.21 270)
 		(unit 1)
@@ -8653,6 +9029,75 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "#PWR018")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:Crystal")
+		(at 109.855 147.32 90)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "653de547-c2ce-41b0-8657-37a76520f097")
+		(property "Reference" "Y1"
+			(at 107.188 139.446 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Value" "32.768kHz"
+			(at 106.934 141.732 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Footprint" "project_footprints:XTAL_ABS05-32.768KHZ-T"
+			(at 109.855 147.32 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://abracon.com/Resonators/ABS05.pdf"
+			(at 109.855 147.32 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "32.768 kHz ±20ppm Crystal 12.5pF 90 kOhms 2-SMD, No Lead"
+			(at 109.855 147.32 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "0e972f4c-e657-425e-8c71-f19e3eede8bb")
+		)
+		(pin "2"
+			(uuid "7cdb7e4f-8b8a-4f78-a089-4f57f8bca071")
+		)
+		(instances
+			(project ""
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "Y1")
 					(unit 1)
 				)
 			)
@@ -10458,7 +10903,7 @@
 				(hide yes)
 			)
 		)
-		(property "Footprint" "SparkFun-Connector:Screw_Terminal_3.5mm-4"
+		(property "Footprint" "TerminalBlock_4Ucon:TerminalBlock_4Ucon_1x04_P3.50mm_Horizontal"
 			(at 90.805 167.64 0)
 			(effects
 				(font
@@ -10768,6 +11213,72 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "#PWR021")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 118.11 160.02 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "c68069e3-270f-418d-a9f8-cd01b4cb0fe4")
+		(property "Reference" "#PWR06"
+			(at 118.11 166.37 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 118.11 165.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 118.11 160.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 118.11 160.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 118.11 160.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "2616bfe4-ff1f-41d2-9ada-55ee6c67aae1")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "#PWR06")
 					(unit 1)
 				)
 			)
@@ -11099,6 +11610,72 @@
 		)
 	)
 	(symbol
+		(lib_id "power:GND")
+		(at 109.855 160.02 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "d2fc8635-b47f-4b72-b737-d7186b62aa0a")
+		(property "Reference" "#PWR05"
+			(at 109.855 166.37 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 109.855 165.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 109.855 160.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 109.855 160.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 109.855 160.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "2b2bdb9a-63ca-413f-bb5a-c7e6cba1bc16")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "#PWR05")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:VDD")
 		(at 125.73 43.18 270)
 		(unit 1)
@@ -11227,6 +11804,93 @@
 			(project ""
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "RX2_TP1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_name "C_1")
+		(lib_id "Device:C")
+		(at 118.11 156.21 180)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "d7eac274-5b76-492b-9275-59353b03b43f")
+		(property "Reference" "C5"
+			(at 117.856 154.178 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "12pF"
+			(at 117.856 158.496 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric_Pad0.74x0.62mm_HandSolder"
+			(at 117.1448 152.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.yageo.com/upload/media/product/productsearch/datasheet/mlcc/UPY-GP_NP0_16V-to-50V_18.pdf"
+			(at 118.11 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "22 µF ±20% 6.3V Ceramic Capacitor X5R 0603 (1608 Metric)"
+			(at 118.11 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Voltage" "50V"
+			(at 120.142 160.274 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "PartNo" "CC0402FRNP09BN120"
+			(at 118.11 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "f22b7c44-b969-47da-87d3-f7ff64497a2c")
+		)
+		(pin "1"
+			(uuid "21ac5b26-583e-445c-bf23-bde5bd1265ed")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "C5")
 					(unit 1)
 				)
 			)

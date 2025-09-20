@@ -13344,6 +13344,19 @@
 			(justify left bottom)
 		)
 	)
+	(gr_text "BOOT"
+		(at 82.25 102 90)
+		(layer "F.SilkS")
+		(uuid "c990ee41-a108-4d8b-bab2-0569d0334d01")
+		(effects
+			(font
+				(size 1.25 1.25)
+				(thickness 0.3)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+	)
 	(gr_text "+"
 		(at 97.25 130 0)
 		(layer "F.SilkS")

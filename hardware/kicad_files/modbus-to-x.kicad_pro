@@ -60,6 +60,18 @@
       ],
       "drc_exclusions": [
         [
+          "lib_footprint_issues|115400000|116200000|323b4a22-5277-4650-b617-550e3597feaf|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
+          "lib_footprint_mismatch|105081358|99579651|2c5ab9b7-248e-4f89-8b62-3164b41998e6|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
+          "lib_footprint_mismatch|105093223|98553406|30a4ef4c-39ac-4c2b-9a10-816936b9da93|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
           "lib_footprint_mismatch|107527600|115214400|a3d72208-bb62-4048-8d21-97229dae6c3e|00000000-0000-0000-0000-000000000000",
           ""
         ],
@@ -77,6 +89,10 @@
         ],
         [
           "lib_footprint_mismatch|125505650|123118000|468c465a-fe46-4eaf-a481-d3e4ee526372|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
+          "lib_footprint_mismatch|127495650|123118000|5233d271-3fed-42e2-874c-65d974fc035b|00000000-0000-0000-0000-000000000000",
           ""
         ]
       ],
@@ -528,7 +544,7 @@
       "gencad": "",
       "idf": "",
       "netlist": "",
-      "plot": "manufactoring/",
+      "plot": "manufactoring/rev2",
       "pos_files": "",
       "specctra_dsn": "",
       "step": "",
@@ -561,7 +577,7 @@
           "show": true
         },
         {
-          "group_by": true,
+          "group_by": false,
           "label": "Value",
           "name": "Value",
           "show": true
@@ -616,14 +632,86 @@
         },
         {
           "group_by": false,
-          "label": "ProductCode",
-          "name": "ProductCode",
-          "show": true
+          "label": "Voltage",
+          "name": "Voltage",
+          "show": false
         },
         {
           "group_by": false,
-          "label": "Voltage",
-          "name": "Voltage",
+          "label": "MANUFACTURER",
+          "name": "MANUFACTURER",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "MAXIMUM_PACKAGE_HEIGHT",
+          "name": "MAXIMUM_PACKAGE_HEIGHT",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Manufacturer_Name",
+          "name": "Manufacturer_Name",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Manufacturer_Part_Number",
+          "name": "Manufacturer_Part_Number",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Mouser Part Number",
+          "name": "Mouser Part Number",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Mouser Price/Stock",
+          "name": "Mouser Price/Stock",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "PARTREV",
+          "name": "PARTREV",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "PROD_ID",
+          "name": "PROD_ID",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Arrow Price/Stock",
+          "name": "Arrow Price/Stock",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Height",
+          "name": "Height",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "STANDARD",
+          "name": "STANDARD",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Inventory",
+          "name": "Inventory",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Arrow Part Number",
+          "name": "Arrow Part Number",
           "show": false
         }
       ],
@@ -632,7 +720,7 @@
       "include_excluded_from_bom": false,
       "name": "",
       "sort_asc": true,
-      "sort_field": "Voltage"
+      "sort_field": "MANUFACTURER"
     },
     "connection_grid_size": 50.0,
     "drawing": {

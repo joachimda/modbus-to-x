@@ -121,6 +121,13 @@ void MqttManager::loadMQTTConfig() {
 
 auto MqttManager::ensureMQTTConnection() const -> bool {
     auto clientId = String(mqtt_client_prefix + String(random(RND_SEED), HEX));
+    // Persist the generated client ID so the subsequent connect() call uses
+    // the freshly generated identifier instead of the stale cached value.
+    // Previously `_clientId` remained empty which caused the MQTT client to
+    // repeatedly attempt connections with an empty client ID.  Many brokers
+    // reject such connections (or treat them as duplicate clients), leading to
+    // spurious connection failures despite generating a unique ID here.
+    _clientId = clientId;
     if (_mqttBroker[0] == '\0' || String(_mqttBroker) == default_mqtt_broker) {
         _logger->logWarning("[MQTT] Broker not configured; skipping connection attempt");
         return false;

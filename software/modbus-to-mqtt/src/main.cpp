@@ -1,4 +1,4 @@
-#include <Arduino.h>
+﻿#include <Arduino.h>
 #include <SPIFFS.h>
 #include "MemoryLogger.h"
 #include "SerialLogger.h"
@@ -28,7 +28,7 @@ DNSServer dns;
 MBXServer mbx_server(&server, &dns, &logger);
 
 void setupEnvironment() {
-    logger.useDebug(false);
+    logger.useDebug(true);
     Serial.begin(SERIAL_OUTPUT_BAUD);
 }
 
@@ -90,6 +90,7 @@ void setup() {
     logger.logDebug("setup() - Starting MBX Server");
     MBXServerHandlers::setMemoryLogger(&memory_logger);
     MBXServerHandlers::setMqttManager(&mqtt_manager);
+    modbus_manager.setMqttManager(&mqtt_manager);
     MBXServerHandlers::setModbusManager(&modbus_manager);
     mbx_server.begin();
 
@@ -101,7 +102,6 @@ void setup() {
 void loop() {
     MBXServer::loop();
     modbus_manager.loop();
-    // mb_manager.readRegisters();
-    // mqtt_manager.mqttPublish("log", ("Datapoints available: " + String(numData)).c_str());
     delay(500);
 }
+

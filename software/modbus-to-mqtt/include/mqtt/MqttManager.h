@@ -28,6 +28,7 @@ public:
     auto getMQTTState() const -> int;
 
     auto getMQTTUser() -> char *;
+    auto getRootTopic() const -> const String &;
 
     static void setMQTTEnabled(bool enabled);
     static auto isMQTTEnabled() -> bool;

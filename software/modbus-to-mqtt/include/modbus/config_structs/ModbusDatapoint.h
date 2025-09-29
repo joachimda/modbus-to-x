@@ -16,6 +16,7 @@ struct ModbusDatapoint {
     float scale;
     ModbusDataType dataType;
     String unit;
+    String topic;
     // Optional poll interval in milliseconds (0 = every loop)
     uint32_t pollIntervalMs{0};
     // Runtime scheduling: next time this datapoint is due (millis())

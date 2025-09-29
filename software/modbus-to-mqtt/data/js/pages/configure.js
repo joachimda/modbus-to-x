@@ -45,10 +45,11 @@ function schemaToUi(json) {
     // devices
     const inDevices = Array.isArray(json?.devices) ? json.devices : [];
     bus.devices = inDevices.map((d, idx) => ({
-        id: d.id || `dev_${idx+1}`,
-        name: d.name || "device",
+        id: (typeof d.id === "string" && d.id.trim().length) ? d.id.trim() : `dev_${idx+1}`,
+        name: (typeof d.name === "string" && d.name.trim().length) ? d.name.trim() : "device",
         slaveId: Number(d.slaveId) || 1,
-        notes: d.notes || "",
+        notes: (typeof d.notes === "string") ? d.notes : "",
+        mqttEnabled: Boolean(d.mqttEnabled),
         datapoints: Array.isArray(d.dataPoints) ? d.dataPoints.map((p) => ({
             id: p.id,
             name: p.name,
@@ -57,8 +58,8 @@ function schemaToUi(json) {
             length: Number(p.numOfRegisters ?? 1) || 1,
             type: String(p.dataType || "uint16"),
             scale: Number(p.scale ?? 1) || 1,
-            unit: p.unit || "",
-            topic: p.topic || "",
+            unit: (typeof p.unit === "string") ? p.unit : "",
+            topic: (typeof p.topic === "string") ? p.topic.trim() : "",
             poll_secs: (Number.isFinite(Number(p?.poll_interval))
                 ? Number(p.poll_interval)
                 : (Number.isFinite(Number(p?.poll_interval_ms)) ? Math.round(Number(p.poll_interval_ms)/1000) : 0))
@@ -75,24 +76,41 @@ function uiToSchema(uiModel) {
             baud: Number(b.baud) || 9600,
             serialFormat: toSerialFormat(b.data_bits, b.parity, b.stop_bits)
         },
-        devices: (b.devices || []).map(d => ({
-            name: d.name || "device",
-            slaveId: Number(d.slaveId) || 1,
-            dataPoints: (d.datapoints || []).map(p => ({
-                id: p.id,
-                name: p.name,
-                function: Number(p.func) || 3,
-                address: Number(p.address) || 0,
-                numOfRegisters: Number(p.length) || 1,
-                dataType: String(p.type || "uint16"),
-                scale: Number(p.scale ?? 1) || 1,
-                unit: p.unit || "",
-                ...(Number.isFinite(Number(p.poll_secs)) && Number(p.poll_secs) > 0 ? { poll_interval: Number(p.poll_secs) } : {}),
-                ...(p.precision != null ? {
-                    precision: Number(p.precision)
-                } : {})
-            }))
-        }))
+        devices: (b.devices || []).map(d => {
+            const deviceId = (typeof d.id === "string" && d.id.trim().length) ? d.id.trim() : "";
+            const device = {
+                name: (typeof d.name === "string" && d.name.trim().length) ? d.name.trim() : "device",
+                slaveId: Number(d.slaveId) || 1
+            };
+            if (deviceId.length) {
+                device.id = deviceId;
+            }
+            if (d.mqttEnabled) {
+                device.mqttEnabled = true;
+            }
+            device.dataPoints = (d.datapoints || []).map(p => {
+                const topic = (typeof p.topic === "string") ? p.topic.trim() : "";
+                const dp = {
+                    id: p.id,
+                    name: p.name,
+                    function: Number(p.func) || 3,
+                    address: Number(p.address) || 0,
+                    numOfRegisters: Number(p.length) || 1,
+                    dataType: String(p.type || "uint16"),
+                    scale: Number(p.scale ?? 1) || 1,
+                    unit: p.unit || "",
+                    ...(Number.isFinite(Number(p.poll_secs)) && Number(p.poll_secs) > 0 ? { poll_interval: Number(p.poll_secs) } : {}),
+                    ...(p.precision != null ? {
+                        precision: Number(p.precision)
+                    } : {})
+                };
+                if (topic.length) {
+                    dp.topic = topic;
+                }
+                return dp;
+            });
+            return device;
+        })
     };
 }
 function validateSchemaConfig(cfg) {
@@ -118,6 +136,12 @@ function validateSchemaConfig(cfg) {
         if (!Number.isInteger(d.slaveId) || d.slaveId < 1 || d.slaveId > 247) {
             errors.push(`Device ${d.name||i+1}: slaveId 1-247`);
         }
+        if (d.id != null && typeof d.id !== "string") {
+            errors.push(`Device ${d.name||i+1}: id must be a string`);
+        }
+        if (d.mqttEnabled != null && typeof d.mqttEnabled !== "boolean") {
+            errors.push(`Device ${d.name||i+1}: mqttEnabled must be boolean`);
+        }
         for (const [j,p] of (d.dataPoints||[]).entries()) {
             if (!p.name) {
                 errors.push(`Datapoint #${j+1} on ${d.name}: name required`);
@@ -127,6 +151,12 @@ function validateSchemaConfig(cfg) {
             }
             if (!Number.isInteger(p.function) || p.function < 1 || p.function > 6) {
                 errors.push(`Datapoint ${p.id}: function 1-6`);
+            }
+            if (p.topic != null && typeof p.topic !== "string") {
+                errors.push(`Datapoint ${p.id}: topic must be a string`);
+            }
+            if (typeof p.topic === "string" && p.topic.length > 128) {
+                errors.push(`Datapoint ${p.id}: topic too long`);
             }
             if (!Number.isInteger(p.address) || p.address < 0 || p.address > 65535) {
                 errors.push(`Datapoint ${p.id}: address 0-65535`);
@@ -365,6 +395,10 @@ function showDeviceEditor() {
     $("#dev-name").value = device.name || "";
     $("#dev-slave").value = device.slaveId ?? 1;
     $("#dev-notes").value = device.notes || "";
+    const mqttToggle = $("#dev-mqtt");
+    if (mqttToggle) {
+        mqttToggle.checked = Boolean(device.mqttEnabled);
+    }
 
     renderDeviceDatapointTable(device);
 
@@ -372,6 +406,9 @@ function showDeviceEditor() {
         device.name = $("#dev-name").value.trim() || "device";
         device.slaveId = Number($("#dev-slave").value);
         device.notes = $("#dev-notes").value.trim();
+        if (mqttToggle) {
+            device.mqttEnabled = mqttToggle.checked;
+        }
         buildTree();
         toast("Device updated (draft)");
     };
@@ -654,7 +691,7 @@ $('#btn-add-device').onclick = () => {
     const b = getBus();
     const id = `dev_${Date.now()}`;
     b.devices = b.devices || [];
-    b.devices.push({ id, name: "device", slaveId: 1, notes: "", datapoints: [] });
+    b.devices.push({ id, name: "device", slaveId: 1, notes: "", mqttEnabled: false, datapoints: [] });
     selection = {
         kind:"device", deviceId:id, datapointId:null
     };

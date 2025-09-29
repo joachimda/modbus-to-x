@@ -8,6 +8,8 @@
 #include "ModbusMaster.h"
 #include "config_structs/ConfigurationRoot.h"
 
+class MqttManager;
+
 class ModbusManager {
 public:
     explicit ModbusManager(Logger *logger);
@@ -36,8 +38,11 @@ public:
                            String &rxDump);
 
     uint8_t findSlaveIdByDatapointId(const String &dpId) const;
+    const ModbusDatapoint *findDatapointById(const String &dpId, const ModbusDevice **outDevice = nullptr) const;
+    void setMqttManager(MqttManager *mqtt);
 
     static const char *statusToString(uint8_t code);
+    static String registersToAscii(const uint16_t *buf, uint16_t count);
 
     // Reload /conf/config.json at runtime and reinitialize wiring.
     // Returns true if new config loaded and bus stays active.
@@ -54,10 +59,14 @@ private:
 
     static const char *functionToString(ModbusFunctionType fn);
 
+    void publishDatapoint(const ModbusDevice &device, const ModbusDatapoint &dp, const String &payload) const;
+    static String slugify(const String &text);
+
     std::vector<ModbusDatapoint> _modbusRegisters;
     ModbusMaster node;
     Logger *_logger;
     Preferences preferences;
     ConfigurationRoot _modbusRoot{};
+    MqttManager *_mqtt{nullptr};
 };
 #endif

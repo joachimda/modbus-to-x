@@ -6,8 +6,10 @@
 #include "ModbusDatapoint.h"
 
 struct ModbusDevice {
+    String id;
     String name;
     uint8_t slaveId;
+    bool mqttEnabled{false};
     std::vector<ModbusDatapoint> datapoints;
 };
 

@@ -158,6 +158,9 @@
                     <label for="dev-slave"></label><input id="dev-slave" type="number" min="1" max="247" />
                     <div>Notes</div>
                     <label for="dev-notes"></label><input id="dev-notes" class="full" placeholder="Optional" />
+                    <div>Enable MQTT Publish</div>
+                    <label for="dev-mqtt"></label><input id="dev-mqtt" type="checkbox" />
+                    <div class="hint" style="grid-column:1 / span 2;">When enabled, datapoints from this device publish to MQTT. Empty datapoint topics fall back to &lt;root-topic&gt;/&lt;deviceId&gt;.&lt;datapointId&gt;.</div>
                 </div>
                 <div class="divider"></div>
 

@@ -61,6 +61,13 @@
             "minimum": 1,
             "maximum": 247
           },
+          "id": {
+            "type": "string"
+          },
+          "mqttEnabled": {
+            "type": "boolean",
+            "default": false
+          },
           "dataPoints": {
             "type": "array",
             "minimum": 0,
@@ -124,6 +131,12 @@
                   "type":"string",
                   "minLength": 0,
                   "maxLength": 5,
+                  "default": ""
+                },
+                "topic": {
+                  "type": "string",
+                  "minLength": 0,
+                  "maxLength": 128,
                   "default": ""
                 },
                 "precision":{

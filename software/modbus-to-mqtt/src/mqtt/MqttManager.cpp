@@ -236,6 +236,10 @@ char *MqttManager::getMQTTUser() {
     return _mqttUser;
 }
 
+const String &MqttManager::getRootTopic() const {
+    return _mqttRootTopic;
+}
+
 void MqttManager::setMQTTEnabled(const bool enabled) {
     s_mqttEnabled.store(enabled, std::memory_order_release);
 }

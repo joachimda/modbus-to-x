@@ -410,7 +410,9 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
     }
 
     // Resolve slave id by datapoint
-    uint8_t slave = mb->findSlaveIdByDatapointId(dpId);
+    const ModbusDevice *dpDevice = nullptr;
+    const ModbusDatapoint *dpMeta = mb->findDatapointById(dpId, &dpDevice);
+    uint8_t slave = dpDevice ? dpDevice->slaveId : 0;
     if (slave == 0) slave = MODBUS_SLAVE_ID;
 
     uint16_t outBuf[16]{};
@@ -442,7 +444,11 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
     if (outCount > 0) {
         JsonArray raw = doc["result"]["raw"].to<JsonArray>();
         for (uint16_t i = 0; i < outCount; ++i) raw.add(outBuf[i]);
-        doc["result"]["value"] = outBuf[0];
+        if (dpMeta && dpMeta->dataType == TEXT) {
+            doc["result"]["value"] = ModbusManager::registersToAscii(outBuf, outCount);
+        } else {
+            doc["result"]["value"] = outBuf[0];
+        }
     }
 
     sendJson(req, doc);

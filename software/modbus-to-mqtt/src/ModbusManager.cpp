@@ -3,9 +3,13 @@
 
 #include <atomic>
 #include <map>
+#include <vector>
+#include <cctype>
+#include <cstdio>
 #include <SPIFFS.h>
 
 #include "ArduinoJson.h"
+#include "mqtt/MqttManager.h"
 #include "services/IndicatorService.h"
 
 static std::atomic<bool> BUS_ACTIVE{false};
@@ -245,7 +249,17 @@ bool ModbusManager::loadConfiguration() {
         for (JsonObject d: devs) {
             ModbusDevice dev{};
             dev.name = String(d["name"] | "device");
+            dev.name.trim();
             dev.slaveId = static_cast<uint8_t>(d["slaveId"] | 1);
+            dev.id = String(d["id"] | "");
+            dev.id.trim();
+            if (dev.id.isEmpty()) {
+                dev.id = slugify(dev.name);
+                if (dev.id.isEmpty()) {
+                    dev.id = String("device_") + String(dev.slaveId);
+                }
+            }
+            dev.mqttEnabled = d["mqttEnabled"] | false;
 
             const JsonArray dps = d["dataPoints"].as<JsonArray>();
             if (!dps.isNull()) {
@@ -260,6 +274,8 @@ bool ModbusManager::loadConfiguration() {
                     dp.scale = static_cast<float>(p["scale"] | 1.0);
                     dp.dataType = parseDataType(p["dataType"]);
                     dp.unit = String(p["unit"] | "");
+                    dp.topic = String(p["topic"] | "");
+                    dp.topic.trim();
                     // Optional per-datapoint poll interval (seconds in JSON) -> ms in runtime
                     // Accept both poll_interval (seconds) and poll_interval_ms (milliseconds) if provided
                     if (p["poll_interval_ms"].is<unsigned long>()) {
@@ -339,8 +355,6 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
     _logger->logDebug(
         ("ModbusManager::readModbusDevice - Reading Device: " + String(dev.name) + " SlaveId: " + String(dev.slaveId)).
         c_str());
-    float rawData = -99;
-
     // Use tee stream to capture incoming bytes for diagnostics
     if (g_teeSerial1) {
         node.begin(dev.slaveId, *g_teeSerial1);
@@ -384,12 +398,37 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
         }
         if (result == ModbusMaster::ku8MBSuccess) {
             successOnThisDevice = true;
-            String topic = dp.name;
-            rawData = node.getResponseBuffer(0);
-            const float value = rawData * dp.scale;
-            auto payload = String(value);
+
+            const uint8_t wordsToRead = dp.numOfRegisters ? dp.numOfRegisters : 1;
+            std::vector<uint16_t> words(wordsToRead);
+            for (uint8_t i = 0; i < wordsToRead; ++i) {
+                words[i] = node.getResponseBuffer(i);
+            }
+
+            String payload;
+            if (dp.dataType == TEXT) {
+                payload = registersToAscii(words.data(), wordsToRead);
+            } else {
+                const float value = static_cast<float>(words[0]) * dp.scale;
+                payload = String(value);
+            }
+
+            String rawSummary;
+            if (dp.dataType == TEXT) {
+                rawSummary.reserve(wordsToRead * 7);
+                for (uint8_t i = 0; i < wordsToRead; ++i) {
+                    if (i > 0) rawSummary += ' ';
+                    char buf[7];
+                    snprintf(buf, sizeof(buf), "0x%04X", words[i]);
+                    rawSummary += buf;
+                }
+            } else {
+                rawSummary = String(words[0]);
+            }
+
             _logger->logDebug(("Modbus OK - " + String(dev.name) + ": " + String(dp.name) +
-                                     " = " + payload + " (raw=" + String(rawData) + ")").c_str());
+                               " = " + payload + " (raw=" + rawSummary + ")").c_str());
+            publishDatapoint(dev, dp, payload);
         } else {
             // Dump captured RX bytes for diagnostics
             String rxDump = (g_teeSerial1 ? g_teeSerial1->dumpHex() : String(""));
@@ -572,11 +611,125 @@ uint8_t ModbusManager::executeCommand(uint8_t slaveId,
     return status;
 }
 
+void ModbusManager::setMqttManager(MqttManager *mqtt) {
+    _mqtt = mqtt;
+}
+
 uint8_t ModbusManager::findSlaveIdByDatapointId(const String &dpId) const {
-    for (const auto &dev: _modbusRoot.devices) {
-        for (const auto &dp: dev.datapoints) {
-            if (dp.id == dpId) return dev.slaveId;
-        }
+    const ModbusDevice *device = nullptr;
+    const ModbusDatapoint *dp = findDatapointById(dpId, &device);
+    if (dp && device) {
+        return device->slaveId;
     }
     return 0;
 }
+
+const ModbusDatapoint *ModbusManager::findDatapointById(const String &dpId, const ModbusDevice **outDevice) const {
+    for (const auto &dev: _modbusRoot.devices) {
+        for (const auto &dp: dev.datapoints) {
+            if (dp.id == dpId) {
+                if (outDevice) {
+                    *outDevice = &dev;
+                }
+                return &dp;
+            }
+        }
+    }
+    if (outDevice) {
+        *outDevice = nullptr;
+    }
+    return nullptr;
+}
+
+String ModbusManager::registersToAscii(const uint16_t *buf, const uint16_t count) {
+    String out;
+    if (!buf || count == 0) {
+        return out;
+    }
+    out.reserve(count * 2);
+    for (uint16_t i = 0; i < count; ++i) {
+        const uint16_t word = buf[i];
+        const char high = static_cast<char>((word >> 8) & 0xFF);
+        const char low = static_cast<char>(word & 0xFF);
+        if (high != '\0') out += high;
+        if (low != '\0') out += low;
+    }
+    return out;
+}
+
+void ModbusManager::publishDatapoint(const ModbusDevice &device, const ModbusDatapoint &dp, const String &payload) const {
+    if (!device.mqttEnabled || !_mqtt) {
+        return;
+    }
+    if (!MqttManager::isMQTTEnabled()) {
+        return;
+    }
+    if (dp.id.isEmpty()) {
+        return;
+    }
+
+    String topic = dp.topic;
+    topic.trim();
+    if (topic.isEmpty()) {
+        String root = _mqtt->getRootTopic();
+        root.trim();
+        String deviceId = device.id;
+        deviceId.trim();
+        if (deviceId.isEmpty()) {
+            deviceId = slugify(device.name);
+        }
+        if (deviceId.isEmpty()) {
+            deviceId = String("device_") + String(device.slaveId);
+        }
+        if (deviceId.isEmpty()) {
+            return;
+        }
+        topic = root;
+        if (topic.length()) {
+            if (!topic.endsWith("/")) {
+                topic += "/";
+            }
+            topic += deviceId;
+        } else {
+            topic = deviceId;
+        }
+        topic += ".";
+        topic += dp.id;
+    }
+
+    if (!topic.length()) {
+        _logger->logWarning("ModbusManager::publishDatapoint - empty topic, skipping publish");
+        return;
+    }
+
+    if (!_mqtt->mqttPublish(topic.c_str(), payload.c_str())) {
+        _logger->logWarning((String("MQTT publish failed for topic ") + topic).c_str());
+    } else {
+        _logger->logDebug((String("MQTT publish ") + topic + " <= " + payload).c_str());
+    }
+}
+
+String ModbusManager::slugify(const String &text) {
+    String out;
+    out.reserve(text.length());
+    bool lastUnderscore = false;
+    for (size_t i = 0; i < text.length(); ++i) {
+        const unsigned char raw = static_cast<unsigned char>(text[i]);
+        if (std::isalnum(raw)) {
+            const char lower = static_cast<char>(std::tolower(raw));
+            out += lower;
+            lastUnderscore = false;
+        } else if (!lastUnderscore && out.length() > 0U) {
+            out += '_';
+            lastUnderscore = true;
+        }
+    }
+    while (out.length() > 0U && out[out.length() - 1] == '_') {
+        out.remove(out.length() - 1);
+    }
+    if (out.length() == 0U) {
+        return String("device");
+    }
+    return out;
+}
+

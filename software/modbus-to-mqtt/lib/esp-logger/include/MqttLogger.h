@@ -23,4 +23,4 @@ private:
     static const char* getLevelPrefix(LogLevel level);
 };
 
-#endif //MQTTLOGGER_H
+#endif

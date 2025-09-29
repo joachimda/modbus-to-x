@@ -1,0 +1,160 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "ModbusToXConfig",
+  "type": "object",
+  "required": [
+    "version",
+    "bus",
+    "devices"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "bus": {
+      "type": "object",
+      "required": [
+        "baud",
+        "serialFormat"
+      ],
+      "properties": {
+        "baud": {
+          "type": "integer"
+        },
+        "serialFormat": {
+          "type": "string",
+          "enum": [
+            "7N1",
+            "7N2",
+            "7O1",
+            "7O2",
+            "7E1",
+            "7E2",
+            "8N1",
+            "8N2",
+            "8E1",
+            "8E2",
+            "8O1",
+            "8O2"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "devices": {
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "slaveId",
+          "dataPoints"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "slaveId": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 247
+          },
+          "dataPoints": {
+            "type": "array",
+            "minimum": 0,
+            "maximum": 200,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name",
+                "function",
+                "address",
+                "numOfRegisters",
+                "dataType",
+                "scale",
+                "unit"
+              ],
+              "properties": {
+                "id":{
+                  "type": "string"
+                },
+                 "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 16
+                },
+                 "function": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 6,
+                    "default": 3
+                 },
+                "address": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 65535
+                },
+                "numOfRegisters": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 125,
+                  "default": 1
+                },
+                "scale": {
+                  "type": "number",
+                  "default": 1.0
+                },
+                "dataType": {
+                  "type": "string",
+                  "enum": [
+                    "TEXT",
+                    "int16",
+                    "int32",
+                    "int64",
+                    "uint16",
+                    "uint32",
+                    "uint64",
+                    "float32"
+                  ]
+                },
+                "unit": {
+                  "type":"string",
+                  "minLength": 0,
+                  "maxLength": 5,
+                  "default": ""
+                },
+                "precision":{
+                  "type":"integer",
+                  "default": 1,
+                  "minimum": 0,
+                  "maximum": 10
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "modbus": {
+        "type": "object",
+        "properties": {
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "retries": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

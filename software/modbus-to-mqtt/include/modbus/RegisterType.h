@@ -1,8 +1,0 @@
-#ifndef MBREGISTERTYPE_H
-#define MBREGISTERTYPE_H
-
-enum RegisterType {
-    HOLDING_REGISTER = 1,
-    INPUT_REGISTER = 2
-};
-#endif //MBREGISTERTYPE_H

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Configure Network | Modbus To X</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="../style.css">
+    <script type="importmap">
+        {
+          "imports": {
+            "app": "/js/app.js",
+            "configure_network": "/js/pages/configure_network.js"
+          }
+        }
+    </script>
+</head>
+<body data-page="configure_network">
+<header style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
+    <div>
+        <h1>Configure Wi-Fi</h1>
+        <div class="muted">Scan for networks and connect. Saved credentials persist across reboots.</div>
+    </div>
+    <nav class="toolbar">
+        <button class="circleButton backButton" onclick="window.location.href='/'">
+            <svg class="backSvgIcon" viewBox="0 0 309.143 309.143" xmlns="http://www.w3.org/2000/svg">
+                <path d="M112.855,154.571L240.481,26.946c2.929-2.929,2.929-7.678,0-10.606L226.339,2.197
+                 C224.933,0.79,223.025,0,221.036,0c-1.989,0-3.897,0.79-5.303,2.197L68.661,149.268
+                 c-2.929,2.929-2.929,7.678,0,10.606l147.071,147.071c1.406,1.407,3.314,2.197,5.303,2.197
+                 c1.989,0,3.897-0.79,5.303-2.197l14.142-14.143c2.929-2.929,2.929-7.678,0-10.606L112.855,154.571z" />
+            </svg>
+            <span class="tooltip">Back</span>
+        </button>
+    </nav>
+</header>
+<main class="row">
+    <section class="card">
+        <h2>Available Networks</h2>
+        <div class="toolbar">
+            <label for="filter"></label>
+            <input id="filter" type="text" placeholder="Filter SSIDs…" />
+            <button id="refresh" class="btn">Refresh</button>
+            <span id="scanState" class="muted"></span>
+        </div>
+        <div id="list" class="list" role="list"></div>
+        <div class="hint" id="scanHint">
+            Tip: If your network is hidden, use <strong>Add hidden network</strong> below.
+        </div>
+
+        <div class="adv" style="margin-top:16px">
+            <details id="hiddenDetails">
+                <summary>Add hidden network</summary>
+                <div class="grid-2" style="margin-top:10px">
+                    <div>
+                        <label>SSID<br/><input id="hiddenSsid" type="text" placeholder="Hidden SSID"></label>
+                    </div>
+                    <div>
+                        <label>Password<br/><input id="hiddenPass" type="password" placeholder="(leave empty if open)"></label>
+                    </div>
+                </div>
+                <div style="margin-top:8px; display:flex; gap:8px; align-items:center">
+                    <button id="selectHidden" class="btn secondary">Use this SSID</button>
+                    <label><input type="checkbox" id="showHiddenPw"> Show password</label>
+                </div>
+            </details>
+        </div>
+    </section>
+
+    <!-- Right: credentials + advanced + connect -->
+    <section class="card">
+        <h2>Network Details</h2>
+        <div class="grid-2">
+            <div>
+                <label>Selected SSID<br/>
+                    <input id="ssid" type="text" placeholder="Select from list or enter manually" />
+                </label>
+            </div>
+            <div>
+                <label>Password<br/>
+                    <input id="password" type="password" placeholder="(open networks leave empty)" />
+                </label>
+                <label class="hint"><input type="checkbox" id="showPw"> Show password</label>
+            </div>
+        </div>
+
+        <div class="adv">
+            <details>
+                <summary>Advanced options</summary>
+                <div class="grid-2" style="margin-top:10px">
+                    <div>
+                        <label>BSSID (lock to AP)<br/>
+                            <input id="bssid" type="text" placeholder="AA:BB:CC:DD:EE:FF" />
+                        </label>
+                        <div class="hint">Optional. Useful if multiple APs share the SSID.</div>
+                    </div>
+                    <div>
+                        <label>Save credentials<br/>
+                            <select id="save">
+                                <option value="true" selected>Persist (recommended)</option>
+                                <option value="false">Temporary (one-time)</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+
+                <details style="margin-top:10px">
+                    <summary>Static IP (optional)</summary>
+                    <div class="grid-2" style="margin-top:10px">
+                        <div><label>IP<br/><input id="ip" type="text" placeholder="192.168.1.123"></label></div>
+                        <div><label>Gateway<br/><input id="gw" type="text" placeholder="192.168.1.1"></label></div>
+                        <div><label>Subnet mask<br/><input id="mask" type="text" placeholder="255.255.255.0"></label></div>
+                        <div><label>DNS 1<br/><input id="dns1" type="text" placeholder="1.1.1.1"></label></div>
+                        <div><label>DNS 2<br/><input id="dns2" type="text" placeholder="8.8.8.8"></label></div>
+                    </div>
+                    <div class="hint">Leave all fields blank to use DHCP.</div>
+                </details>
+            </details>
+        </div>
+
+        <div style="display:flex; gap:8px; align-items:center; margin-top:12px">
+            <button id="connect" class="btn">Connect</button>
+            <button id="cancel" class="btn ghost" disabled>Cancel</button>
+            <span id="quickStatus" class="muted"></span>
+        </div>
+
+        <div id="statusLog" class="status" style="display:none"></div>
+        <div id="finalBadge" class="right" style="margin-top:10px"></div>
+    </section>
+</main>
+<script type="module">
+    import 'app';
+    import 'configure_network';
+</script>
+</body>
+</html>

@@ -1,116 +1,107 @@
-#include <Arduino.h>
-#include "ArduinoJson.h"
-#include <nvs_flash.h>
-#include "MBXServer.h"
-#include "commlink/CommLink.h"
-#include "MqttLogger.h"
+﻿#include <Arduino.h>
+#include <SPIFFS.h>
+#include "MemoryLogger.h"
 #include "SerialLogger.h"
-#include "commlink/MqttSubscriptions.h"
-#include "esp_spi_flash.h"
 #include "modbus/ModbusManager.h"
+#include "network/mbx_server/MBXServer.h"
+#include "Config.h"
+#include <network/mbx_server/MBXServerHandlers.h>
+
+#include "mqtt/MqttSubscriptionHandler.h"
+#include "services/IndicatorService.h"
+#include "services/RtcMirrorLogger.h"
+#include "services/RtcLogBuffer.h"
+#include "services/EspLogBridge.h"
+#include <esp_system.h>
 
 Logger logger;
-MqttSubscriptionHandler subscriptionHandler(&logger);
+MemoryLogger memory_logger(300);
+RtcMirrorLogger rtc_mirror_logger;
+MqttSubscriptionHandler mqtt_subscription_Handler(&logger);
 WiFiClient wifiClient;
-PubSubClient pubSubClient(wifiClient);
-CommLink commLink(&subscriptionHandler, &pubSubClient, &logger);
-MqttLogger mqttLogger([](const char *msg) {
-     const auto logTopic = MQTT_ROOT_TOPIC + PUB_SYSTEM_LOG;
-     pubSubClient.publish(logTopic.c_str(), msg);
-});
-SerialLogger serialLogger(Serial);
-
-ModbusManager modbusManager(&logger);
-MBXServer mbxServer;
+PubSubClient pubsub_client(wifiClient);
+MqttManager mqtt_manager(&mqtt_subscription_Handler, &pubsub_client, &logger);
+SerialLogger serial_logger(Serial);
+ModbusManager modbus_manager(&logger);
+AsyncWebServer server(80);
+DNSServer dns;
+MBXServer mbx_server(&server, &dns, &logger);
 
 void setupEnvironment() {
     logger.useDebug(true);
-    Serial.begin(115200);
+    Serial.begin(SERIAL_OUTPUT_BAUD);
 }
 
-void addSubscriptionHandlers() {
-    const auto netReset = MQTT_ROOT_TOPIC + SUB_NETWORK_RESET;
-    subscriptionHandler.addHandler(netReset, [](const String &) {
-        logger.logInformation("Network reset requested by MQTT message");
-        commLink.networkReset();
-    });
-
-    const auto mbConfig = MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG;
-    subscriptionHandler.addHandler(mbConfig, [](const String &message) {
-        logger.logInformation("New MODBUS config received from MQTT message");
-        modbusManager.updateRegisterConfigurationFromJson(message, true);
-    });
-
-    const auto echo = MQTT_ROOT_TOPIC + SUB_SYSTEM_ECHO;
-    subscriptionHandler.addHandler(echo, [](const String &message) {
-        logger.logInformation(message.c_str());
-    });
-
-    const auto systemInfo = MQTT_ROOT_TOPIC + SUB_SYSTEM_INFO;
-    subscriptionHandler.addHandler(systemInfo, [](const String &) {
-        nvs_stats_t stats;
-        const esp_err_t err = nvs_get_stats(nullptr, &stats);
-
-        String usedEntries, totalEntries, freeEntries = "";
-
-        if (err == ESP_OK) {
-            usedEntries = String(stats.used_entries);
-            totalEntries = String(stats.total_entries);
-            freeEntries = String(stats.free_entries);
-        } else {
-            logger.logError(("Failed to get NVS stats: " + String(esp_err_to_name(err))).c_str());
-        }
-        JsonDocument doc;
-
-        const auto nvsStats = doc["nvsStats"].to<JsonObject>();
-        nvsStats["usedEntries"] = usedEntries;
-        nvsStats["totalEntries"] = totalEntries;
-        nvsStats["freeEntries"] = freeEntries;
-        const auto systemStats = doc["systemStats"].to<JsonObject>();
-        systemStats["freeHeapSpace"] = ESP.getFreeHeap();
-        systemStats["freeSketchSpace"] = ESP.getFreeSketchSpace();
-        const auto communication = doc["commlink"].to<JsonObject>();
-        communication["mqttBroker"] = commLink.getMqttBroker();
-        communication["mqttConnectionState"] = commLink.getMQTTState();
-        communication["user"] = commLink.getMQTTUser();
-        const auto modbus = doc["modbus"].to<JsonObject>();
-        modbus["registerCount"] = modbusManager.getRegisterCount();
-        auto userConfig = modbusManager.getUserConfig();
-        modbus["communicationMode"] = communicationModesBackwards.at(userConfig.communicationMode);
-        modbus["baudRate"] = userConfig.baudRate;
-
-        String out;
-        const auto payloadSize = serializeJson(doc, out);
-        logger.logDebug(("System Info payload size: " + String(payloadSize)).c_str());
-        logger.logInformation(out.c_str());
-    });
-
-    const auto registerList = MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG_LIST;
-    subscriptionHandler.addHandler(registerList, [](const String &) {
-        const String json = modbusManager.getRegisterConfigurationAsJson();
-        logger.logInformation(json.c_str());
-    });
-
-    const auto addRegister = MQTT_ROOT_TOPIC + SUB_MODBUS_CONFIG_ADD;
-    subscriptionHandler.addHandler(addRegister, [](const String &message) {
-        logger.logInformation("Additional MODBUS register configuration received");
-        modbusManager.updateRegisterConfigurationFromJson(message, false);
-    });
+void setupFs(const Logger * l ) {
+    if (!SPIFFS.begin(true)) {
+        l->logError("setupFs() - An error occurred while mounting SPIFFS");
+        return;
+    }
+    l->logDebug("setupFs() - SPIFFS mounted");
 }
 
 void setup() {
     setupEnvironment();
-    logger.addTarget(&serialLogger);
-    logger.logDebug("setup started");
-    //addSubscriptionHandlers();
-    commLink.begin();
-    mbxServer.begin();
+    logger.addTarget(&serial_logger);
+    // Mirror all app logs to RTC memory so they survive panic resets
+    logger.addTarget(&rtc_mirror_logger);
+    logger.addTarget(&memory_logger);
+    logger.logDebug("setup() - logger initialized");
 
-    //modbusManager.initialize();
+    // If there are retained logs from a previous crash, prepend them now
+    if (RtcLogBuffer::hasData()) {
+        memory_logger.logWarning("Recovered logs from previous session (possible crash):");
+        RtcLogBuffer::drain([](const char *line, void *user) {
+            auto *mem = static_cast<MemoryLogger *>(user);
+            mem->logDebug(line);
+        }, &memory_logger);
+        memory_logger.logWarning("End of recovered logs");
+    }
+
+    // Bridge ESP-IDF logs (WiFi/etc.) into MemoryLogger and RTC buffer
+    EspLogBridge::begin(&memory_logger);
+
+    // Abnormal reset banner for UI visibility
+    switch (esp_reset_reason()) {
+        case ESP_RST_UNKNOWN:
+        case ESP_RST_PANIC:
+        case ESP_RST_INT_WDT:
+        case ESP_RST_TASK_WDT:
+        case ESP_RST_WDT:
+        case ESP_RST_BROWNOUT: {
+            const char *reasonStr =
+                (esp_reset_reason() == ESP_RST_UNKNOWN) ? "Unknown" :
+                (esp_reset_reason() == ESP_RST_PANIC) ? "Panic" :
+                (esp_reset_reason() == ESP_RST_INT_WDT) ? "Interrupt WDT" :
+                (esp_reset_reason() == ESP_RST_TASK_WDT) ? "Task WDT" :
+                (esp_reset_reason() == ESP_RST_WDT) ? "Other WDT" :
+                (esp_reset_reason() == ESP_RST_BROWNOUT) ? "Brownout" : "";
+            String msg = String("=== Abnormal reset detected: ") + reasonStr + " ===";
+            memory_logger.logWarning(msg.c_str());
+            break;
+        }
+        default: break;
+    }
+    setupFs(&logger);
+
+    IndicatorService::instance().begin();
+
+    mqtt_manager.begin();
+    logger.logDebug("setup() - Starting MBX Server");
+    MBXServerHandlers::setMemoryLogger(&memory_logger);
+    MBXServerHandlers::setMqttManager(&mqtt_manager);
+    modbus_manager.setMqttManager(&mqtt_manager);
+    MBXServerHandlers::setModbusManager(&modbus_manager);
+    mbx_server.begin();
+
+    logger.logDebug("setup() - Starting modbus manager");
+    modbus_manager.begin();
+    logger.logDebug("setup() - complete");
 }
 
 void loop() {
-    // mb_manager.readRegisters();
-    // commLink.mqttPublish("log", ("Datapoints available: " + String(numData)).c_str());
+    MBXServer::loop();
+    modbus_manager.loop();
     delay(500);
 }
+

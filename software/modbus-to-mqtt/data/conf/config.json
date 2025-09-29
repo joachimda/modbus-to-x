@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "bus": {
+    "baud": 9600,
+    "serialFormat": "8N1"
+  },
+  "devices": [
+    {
+      "name": "Sunlight",
+      "slaveId": 1,
+      "dataPoints": [
+        {
+          "id": "sunlight.irradiance",
+          "name": "Irradiance",
+          "function": 4,
+          "address": 0,
+          "numOfRegisters": 1,
+          "dataType": "uint16",
+          "scale": 0.1,
+          "unit": "W/m²"
+        },
+        {
+          "id": "sunlight.wind",
+          "name": "wind",
+          "function": 4,
+          "address": 3,
+          "numOfRegisters": 1,
+          "dataType": "uint16",
+          "scale": 0.1,
+          "unit": "m/s"
+        },
+        {
+          "id": "sunlight.t_cell1",
+          "name": "t_cell1",
+          "function": 4,
+          "address": 7,
+          "numOfRegisters": 1,
+          "dataType": "uint16",
+          "scale": 0.1,
+          "unit": "C"
+        },
+        {
+          "id": "sunlight.t_ext_1",
+          "name": "t_ext_1",
+          "function": 4,
+          "address": 8,
+          "numOfRegisters": 1,
+          "dataType": "uint16",
+          "scale": 0.1,
+          "unit": "C"
+        }
+      ]
+    }
+  ]
+}

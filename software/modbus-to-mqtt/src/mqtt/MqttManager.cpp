@@ -119,17 +119,36 @@ void MqttManager::loadMQTTConfig() {
 }
 
 
-auto MqttManager::ensureMQTTConnection() const -> bool {
-    auto clientId = String(mqtt_client_prefix + String(random(RND_SEED), HEX));
+auto MqttManager::ensureMQTTConnection() -> bool {
+    const auto clientId = String(mqtt_client_prefix + String(random(RND_SEED), HEX));
     if (_mqttBroker[0] == '\0' || String(_mqttBroker) == default_mqtt_broker) {
         _logger->logWarning("[MQTT] Broker not configured; skipping connection attempt");
         return false;
     }
     _logger->logInformation(
         (String("Connecting to MQTT broker [") + _mqttBroker + ":" + String(_mqttPort) + "]").c_str());
-    const bool connected = _mqttClient->connect(_clientId.c_str(), _mqttUser, _mqttPassword);
+
+    _clientId = clientId;
+    bool connected = false;
+    const bool hasUser = (_mqttUser[0] != '\0');
+    if (_hasWill && _willTopic.length() && _willMessage.length()) {
+        const char *willTopic = _willTopic.c_str();
+        const char *willMessage = _willMessage.c_str();
+        if (hasUser) {
+            connected = _mqttClient->connect(_clientId.c_str(), _mqttUser, _mqttPassword, willTopic, _willQos, _willRetain, willMessage);
+        } else {
+            connected = _mqttClient->connect(_clientId.c_str(), willTopic, _willQos, _willRetain, willMessage);
+        }
+    } else {
+        if (hasUser) {
+            connected = _mqttClient->connect(_clientId.c_str(), _mqttUser, _mqttPassword);
+        } else {
+            connected = _mqttClient->connect(_clientId.c_str());
+        }
+    }
+
     if (!connected) {
-            _logger->logError(("MQTT connect failed, rc=" + String(_mqttClient->state())).c_str());
+        _logger->logError((String("MQTT connect failed, rc=") + String(_mqttClient->state())).c_str());
     } else {
         IndicatorService::instance().setMqttConnected(true);
     }
@@ -160,7 +179,7 @@ void MqttManager::addSubscriptionHandlers(const String &rootTopic) const {
 }
 
 [[noreturn]] void MqttManager::processMQTTAsync(void *parameter) {
-    const auto *mqtt_manager = static_cast<MqttManager *>(parameter);
+    auto *mqtt_manager = static_cast<MqttManager *>(parameter);
     constexpr TickType_t delayTicks = MQTT_TASK_LOOP_DELAY_MS / portTICK_PERIOD_MS;
     static unsigned long lastReconnectAttempt = 0;
     while (true) {
@@ -210,8 +229,33 @@ bool MqttManager::startMqttTask() {
     return true;
 }
 
-bool MqttManager::mqttPublish(const char *topic, const char *payload) const {
-    return _mqttClient->publish(topic, payload);
+bool MqttManager::mqttPublish(const char *topic, const char *payload, const bool retain) const {
+    if (!_mqttClient) {
+        return false;
+    }
+    return _mqttClient->publish(topic, payload, retain);
+}
+
+void MqttManager::configureWill(const String &topic, const String &payload, const uint8_t qos, const bool retain) {
+    _willTopic = topic;
+    _willTopic.trim();
+    _willMessage = payload;
+    _willMessage.trim();
+    _willQos = qos;
+    _willRetain = retain;
+    _hasWill = _willTopic.length() && _willMessage.length();
+}
+
+void MqttManager::clearWill() {
+    _willTopic.clear();
+    _willMessage.clear();
+    _willQos = 0;
+    _willRetain = false;
+    _hasWill = false;
+}
+
+bool MqttManager::isConnected() const {
+    return _mqttClient->connected();
 }
 
 void MqttManager::onMqttMessage(const String &topic, const uint8_t *payload, const size_t length) const {

@@ -160,7 +160,9 @@
                     <label for="dev-notes"></label><input id="dev-notes" class="full" placeholder="Optional" />
                     <div>Enable MQTT Publish</div>
                     <label for="dev-mqtt"></label><input id="dev-mqtt" type="checkbox" />
-                    <div class="hint" style="grid-column:1 / span 2;">When enabled, datapoints from this device publish to MQTT. Empty datapoint topics fall back to &lt;root-topic&gt;/&lt;deviceId&gt;.&lt;datapointId&gt;.</div>
+                    <div>Enable Home Assistant Discovery</div>
+                    <label for="dev-ha-discovery"></label><input id="dev-ha-discovery" type="checkbox" />
+                    <div class="hint" style="grid-column:1 / span 2;">When enabled, datapoints from this device publish to MQTT. Empty datapoint topics fall back to &lt;root-topic&gt;/&lt;deviceId&gt;/&lt;datapointId&gt;. Enable Home Assistant discovery to publish retained configs for read-only datapoints.</div>
                 </div>
                 <div class="divider"></div>
 
@@ -207,10 +209,24 @@
                     </select>
                     <div>Address</div>
                     <label for="dp-addr"></label>
-                    <input id="dp-addr" type="number" min="0" step="1" />
+                    <div class="addr-input" style="display:flex;align-items:center;gap:0.5rem;">
+                        <input id="dp-addr" type="text" inputmode="text" placeholder="e.g. 16 or 0x10" style="flex:1 1 50%;min-width:10rem;" />
+                        <div class="addr-format" role="radiogroup" aria-label="Address format" style="display:inline-flex;gap:0.5rem;font-size:0.85rem;flex-shrink:0;">
+                            <label style="display:inline-flex;align-items:center;gap:0.25rem;"><input type="radio" name="dp-addr-format" value="dec" checked /> Dec</label>
+                            <label style="display:inline-flex;align-items:center;gap:0.25rem;"><input type="radio" name="dp-addr-format" value="hex" /> Hex</label>
+                        </div>
+                    </div>
                     <div>Length</div>
                     <label for="dp-len"></label>
                     <input id="dp-len" type="number" min="1" step="1" value="1" />
+
+                    <div>Register Slice</div>
+                    <label for="dp-slice"></label>
+                    <select id="dp-slice">
+                        <option value="full">Full register</option>
+                        <option value="low_byte">Low byte</option>
+                        <option value="high_byte">High byte</option>
+                    </select>
 
                     <!-- Data Type -->
                     <div>Data Type</div>

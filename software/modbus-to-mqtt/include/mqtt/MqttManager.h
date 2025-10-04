@@ -15,9 +15,14 @@ public:
 
     auto begin() -> bool;
 
-    auto ensureMQTTConnection() const -> bool;
+    auto ensureMQTTConnection() -> bool;
 
-    auto mqttPublish(const char *topic, const char *payload) const -> bool;
+    auto mqttPublish(const char *topic, const char *payload, bool retain = false) const -> bool;
+
+    void configureWill(const String &topic, const String &payload, uint8_t qos, bool retain);
+    void clearWill();
+
+    auto isConnected() const -> bool;
 
     void onMqttMessage(const String& topic, const uint8_t *payload, size_t length) const;
 
@@ -42,6 +47,8 @@ private:
 
     void loadMQTTConfig();
 
+    void setClientId(String clientId);
+
     char _mqttBroker[150] = "";
     char _mqttPort[6] = "";
     char _mqttUser[32] = "";
@@ -54,6 +61,11 @@ private:
     TaskHandle_t _mqttTaskHandle;
     MqttSubscriptionHandler *_subscriptionHandler;
     Preferences preferences;
+    bool _hasWill{false};
+    String _willTopic;
+    String _willMessage;
+    uint8_t _willQos{0};
+    bool _willRetain{false};
 };
 
 #endif

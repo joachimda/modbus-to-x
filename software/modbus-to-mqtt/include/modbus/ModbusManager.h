@@ -45,8 +45,9 @@ public:
     static String registersToAscii(const uint16_t *buf, uint16_t count);
 
     // Reload /conf/config.json at runtime and reinitialize wiring.
-    // Returns true if new config loaded and bus stays active.
+    // Returns true if the new config is loaded and the bus stays active.
     bool reconfigureFromFile();
+    static uint16_t sliceRegister(uint16_t word, RegisterSlice slice);
 
 private:
     bool readModbusDevice(const ModbusDevice &dev);
@@ -60,6 +61,16 @@ private:
     static const char *functionToString(ModbusFunctionType fn);
 
     void publishDatapoint(const ModbusDevice &device, const ModbusDatapoint &dp, const String &payload) const;
+    String buildDatapointTopic(const ModbusDevice &device, const ModbusDatapoint &dp) const;
+    String buildAvailabilityTopic(const ModbusDevice &device) const;
+    String buildDeviceSegment(const ModbusDevice &device) const;
+    String buildDatapointSegment(const ModbusDatapoint &dp) const;
+    String buildFriendlyName(const ModbusDevice &device, const ModbusDatapoint &dp) const;
+    static bool isReadOnlyFunction(ModbusFunctionType fn);
+    void handleMqttConnected();
+    void handleMqttDisconnected();
+    void publishAvailabilityOnline(ModbusDevice &device) const;
+    void publishHomeAssistantDiscovery(ModbusDevice &device) const;
     static String slugify(const String &text);
 
     std::vector<ModbusDatapoint> _modbusRegisters;
@@ -68,5 +79,6 @@ private:
     Preferences preferences;
     ConfigurationRoot _modbusRoot{};
     MqttManager *_mqtt{nullptr};
+    bool _mqttConnectedLastLoop{false};
 };
 #endif

@@ -443,9 +443,16 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
     if (rxDump.length()) doc["rx_dump"] = rxDump;
     if (outCount > 0) {
         JsonArray raw = doc["result"]["raw"].to<JsonArray>();
-        for (uint16_t i = 0; i < outCount; ++i) raw.add(outBuf[i]);
+        for (uint16_t i = 0; i < outCount; ++i) {
+            (void)raw.add(outBuf[i]);
+        }
         if (dpMeta && dpMeta->dataType == TEXT) {
             doc["result"]["value"] = ModbusManager::registersToAscii(outBuf, outCount);
+        } else if (dpMeta) {
+            const uint16_t rawWord = outCount > 0 ? outBuf[0] : 0;
+            const uint16_t sliced = ModbusManager::sliceRegister(rawWord, dpMeta->registerSlice);
+            const float value = static_cast<float>(sliced) * dpMeta->scale;
+            doc["result"]["value"] = value;
         } else {
             doc["result"]["value"] = outBuf[0];
         }

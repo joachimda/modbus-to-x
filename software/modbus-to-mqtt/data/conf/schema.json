@@ -68,6 +68,10 @@
             "type": "boolean",
             "default": false
           },
+          "homeassistantDiscoveryEnabled": {
+            "type": "boolean",
+            "default": false
+          },
           "dataPoints": {
             "type": "array",
             "minimum": 0,
@@ -126,6 +130,15 @@
                     "uint64",
                     "float32"
                   ]
+                },
+                "registerSlice": {
+                  "type": "string",
+                  "enum": [
+                    "full",
+                    "low_byte",
+                    "high_byte"
+                  ],
+                  "default": "full"
                 },
                 "unit": {
                   "type":"string",

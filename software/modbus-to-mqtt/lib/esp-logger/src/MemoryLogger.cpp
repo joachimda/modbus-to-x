@@ -1,21 +1,64 @@
 #include "MemoryLogger.h"
+#include <Print.h>
+#include <algorithm>
+#include <cstring>
 
-MemoryLogger::MemoryLogger(const size_t maxLines) : _maxLines(maxLines) {}
+namespace {
+class MutexLock {
+public:
+    explicit MutexLock(SemaphoreHandle_t handle) : _handle(handle), _locked(false) {
+        if (_handle) {
+            _locked = xSemaphoreTake(_handle, portMAX_DELAY) == pdTRUE;
+        }
+    }
+
+    ~MutexLock() {
+        if (_locked) {
+            xSemaphoreGive(_handle);
+        }
+    }
+
+    MutexLock(const MutexLock &) = delete;
+    MutexLock &operator=(const MutexLock &) = delete;
+
+    bool locked() const { return _locked; }
+
+private:
+    SemaphoreHandle_t _handle;
+    bool _locked;
+};
+}
+
+MemoryLogger::MemoryLogger(const size_t maxLines) : _maxLines(maxLines) {
+    _mutex = xSemaphoreCreateMutex();
+}
+
+MemoryLogger::~MemoryLogger() {
+    if (_mutex) {
+        vSemaphoreDelete(_mutex);
+        _mutex = nullptr;
+    }
+}
 
 void MemoryLogger::setMaxLines(const size_t n) {
-    portENTER_CRITICAL(&_mux);
+    MutexLock lock(_mutex);
+    if (!lock.locked()) {
+        _maxLines = n > 0 ? n : 1;
+        return;
+    }
+
     _maxLines = n > 0 ? n : 1;
     if (_lines.size() > _maxLines) {
         _lines.erase(_lines.begin(), _lines.begin() + (_lines.size() - _maxLines));
     }
-    portEXIT_CRITICAL(&_mux);
 }
 
 size_t MemoryLogger::size() const {
-    portENTER_CRITICAL(&this->_mux);
-    const size_t s = _lines.size();
-    portEXIT_CRITICAL(&this->_mux);
-    return s;
+    MutexLock lock(_mutex);
+    if (!lock.locked()) {
+        return 0;
+    }
+    return _lines.size();
 }
 
 void MemoryLogger::append(const char *level, const char *message) {
@@ -27,12 +70,14 @@ void MemoryLogger::append(const char *level, const char *message) {
     line += " ";
     line += message;
 
-    portENTER_CRITICAL(&_mux);
+    MutexLock lock(_mutex);
+    if (!lock.locked()) {
+        return;
+    }
     _lines.emplace_back(line);
     if (_lines.size() > _maxLines) {
         _lines.erase(_lines.begin(), _lines.begin() + (_lines.size() - _maxLines));
     }
-    portEXIT_CRITICAL(&_mux);
 }
 
 void MemoryLogger::logError(const char *message) { append("[ERROR]", message); }
@@ -53,18 +98,95 @@ String MemoryLogger::ts() {
 
 String MemoryLogger::toText() const {
     String out;
-    portENTER_CRITICAL(&this->_mux);
+    MutexLock lock(_mutex);
+    if (!lock.locked()) {
+        return out;
+    }
     for (size_t i = 0; i < _lines.size(); ++i) {
         out += _lines[i];
         if (i + 1 < _lines.size()) out += '\n';
     }
-    portEXIT_CRITICAL(&this->_mux);
     return out;
 }
 
 std::vector<String> MemoryLogger::lines() const {
-    portENTER_CRITICAL(&this->_mux);
-    std::vector<String> copy = _lines;
-    portEXIT_CRITICAL(&this->_mux);
+    std::vector<String> copy;
+    MutexLock lock(_mutex);
+    if (!lock.locked()) {
+        return copy;
+    }
+    copy = _lines;
     return copy;
+}
+
+void MemoryLogger::streamTo(Print &out) const {
+    MutexLock lock(_mutex);
+    if (!lock.locked()) {
+        return;
+    }
+
+    for (const auto &line : _lines) {
+        out.print(line);
+        out.print('\n');
+    }
+}
+
+size_t MemoryLogger::flattenedSize() const {
+    MutexLock lock(_mutex);
+    if (!lock.locked()) {
+        return 0;
+    }
+    size_t total = 0;
+    for (size_t i = 0; i < _lines.size(); ++i) {
+        total += _lines[i].length();
+        if (i + 1 < _lines.size()) {
+            ++total; // newline
+        }
+    }
+    return total;
+}
+
+size_t MemoryLogger::copyAsText(size_t offset, uint8_t *dest, size_t maxLen) const {
+    if (!dest || maxLen == 0) {
+        return 0;
+    }
+
+    MutexLock lock(_mutex);
+    if (!lock.locked()) {
+        return 0;
+    }
+
+    size_t written = 0;
+    size_t cursor = 0;
+    const size_t count = _lines.size();
+
+    for (size_t i = 0; i < count && written < maxLen; ++i) {
+        const String &line = _lines[i];
+        const size_t lineLen = line.length();
+
+        if (offset < cursor + lineLen) {
+            const size_t start = (offset > cursor) ? (offset - cursor) : 0;
+            const size_t remaining = lineLen - start;
+            const size_t toCopy = std::min(remaining, maxLen - written);
+            if (toCopy > 0) {
+                memcpy(dest + written, line.c_str() + start, toCopy);
+                written += toCopy;
+            }
+        }
+
+        cursor += lineLen;
+        if (written >= maxLen) {
+            break;
+        }
+
+        const bool hasNewline = (i + 1 < count);
+        if (hasNewline && written < maxLen) {
+            if (offset <= cursor && offset < cursor + 1) {
+                dest[written++] = '\n';
+            }
+            cursor += 1;
+        }
+    }
+
+    return written;
 }

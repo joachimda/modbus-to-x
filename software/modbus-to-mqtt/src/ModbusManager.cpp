@@ -997,7 +997,7 @@ void ModbusManager::publishHomeAssistantDiscovery(ModbusDevice &device) const {
         const String datapointSegment = buildDatapointSegment(dp);
         String discoveryTopic = String("homeassistant/sensor/") + deviceSegment + "/" + datapointSegment + "/config";
 
-        StaticJsonDocument<768> doc;
+        JsonDocument doc;
         doc["name"] = buildFriendlyName(device, dp);
         const String uniqueId = deviceSegment + "_" + datapointSegment;
         doc["unique_id"] = uniqueId;
@@ -1013,8 +1013,8 @@ void ModbusManager::publishHomeAssistantDiscovery(ModbusDevice &device) const {
         doc["payload_available"] = "online";
         doc["payload_not_available"] = "offline";
 
-        JsonObject deviceObj = doc["device"].to<JsonObject>();
-        JsonArray identifiers = deviceObj["identifiers"].to<JsonArray>();
+        auto deviceObj = doc["device"].to<JsonObject>();
+        auto identifiers = deviceObj["identifiers"].to<JsonArray>();
         identifiers.add(deviceIdentifier);
         deviceObj["name"] = device.name.length() ? device.name : deviceSegment;
 

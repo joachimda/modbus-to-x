@@ -6216,7 +6216,7 @@
 		(uuid "ff10d5fa-90f8-4f57-8d87-f973141fe9b1")
 	)
 	(label "TX_{2}"
-		(at 213.36 125.73 180)
+		(at 210.185 131.445 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6656,7 +6656,7 @@
 		(uuid "e7dce445-4d52-41fb-8523-528177c1c6b0")
 	)
 	(label "RX_{2}"
-		(at 213.36 119.38 180)
+		(at 210.185 125.095 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -9893,7 +9893,7 @@
 	)
 	(symbol
 		(lib_id "KEYSTONE_5029:5029")
-		(at 218.44 125.73 0)
+		(at 215.265 131.445 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -9902,7 +9902,7 @@
 		(fields_autoplaced yes)
 		(uuid "897e66a2-6984-46b4-b1d3-80e5242d60fa")
 		(property "Reference" "TX2_TP2"
-			(at 220.98 124.4599 0)
+			(at 217.805 130.1749 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9911,7 +9911,7 @@
 			)
 		)
 		(property "Value" "5029"
-			(at 220.98 126.9999 0)
+			(at 217.805 132.7149 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9921,7 +9921,7 @@
 			)
 		)
 		(property "Footprint" "project_footprints:KEYSTONE_5029"
-			(at 218.44 125.73 0)
+			(at 215.265 131.445 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9931,7 +9931,7 @@
 			)
 		)
 		(property "Datasheet" "https://www.keyelco.com/product-pdf.cfm?p=1358"
-			(at 218.44 125.73 0)
+			(at 215.265 131.445 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9940,7 +9940,7 @@
 			)
 		)
 		(property "Description" "PC Test Point, Miniature Phosphor Bronze Silver Plating Surface Mount Mounting Type"
-			(at 218.44 125.73 0)
+			(at 215.265 131.445 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9949,7 +9949,7 @@
 			)
 		)
 		(property "PartNo" "5029"
-			(at 218.44 125.73 0)
+			(at 215.265 131.445 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11700,7 +11700,7 @@
 	)
 	(symbol
 		(lib_id "KEYSTONE_5029:5029")
-		(at 218.44 119.38 0)
+		(at 215.265 125.095 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -11709,7 +11709,7 @@
 		(fields_autoplaced yes)
 		(uuid "d77e7cdb-9a24-49ea-8595-2d6cf7046150")
 		(property "Reference" "RX2_TP1"
-			(at 220.98 118.1099 0)
+			(at 217.805 123.8249 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11718,7 +11718,7 @@
 			)
 		)
 		(property "Value" "5029"
-			(at 220.98 120.6499 0)
+			(at 217.805 126.3649 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11728,7 +11728,7 @@
 			)
 		)
 		(property "Footprint" "project_footprints:KEYSTONE_5029"
-			(at 218.44 119.38 0)
+			(at 215.265 125.095 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11738,7 +11738,7 @@
 			)
 		)
 		(property "Datasheet" "https://www.keyelco.com/product-pdf.cfm?p=1358"
-			(at 218.44 119.38 0)
+			(at 215.265 125.095 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11747,7 +11747,7 @@
 			)
 		)
 		(property "Description" "PC Test Point, Miniature Phosphor Bronze Silver Plating Surface Mount Mounting Type"
-			(at 218.44 119.38 0)
+			(at 215.265 125.095 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11756,7 +11756,7 @@
 			)
 		)
 		(property "PartNo" "5029"
-			(at 218.44 119.38 0)
+			(at 215.265 125.095 0)
 			(effects
 				(font
 					(size 1.27 1.27)

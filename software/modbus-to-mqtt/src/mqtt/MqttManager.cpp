@@ -2,23 +2,31 @@
 
 #include "Config.h"
 #include "ESPAsyncWebServer.h"
+#include <cstdio>
 #include <atomic>
 #include "services/IndicatorService.h"
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
 #include <WiFi.h>
+#include <esp_system.h>
 
 static std::atomic<bool> s_mqttEnabled{false};
 static MqttManager *s_activeMqttManager = nullptr;
 static  String mqtt_client_prefix = "MBX_CLIENT-";
 static constexpr auto MQTT_TASK_STACK = 4096;
 static constexpr auto MQTT_TASK_LOOP_DELAY_MS = 100;
-static constexpr auto RND_SEED = 0xffff;
 static constexpr auto default_mqtt_broker = "0.0.0.0";
 static constexpr auto default_mqtt_port = "1883";
 static constexpr auto default_mqtt_root_topic = "mbx_root";
 static const String system_subscription_network_reset = "/system/network/reset";
 static const String system_subscription_echo = "/system/log/echo";
+static String buildDefaultClientId() {
+    const uint64_t mac = ESP.getEfuseMac();
+    char buf[13];
+    snprintf(buf, sizeof(buf), "%012llX", static_cast<unsigned long long>(mac));
+    return mqtt_client_prefix + String(buf);
+}
+
 
 MqttManager::MqttManager(MqttSubscriptionHandler *subscriptionHandler, PubSubClient *mqttClient, Logger *logger)
     : _mqttClient(mqttClient),
@@ -120,7 +128,6 @@ void MqttManager::loadMQTTConfig() {
 
 
 auto MqttManager::ensureMQTTConnection() -> bool {
-    const auto clientId = String(mqtt_client_prefix + String(random(RND_SEED), HEX));
     if (_mqttBroker[0] == '\0' || String(_mqttBroker) == default_mqtt_broker) {
         _logger->logWarning("[MQTT] Broker not configured; skipping connection attempt");
         return false;
@@ -128,6 +135,10 @@ auto MqttManager::ensureMQTTConnection() -> bool {
     _logger->logInformation(
         (String("Connecting to MQTT broker [") + _mqttBroker + ":" + String(_mqttPort) + "]").c_str());
 
+    String clientId = _clientId;
+    if (!clientId.length()) {
+        clientId = buildDefaultClientId();
+    }
     _clientId = clientId;
     bool connected = false;
     const bool hasUser = (_mqttUser[0] != '\0');
@@ -339,4 +350,13 @@ void MqttManager::reconfigureFromFile() {
             _logger->logError("[MQTT] Reconfigure failed to connect");
         }
     }
+}
+
+void MqttManager::setClientId(String clientId) {
+    clientId.trim();
+    if (!clientId.length()) {
+        _clientId.clear();
+        return;
+    }
+    _clientId = clientId;
 }

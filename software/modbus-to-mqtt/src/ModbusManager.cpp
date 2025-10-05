@@ -373,37 +373,38 @@ void ModbusManager::initializeWiring() const {
 }
 
 void ModbusManager::loop() {
-    if (BUS_ACTIVE.load(std::memory_order_acquire)) {
-        const bool mqttConnectedNow = (_mqtt != nullptr) && _mqtt->isConnected();
-        if (mqttConnectedNow && !_mqttConnectedLastLoop) {
-            handleMqttConnected();
-        } else if (!mqttConnectedNow && _mqttConnectedLastLoop) {
-            handleMqttDisconnected();
-        }
-        _mqttConnectedLastLoop = mqttConnectedNow;
+    const bool mqttConnectedNow = (_mqtt != nullptr) && _mqtt->isConnected();
+    if (mqttConnectedNow && !_mqttConnectedLastLoop) {
+        handleMqttConnected();
+    } else if (!mqttConnectedNow && _mqttConnectedLastLoop) {
+        handleMqttDisconnected();
+    }
+    _mqttConnectedLastLoop = mqttConnectedNow;
 
-        bool anySuccess = false;
-        bool anyAttempted = false;
-
-        const uint32_t now = millis();
-        for (auto &dev: _modbusRoot.devices) {
-            // Check if any datapoint on this device is due
-            bool due = false;
-            for (const auto &dp: dev.datapoints) {
-                if (dp.pollIntervalMs == 0 || now >= dp.nextDueAtMs) { due = true; break; }
-            }
-            if (!due) continue;
-            anyAttempted = true;
-            anySuccess = readModbusDevice(dev) || anySuccess;
-        }
-        if (anyAttempted) {
-            IndicatorService::instance().setModbusConnected(anySuccess);
-        }
-        if (!anySuccess) {
-        }
-    } else {
+    if (!BUS_ACTIVE.load(std::memory_order_acquire)) {
         _logger->logDebug("ModbusManager::loop - INACTIVE Entry");
         IndicatorService::instance().setModbusConnected(false);
+        return;
+    }
+
+    bool anySuccess = false;
+    bool anyAttempted = false;
+
+    const uint32_t now = millis();
+    for (auto &dev: _modbusRoot.devices) {
+        // Check if any datapoint on this device is due
+        bool due = false;
+        for (const auto &dp: dev.datapoints) {
+            if (dp.pollIntervalMs == 0 || now >= dp.nextDueAtMs) { due = true; break; }
+        }
+        if (!due) continue;
+        anyAttempted = true;
+        anySuccess = readModbusDevice(dev) || anySuccess;
+    }
+    if (anyAttempted) {
+        IndicatorService::instance().setModbusConnected(anySuccess);
+    }
+    if (!anySuccess) {
     }
 }
 
@@ -732,7 +733,6 @@ String ModbusManager::registersToAscii(const uint16_t *buf, const uint16_t count
     }
     return out;
 }
-
 
 void ModbusManager::publishDatapoint(const ModbusDevice &device, const ModbusDatapoint &dp, const String &payload) const {
     if (!device.mqttEnabled || !_mqtt) {

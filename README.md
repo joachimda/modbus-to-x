@@ -18,9 +18,6 @@ An ESP32-based hardware and firmware stack that bridges RS-485/Modbus field devi
 - [Project Structure](#project-structure)
   - [Hardware Documentation](#hardware-documentation)
   - [Software Documentation](#software-documentation)
-- [Contributing](#contributing)
-- [Roadmap](#roadmap)
-- [License](#license)
 - [Acknowledgements](#acknowledgements)
 
 ## Overview

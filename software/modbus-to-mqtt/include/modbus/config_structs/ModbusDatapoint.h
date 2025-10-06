@@ -7,6 +7,12 @@
 #include <Arduino.h>
 #include "ModbusFunctionType.h"
 
+enum class RegisterSlice : uint8_t {
+    Full = 0,
+    LowByte,
+    HighByte
+};
+
 struct ModbusDatapoint {
     String id;
     String name;
@@ -17,6 +23,7 @@ struct ModbusDatapoint {
     ModbusDataType dataType;
     String unit;
     String topic;
+    RegisterSlice registerSlice{RegisterSlice::Full};
     // Optional poll interval in milliseconds (0 = every loop)
     uint32_t pollIntervalMs{0};
     // Runtime scheduling: next time this datapoint is due (millis())

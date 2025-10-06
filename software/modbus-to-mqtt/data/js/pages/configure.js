@@ -12,6 +12,7 @@ let selection = { kind: "bus", deviceId: null, datapointId: null };
 * * Mapping helpers between UI model and schema model
 * * */
 const SERIAL_FORMATS = new Set(["7N1","7N2","7O1","7O2","7E1","7E2","8N1","8N2","8E1","8E2","8O1","8O2"]);
+const REGISTER_SLICES = new Set(["full","low_byte","high_byte"]);
 function toSerialParts(fmt) {
     const def = { data_bits: 8, parity: "N", stop_bits: 1 };
     if (!fmt || typeof fmt !== "string" || fmt.length < 3) return def;
@@ -50,20 +51,27 @@ function schemaToUi(json) {
         slaveId: Number(d.slaveId) || 1,
         notes: (typeof d.notes === "string") ? d.notes : "",
         mqttEnabled: Boolean(d.mqttEnabled),
-        datapoints: Array.isArray(d.dataPoints) ? d.dataPoints.map((p) => ({
-            id: p.id,
-            name: p.name,
-            func: Number(p.function ?? 3),
-            address: Number(p.address) || 0,
-            length: Number(p.numOfRegisters ?? 1) || 1,
-            type: String(p.dataType || "uint16"),
-            scale: Number(p.scale ?? 1) || 1,
-            unit: (typeof p.unit === "string") ? p.unit : "",
-            topic: (typeof p.topic === "string") ? p.topic.trim() : "",
-            poll_secs: (Number.isFinite(Number(p?.poll_interval))
-                ? Number(p.poll_interval)
-                : (Number.isFinite(Number(p?.poll_interval_ms)) ? Math.round(Number(p.poll_interval_ms)/1000) : 0))
-        })) : []
+        homeassistantDiscoveryEnabled: Boolean(d.homeassistantDiscoveryEnabled),
+        datapoints: Array.isArray(d.dataPoints) ? d.dataPoints.map((p) => {
+            const rawAddress = p.address;
+            const inferredFormat = (typeof rawAddress === "string" && /^0x/i.test(rawAddress.trim())) ? "hex" : "dec";
+            return {
+                id: p.id,
+                name: p.name,
+                func: Number(p.function ?? 3),
+                address: toModbusAddress(rawAddress),
+                addrFormat: inferredFormat,
+                slice: normalizeRegisterSlice(p.registerSlice),
+                length: Number(p.numOfRegisters ?? 1) || 1,
+                type: String(p.dataType || "uint16"),
+                scale: Number(p.scale ?? 1) || 1,
+                unit: (typeof p.unit === "string") ? p.unit : "",
+                topic: (typeof p.topic === "string") ? p.topic.trim() : "",
+                poll_secs: (Number.isFinite(Number(p?.poll_interval))
+                    ? Number(p.poll_interval)
+                    : (Number.isFinite(Number(p?.poll_interval_ms)) ? Math.round(Number(p.poll_interval_ms)/1000) : 0))
+            };
+        }) : []
     }));
 
     return { buses: [ bus ] };
@@ -88,13 +96,17 @@ function uiToSchema(uiModel) {
             if (d.mqttEnabled) {
                 device.mqttEnabled = true;
             }
+            if (d.homeassistantDiscoveryEnabled) {
+                device.homeassistantDiscoveryEnabled = true;
+            }
             device.dataPoints = (d.datapoints || []).map(p => {
                 const topic = (typeof p.topic === "string") ? p.topic.trim() : "";
+                const slice = normalizeRegisterSlice(p.slice);
                 const dp = {
                     id: p.id,
                     name: p.name,
                     function: Number(p.func) || 3,
-                    address: Number(p.address) || 0,
+                    address: toModbusAddress(p.address),
                     numOfRegisters: Number(p.length) || 1,
                     dataType: String(p.type || "uint16"),
                     scale: Number(p.scale ?? 1) || 1,
@@ -104,6 +116,9 @@ function uiToSchema(uiModel) {
                         precision: Number(p.precision)
                     } : {})
                 };
+                if (slice !== "full") {
+                    dp.registerSlice = slice;
+                }
                 if (topic.length) {
                     dp.topic = topic;
                 }
@@ -127,7 +142,6 @@ function validateSchemaConfig(cfg) {
             errors.push(`Invalid serialFormat ${cfg.bus.serialFormat}`);
         }
     }
-    // devices
     for (const [i,d] of (cfg.devices||[]).entries()) {
         if (!d.name) {
             errors.push(`Device #${i+1}: name required`);
@@ -142,12 +156,21 @@ function validateSchemaConfig(cfg) {
         if (d.mqttEnabled != null && typeof d.mqttEnabled !== "boolean") {
             errors.push(`Device ${d.name||i+1}: mqttEnabled must be boolean`);
         }
+        if (d.homeassistantDiscoveryEnabled != null && typeof d.homeassistantDiscoveryEnabled !== "boolean") {
+            errors.push(`Device ${d.name||i+1}: homeassistantDiscoveryEnabled must be boolean`);
+        }
         for (const [j,p] of (d.dataPoints||[]).entries()) {
             if (!p.name) {
                 errors.push(`Datapoint #${j+1} on ${d.name}: name required`);
             }
             if (!p.id) {
                 errors.push(`Datapoint ${p.name||j+1} on ${d.name}: id required`);
+            }
+            if (p.registerSlice != null && !REGISTER_SLICES.has(String(p.registerSlice))) {
+                errors.push(`Datapoint ${p.id}: registerSlice invalid`);
+            }
+            if (p.registerSlice && p.registerSlice !== "full" && Number(p.numOfRegisters) !== 1) {
+                errors.push(`Datapoint ${p.id}: registerSlice requires numOfRegisters = 1`);
             }
             if (!Number.isInteger(p.function) || p.function < 1 || p.function > 6) {
                 errors.push(`Datapoint ${p.id}: function 1-6`);
@@ -346,6 +369,8 @@ function addDatapointToCurrentDevice() {
         id: unique, name,
         func: 3,
         address: 0,
+        addrFormat: "dec",
+        slice: "full",
         length: 1,
         type: "uint16",
         scale: 1,
@@ -400,6 +425,11 @@ function showDeviceEditor() {
         mqttToggle.checked = Boolean(device.mqttEnabled);
     }
 
+    const haToggle = $("#dev-ha-discovery");
+        if (haToggle) {
+        haToggle.checked = Boolean(device.homeassistantDiscoveryEnabled);
+    }
+
     renderDeviceDatapointTable(device);
 
     $("#btn-dev-save").onclick = () => {
@@ -408,6 +438,9 @@ function showDeviceEditor() {
         device.notes = $("#dev-notes").value.trim();
         if (mqttToggle) {
             device.mqttEnabled = mqttToggle.checked;
+        }
+        if (haToggle) {
+            device.homeassistantDiscoveryEnabled = haToggle.checked;
         }
         buildTree();
         toast("Device updated (draft)");
@@ -468,7 +501,20 @@ function showDatapointEditor() {
     $("#dp-name").value = datapoint.name || "";
     $("#dp-autoid").textContent = datapoint.id || "—";
     $("#dp-func").value = datapoint.func || 3;
-    $("#dp-addr").value = datapoint.address ?? 0;
+    const addrInput = $("#dp-addr");
+    const addrFormatInputs = document.querySelectorAll('input[name="dp-addr-format"]');
+    let currentAddressFormat = datapoint.addrFormat === "hex" ? "hex" : "dec";
+    datapoint.addrFormat = currentAddressFormat;
+    const setAddressPlaceholder = () => {
+        addrInput.placeholder = currentAddressFormat === "hex" ? "e.g. 0x10" : "e.g. 16";
+    };
+    addrFormatInputs.forEach(input => {
+        input.checked = input.value === currentAddressFormat;
+    });
+    addrInput.value = addressInputValue(datapoint.address, currentAddressFormat);
+    datapoint.addrFormat = currentAddressFormat;
+    $("#dp-slice").value = datapoint.slice || "full";
+    setAddressPlaceholder();
     $("#dp-len").value = datapoint.length ?? 1;
     $("#dp-type").value = datapoint.type || "uint16";
     $("#dp-scale").value = datapoint.scale ?? 1;
@@ -486,6 +532,25 @@ function showDatapointEditor() {
     updateTestValueVisibility();
     $("#dp-func").onchange = updateTestValueVisibility;
 
+    const updateAddressField = (num) => {
+        const sanitized = Number.isInteger(num) && num >= 0 ? num : 0;
+        addrInput.value = addressInputValue(sanitized, currentAddressFormat);
+    };
+    addrFormatInputs.forEach(input => {
+        input.onchange = () => {
+            if (!input.checked) return;
+            const prevFormat = currentAddressFormat;
+            const parsed = parseAddressInput(addrInput.value, prevFormat);
+            const fallback = Number.isInteger(parsed) && parsed >= 0
+                ? parsed
+                : (Number.isInteger(datapoint.address) ? datapoint.address : 0);
+            currentAddressFormat = input.value === "hex" ? "hex" : "dec";
+            datapoint.addrFormat = currentAddressFormat;
+            updateAddressField(fallback);
+            setAddressPlaceholder();
+        };
+    });
+
     $("#btn-dp-save").onclick = () => {
         const newDevId = $("#dp-device").value;
         const name = $("#dp-name").value.trim();
@@ -499,7 +564,14 @@ function showDatapointEditor() {
         // content
         datapoint.name = name || "datapoint";
         datapoint.func = Number($("#dp-func").value);
-        datapoint.address = Number($("#dp-addr").value);
+        const parsedAddress = parseAddressInput(addrInput.value, currentAddressFormat);
+        if (!Number.isInteger(parsedAddress) || parsedAddress < 0) {
+            const fmtLabel = currentAddressFormat === "hex" ? "hex" : "decimal";
+            alert(`Address must be a valid non-negative ${fmtLabel} value.`);
+            return;
+        }
+        datapoint.address = parsedAddress;
+        datapoint.slice = normalizeRegisterSlice($("#dp-slice").value);
         datapoint.length = Number($("#dp-len").value);
         datapoint.type = $("#dp-type").value;
         datapoint.scale = Number($("#dp-scale").value);
@@ -547,7 +619,7 @@ function showDatapointEditor() {
     // Test command (read/write based on selected function)
     $("#btn-dp-test-read").onclick = async () => {
         const func = Number($("#dp-func").value);
-        const addr = Number($("#dp-addr").value);
+        const addr = parseAddressInput(addrInput.value, currentAddressFormat);
         const len = Number($("#dp-len").value);
         const writeVal = $("#dp-test-value").value.trim();
 
@@ -577,13 +649,8 @@ function showDatapointEditor() {
             const r = await safeJson(`${API.POST_MODBUS_EXECUTE}?${q.toString()}`, { method: 'POST' });
             const raw = r?.result?.raw;
             const value = (r?.result && (r.result.value ?? r.result?.raw?.[0])) ?? r.value ?? '(n/a)';
-            const scale = Number($("#dp-scale").value);
-            const numVal = Number(value);
-            const scaled = (Number.isFinite(numVal) && Number.isFinite(scale) && scale !== 1)
-                ? (numVal * scale)
-                : value;
 
-            let msg = `OK: ${scaled} ${datapoint.unit || ""}`;
+            let msg = `OK: ${value} ${datapoint.unit || ""}`;
             if (Array.isArray(raw)) {
                 msg += ` raw=[${raw.join(', ')}]`;
             }
@@ -613,6 +680,70 @@ const dpIdFrom = (deviceName, dpName) => `${slug(deviceName)}.${slug(dpName)}`;
 const getBus = () => model.buses[0];
 const getDevice = (did) => (getBus()?.devices || []).find(d => d.id === did);
 const getDatapoint = (did, pid) => (getDevice(did)?.datapoints || []).find(p => p.id === pid);
+
+function parseAddressInput(value, format) {
+    const raw = (value ?? "").toString().trim();
+    if (!raw.length) return NaN;
+
+    const targetFormat = format === "hex" ? "hex" : (format === "dec" ? "dec" : null);
+    if (targetFormat === "hex") {
+        const noPrefix = raw.replace(/^0x/i, "");
+        return /^[0-9a-f]+$/i.test(noPrefix) ? parseInt(noPrefix, 16) : NaN;
+    }
+    if (targetFormat === "dec") {
+        return /^[0-9]+$/.test(raw) ? Number(raw) : NaN;
+    }
+
+    if (/^0x[0-9a-f]+$/i.test(raw)) {
+        return parseInt(raw, 16);
+    }
+    if (/^[0-9]+$/.test(raw)) {
+        return Number(raw);
+    }
+    if (/^[0-9a-f]+$/i.test(raw)) {
+        return parseInt(raw, 16);
+    }
+
+    const num = Number(raw);
+    return Number.isFinite(num) ? Math.trunc(num) : NaN;
+}
+function addressInputValue(value, format = "dec") {
+    const parsedValue = Number.isFinite(Number(value)) ? Number(value) : parseAddressInput(value, format);
+    if (!Number.isInteger(parsedValue) || parsedValue < 0) {
+        return "";
+    }
+    const intVal = Math.trunc(parsedValue);
+    return format === "hex"
+        ? `0x${intVal.toString(16)}`
+        : String(intVal);
+}
+function toModbusAddress(value) {
+    const parsed = parseAddressInput(value);
+    return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function normalizeRegisterSlice(value) {
+    const raw = (value ?? "full").toString().trim().toLowerCase();
+    if (raw === "full_register") {
+        return "full";
+    }
+    if (raw === "1") {
+        return "low_byte";
+    }
+    if (raw === "2") {
+        return "high_byte";
+    }
+    if (REGISTER_SLICES.has(raw)) {
+        return raw;
+    }
+    if (raw === "low" || raw === "lowbyte") {
+        return "low_byte";
+    }
+    if (raw === "high" || raw === "highbyte") {
+        return "high_byte";
+    }
+    return "full";
+}
 
 function toast(msg) {
     console.log(msg);
@@ -691,7 +822,7 @@ $('#btn-add-device').onclick = () => {
     const b = getBus();
     const id = `dev_${Date.now()}`;
     b.devices = b.devices || [];
-    b.devices.push({ id, name: "device", slaveId: 1, notes: "", mqttEnabled: false, datapoints: [] });
+    b.devices.push({ id, name: "device", slaveId: 1, notes: "", mqttEnabled: false, homeassistantDiscoveryEnabled: false, datapoints: [] });
     selection = {
         kind:"device", deviceId:id, datapointId:null
     };

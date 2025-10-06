@@ -4,11 +4,16 @@
 
 #include <Arduino.h>
 #include <vector>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include "LoggerInterface.h"
+
+class Print;
 
 class MemoryLogger final : public LoggerInterface {
 public:
     explicit MemoryLogger(size_t maxLines = 200);
+    ~MemoryLogger();
 
     void logError(const char *message) override;
     void logInformation(const char *message) override;
@@ -19,12 +24,15 @@ public:
     size_t size() const;
     String toText() const;
     std::vector<String> lines() const;
+    void streamTo(Print &out) const;
+    size_t flattenedSize() const;
+    size_t copyAsText(size_t offset, uint8_t *dest, size_t maxLen) const;
 
 private:
     void append(const char* level, const char* message);
     static String ts();
 
-    mutable portMUX_TYPE _mux = portMUX_INITIALIZER_UNLOCKED ;
+    mutable SemaphoreHandle_t _mutex = nullptr;
     size_t _maxLines;
     std::vector<String> _lines;
 };

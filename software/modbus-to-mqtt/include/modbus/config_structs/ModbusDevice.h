@@ -10,6 +10,9 @@ struct ModbusDevice {
     String name;
     uint8_t slaveId;
     bool mqttEnabled{false};
+    bool homeassistantDiscoveryEnabled{false};
+    bool haAvailabilityOnlinePublished{false};
+    bool haDiscoveryPublished{false};
     std::vector<ModbusDatapoint> datapoints;
 };
 

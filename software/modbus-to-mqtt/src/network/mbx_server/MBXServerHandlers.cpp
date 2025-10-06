@@ -339,14 +339,24 @@ void MBXServerHandlers::getSystemStats(AsyncWebServerRequest *req, const Logger 
 
 void MBXServerHandlers::getLogs(AsyncWebServerRequest *req) {
     if (auto *mem = g_memlog.load(std::memory_order_acquire)) {
-        // Stream logs to avoid large temporary String allocations
-        auto *stream = req->beginResponseStream("text/plain; charset=utf-8");
-        const auto copy = mem->lines();
-        for (const auto &line : copy) {
-            stream->print(line);
-            stream->print('\n');
-        }
-        req->send(stream);
+        constexpr size_t MAX_LOG_BYTES = 8192;
+        const size_t totalSize = mem->flattenedSize();
+        const size_t offset = (totalSize > MAX_LOG_BYTES) ? (totalSize - MAX_LOG_BYTES) : 0;
+        const size_t payloadSize = totalSize - offset;
+
+        auto filler = [mem, offset, payloadSize](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+            if (index >= payloadSize || maxLen == 0) {
+                return 0;
+            }
+            const size_t remaining = payloadSize - index;
+            const size_t chunk = (remaining < maxLen) ? remaining : maxLen;
+            return mem->copyAsText(offset + index, buffer, chunk);
+        };
+
+        auto *response = req->beginResponse("text/plain; charset=utf-8", payloadSize, filler);
+        response->addHeader("Cache-Control", "no-store");
+        response->addHeader("X-Log-Truncated", offset > 0 ? "true" : "false");
+        req->send(response);
     } else {
         req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::PLAIN_TEXT, "logging buffer unavailable");
     }
@@ -443,9 +453,16 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
     if (rxDump.length()) doc["rx_dump"] = rxDump;
     if (outCount > 0) {
         JsonArray raw = doc["result"]["raw"].to<JsonArray>();
-        for (uint16_t i = 0; i < outCount; ++i) raw.add(outBuf[i]);
+        for (uint16_t i = 0; i < outCount; ++i) {
+            (void)raw.add(outBuf[i]);
+        }
         if (dpMeta && dpMeta->dataType == TEXT) {
             doc["result"]["value"] = ModbusManager::registersToAscii(outBuf, outCount);
+        } else if (dpMeta) {
+            const uint16_t rawWord = outCount > 0 ? outBuf[0] : 0;
+            const uint16_t sliced = ModbusManager::sliceRegister(rawWord, dpMeta->registerSlice);
+            const float value = static_cast<float>(sliced) * dpMeta->scale;
+            doc["result"]["value"] = value;
         } else {
             doc["result"]["value"] = outBuf[0];
         }

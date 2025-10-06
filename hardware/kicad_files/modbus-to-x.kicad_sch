@@ -4778,7 +4778,7 @@
 		(uuid "066ed1a7-060d-49c0-ab30-31a349aefdef")
 	)
 	(junction
-		(at 120.65 43.18)
+		(at 112.395 43.18)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "09aca418-09e5-45fe-9d7c-6ac610a4155b")
@@ -4820,7 +4820,7 @@
 		(uuid "35563def-4e67-4b4e-90e8-502dec680958")
 	)
 	(junction
-		(at 114.3 43.18)
+		(at 106.045 43.18)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "591a9988-3ff2-424d-bc37-041ceba236b1")
@@ -4904,7 +4904,7 @@
 		(uuid "9cf5b7a5-a148-45de-89c4-5e888330824e")
 	)
 	(junction
-		(at 121.92 43.18)
+		(at 113.665 43.18)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "9d95c516-29fe-4b5a-9bb2-f4b086f773c5")
@@ -4970,7 +4970,7 @@
 		(uuid "c603d061-ac23-4055-9717-ffcb052371bb")
 	)
 	(junction
-		(at 107.95 43.18)
+		(at 99.695 43.18)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "cbdb6170-43aa-4579-b1dc-2631a5f91566")
@@ -5000,7 +5000,7 @@
 		(uuid "e62b6ffb-3eb4-4ace-82bf-470b9d59aaad")
 	)
 	(junction
-		(at 114.3 53.34)
+		(at 106.045 53.34)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "ebede2a9-fe12-4cfb-a3b9-ce6ef13d3c4f")
@@ -5157,7 +5157,7 @@
 	)
 	(wire
 		(pts
-			(xy 114.3 53.34) (xy 114.3 50.8)
+			(xy 106.045 53.34) (xy 106.045 50.8)
 		)
 		(stroke
 			(width 0)
@@ -5217,7 +5217,7 @@
 	)
 	(wire
 		(pts
-			(xy 92.71 43.18) (xy 107.95 43.18)
+			(xy 92.71 43.18) (xy 99.695 43.18)
 		)
 		(stroke
 			(width 0)
@@ -5267,7 +5267,7 @@
 	)
 	(wire
 		(pts
-			(xy 107.95 43.18) (xy 114.3 43.18)
+			(xy 99.695 43.18) (xy 106.045 43.18)
 		)
 		(stroke
 			(width 0)
@@ -5387,7 +5387,7 @@
 	)
 	(wire
 		(pts
-			(xy 121.92 43.18) (xy 120.65 43.18)
+			(xy 113.665 43.18) (xy 112.395 43.18)
 		)
 		(stroke
 			(width 0)
@@ -5507,7 +5507,7 @@
 	)
 	(wire
 		(pts
-			(xy 125.73 43.18) (xy 121.92 43.18)
+			(xy 117.475 43.18) (xy 113.665 43.18)
 		)
 		(stroke
 			(width 0)
@@ -5547,7 +5547,7 @@
 	)
 	(wire
 		(pts
-			(xy 114.3 53.34) (xy 120.65 53.34)
+			(xy 106.045 53.34) (xy 112.395 53.34)
 		)
 		(stroke
 			(width 0)
@@ -5597,7 +5597,7 @@
 	)
 	(wire
 		(pts
-			(xy 120.65 43.18) (xy 114.3 43.18)
+			(xy 112.395 43.18) (xy 106.045 43.18)
 		)
 		(stroke
 			(width 0)
@@ -5657,7 +5657,7 @@
 	)
 	(wire
 		(pts
-			(xy 107.95 53.34) (xy 107.95 50.8)
+			(xy 99.695 53.34) (xy 99.695 50.8)
 		)
 		(stroke
 			(width 0)
@@ -5807,7 +5807,7 @@
 	)
 	(wire
 		(pts
-			(xy 107.95 53.34) (xy 114.3 53.34)
+			(xy 99.695 53.34) (xy 106.045 53.34)
 		)
 		(stroke
 			(width 0)
@@ -6167,7 +6167,7 @@
 	)
 	(wire
 		(pts
-			(xy 120.65 53.34) (xy 120.65 50.8)
+			(xy 112.395 53.34) (xy 112.395 50.8)
 		)
 		(stroke
 			(width 0)
@@ -6216,7 +6216,7 @@
 		(uuid "ff10d5fa-90f8-4f57-8d87-f973141fe9b1")
 	)
 	(label "TX_{2}"
-		(at 213.36 125.73 180)
+		(at 210.185 131.445 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6656,7 +6656,7 @@
 		(uuid "e7dce445-4d52-41fb-8523-528177c1c6b0")
 	)
 	(label "RX_{2}"
-		(at 213.36 119.38 180)
+		(at 210.185 125.095 180)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -6698,7 +6698,7 @@
 	(symbol
 		(lib_name "C_1")
 		(lib_id "Device:C")
-		(at 107.95 46.99 180)
+		(at 99.695 46.99 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -6706,7 +6706,7 @@
 		(dnp no)
 		(uuid "00807d2d-e99e-430e-91ed-8119d13d9ffb")
 		(property "Reference" "C27"
-			(at 107.696 44.958 0)
+			(at 99.441 44.958 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6715,7 +6715,7 @@
 			)
 		)
 		(property "Value" "22uF"
-			(at 113.03 49.53 0)
+			(at 104.775 49.53 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6724,7 +6724,7 @@
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric_Pad1.08x0.95mm_HandSolder"
-			(at 106.9848 43.18 0)
+			(at 98.7298 43.18 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6733,7 +6733,7 @@
 			)
 		)
 		(property "Datasheet" "https://search.murata.co.jp/Ceramy/image/img/A01X/G101/ENG/GRM188R60J226MEA0-01.pdf"
-			(at 107.95 46.99 0)
+			(at 99.695 46.99 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6742,7 +6742,7 @@
 			)
 		)
 		(property "Description" "22 µF ±20% 6.3V Ceramic Capacitor X5R 0603 (1608 Metric)"
-			(at 107.95 46.99 0)
+			(at 99.695 46.99 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6751,7 +6751,7 @@
 			)
 		)
 		(property "FriendlyName" "Cout22uf"
-			(at 110.236 45.72 0)
+			(at 101.981 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6761,7 +6761,7 @@
 			)
 		)
 		(property "Voltage" "6.3V"
-			(at 110.236 51.816 0)
+			(at 101.981 51.816 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6769,7 +6769,7 @@
 			)
 		)
 		(property "PartNo" "CL21A226MOCLRNC"
-			(at 107.95 46.99 0)
+			(at 99.695 46.99 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8749,7 +8749,7 @@
 	)
 	(symbol
 		(lib_id "power:GND")
-		(at 114.3 53.34 0)
+		(at 106.045 53.34 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -8758,7 +8758,7 @@
 		(fields_autoplaced yes)
 		(uuid "4848fbb3-0bbf-4113-9579-bcff2de26a56")
 		(property "Reference" "#PWR01"
-			(at 114.3 59.69 0)
+			(at 106.045 59.69 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8767,7 +8767,7 @@
 			)
 		)
 		(property "Value" "GND"
-			(at 114.3 58.42 0)
+			(at 106.045 58.42 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8775,7 +8775,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 114.3 53.34 0)
+			(at 106.045 53.34 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8784,7 +8784,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 114.3 53.34 0)
+			(at 106.045 53.34 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8793,7 +8793,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 114.3 53.34 0)
+			(at 106.045 53.34 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8977,7 +8977,7 @@
 	)
 	(symbol
 		(lib_id "KEYSTONE_5029:5029")
-		(at 121.92 38.1 90)
+		(at 113.665 38.1 90)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom no)
@@ -8985,7 +8985,7 @@
 		(dnp no)
 		(uuid "529e9b0d-da69-49b1-9f12-0d4a974bf3af")
 		(property "Reference" "VOUT_TP1"
-			(at 125.857 35.052 90)
+			(at 117.602 35.052 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8994,7 +8994,7 @@
 			)
 		)
 		(property "Value" "5029"
-			(at 123.1899 35.56 0)
+			(at 114.9349 35.56 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9004,7 +9004,7 @@
 			)
 		)
 		(property "Footprint" "project_footprints:KEYSTONE_5029"
-			(at 121.92 38.1 0)
+			(at 113.665 38.1 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9014,7 +9014,7 @@
 			)
 		)
 		(property "Datasheet" "https://www.keyelco.com/product-pdf.cfm?p=1358"
-			(at 121.92 38.1 0)
+			(at 113.665 38.1 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9023,7 +9023,7 @@
 			)
 		)
 		(property "Description" "PC Test Point, Miniature Phosphor Bronze Silver Plating Surface Mount Mounting Type"
-			(at 121.92 38.1 0)
+			(at 113.665 38.1 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9343,7 +9343,7 @@
 	(symbol
 		(lib_name "C_1")
 		(lib_id "Device:C")
-		(at 114.3 46.99 180)
+		(at 106.045 46.99 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -9351,7 +9351,7 @@
 		(dnp no)
 		(uuid "71b99ca8-159a-48e2-aa11-d3a8b091dfda")
 		(property "Reference" "C28"
-			(at 114.046 44.958 0)
+			(at 105.791 44.958 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9360,7 +9360,7 @@
 			)
 		)
 		(property "Value" "22uF"
-			(at 119.38 49.53 0)
+			(at 111.125 49.53 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9369,7 +9369,7 @@
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric_Pad1.08x0.95mm_HandSolder"
-			(at 113.3348 43.18 0)
+			(at 105.0798 43.18 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9378,7 +9378,7 @@
 			)
 		)
 		(property "Datasheet" "https://search.murata.co.jp/Ceramy/image/img/A01X/G101/ENG/GRM188R60J226MEA0-01.pdf"
-			(at 114.3 46.99 0)
+			(at 106.045 46.99 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9387,7 +9387,7 @@
 			)
 		)
 		(property "Description" "22 µF ±20% 6.3V Ceramic Capacitor X5R 0603 (1608 Metric)"
-			(at 114.3 46.99 0)
+			(at 106.045 46.99 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9396,7 +9396,7 @@
 			)
 		)
 		(property "FriendlyName" "Cout22uf"
-			(at 116.586 45.72 0)
+			(at 108.331 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9406,7 +9406,7 @@
 			)
 		)
 		(property "Voltage" "6.3V"
-			(at 116.586 51.816 0)
+			(at 108.331 51.816 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9414,7 +9414,7 @@
 			)
 		)
 		(property "PartNo" "CL21A226MOCLRNC"
-			(at 114.3 46.99 0)
+			(at 106.045 46.99 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9893,7 +9893,7 @@
 	)
 	(symbol
 		(lib_id "KEYSTONE_5029:5029")
-		(at 218.44 125.73 0)
+		(at 215.265 131.445 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -9902,7 +9902,7 @@
 		(fields_autoplaced yes)
 		(uuid "897e66a2-6984-46b4-b1d3-80e5242d60fa")
 		(property "Reference" "TX2_TP2"
-			(at 220.98 124.4599 0)
+			(at 217.805 130.1749 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9911,7 +9911,7 @@
 			)
 		)
 		(property "Value" "5029"
-			(at 220.98 126.9999 0)
+			(at 217.805 132.7149 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9921,7 +9921,7 @@
 			)
 		)
 		(property "Footprint" "project_footprints:KEYSTONE_5029"
-			(at 218.44 125.73 0)
+			(at 215.265 131.445 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9931,7 +9931,7 @@
 			)
 		)
 		(property "Datasheet" "https://www.keyelco.com/product-pdf.cfm?p=1358"
-			(at 218.44 125.73 0)
+			(at 215.265 131.445 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9940,7 +9940,7 @@
 			)
 		)
 		(property "Description" "PC Test Point, Miniature Phosphor Bronze Silver Plating Surface Mount Mounting Type"
-			(at 218.44 125.73 0)
+			(at 215.265 131.445 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9949,7 +9949,7 @@
 			)
 		)
 		(property "PartNo" "5029"
-			(at 218.44 125.73 0)
+			(at 215.265 131.445 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10961,7 +10961,7 @@
 	(symbol
 		(lib_name "C_1")
 		(lib_id "Device:C")
-		(at 120.65 46.99 180)
+		(at 112.395 46.99 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -10969,7 +10969,7 @@
 		(dnp no)
 		(uuid "be35d18b-3851-44a6-9094-1721b0ca9e67")
 		(property "Reference" "C29"
-			(at 120.396 44.958 0)
+			(at 112.141 44.958 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10978,7 +10978,7 @@
 			)
 		)
 		(property "Value" "22uF"
-			(at 125.73 49.53 0)
+			(at 117.475 49.53 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10987,7 +10987,7 @@
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric_Pad1.08x0.95mm_HandSolder"
-			(at 119.6848 43.18 0)
+			(at 111.4298 43.18 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10996,7 +10996,7 @@
 			)
 		)
 		(property "Datasheet" "https://search.murata.co.jp/Ceramy/image/img/A01X/G101/ENG/GRM188R60J226MEA0-01.pdf"
-			(at 120.65 46.99 0)
+			(at 112.395 46.99 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11005,7 +11005,7 @@
 			)
 		)
 		(property "Description" "22 µF ±20% 6.3V Ceramic Capacitor X5R 0603 (1608 Metric)"
-			(at 120.65 46.99 0)
+			(at 112.395 46.99 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11014,7 +11014,7 @@
 			)
 		)
 		(property "FriendlyName" "Cout22uf"
-			(at 122.936 45.72 0)
+			(at 114.681 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11024,7 +11024,7 @@
 			)
 		)
 		(property "Voltage" "6.3V"
-			(at 122.936 51.816 0)
+			(at 114.681 51.816 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11032,7 +11032,7 @@
 			)
 		)
 		(property "PartNo" "CL21A226MOCLRNC"
-			(at 120.65 46.99 0)
+			(at 112.395 46.99 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11635,7 +11635,7 @@
 	)
 	(symbol
 		(lib_id "power:VDD")
-		(at 125.73 43.18 270)
+		(at 117.475 43.18 270)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -11643,7 +11643,7 @@
 		(dnp no)
 		(uuid "d5075a39-b4ac-4ae3-a3cf-f6e3fd3231f2")
 		(property "Reference" "#PWR033"
-			(at 121.92 43.18 0)
+			(at 113.665 43.18 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11652,7 +11652,7 @@
 			)
 		)
 		(property "Value" "VDD33"
-			(at 125.857 41.148 90)
+			(at 117.602 41.148 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11660,7 +11660,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 125.73 43.18 0)
+			(at 117.475 43.18 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11669,7 +11669,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 125.73 43.18 0)
+			(at 117.475 43.18 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11678,7 +11678,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"VDD\""
-			(at 125.73 43.18 0)
+			(at 117.475 43.18 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11700,7 +11700,7 @@
 	)
 	(symbol
 		(lib_id "KEYSTONE_5029:5029")
-		(at 218.44 119.38 0)
+		(at 215.265 125.095 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -11709,7 +11709,7 @@
 		(fields_autoplaced yes)
 		(uuid "d77e7cdb-9a24-49ea-8595-2d6cf7046150")
 		(property "Reference" "RX2_TP1"
-			(at 220.98 118.1099 0)
+			(at 217.805 123.8249 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11718,7 +11718,7 @@
 			)
 		)
 		(property "Value" "5029"
-			(at 220.98 120.6499 0)
+			(at 217.805 126.3649 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11728,7 +11728,7 @@
 			)
 		)
 		(property "Footprint" "project_footprints:KEYSTONE_5029"
-			(at 218.44 119.38 0)
+			(at 215.265 125.095 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11738,7 +11738,7 @@
 			)
 		)
 		(property "Datasheet" "https://www.keyelco.com/product-pdf.cfm?p=1358"
-			(at 218.44 119.38 0)
+			(at 215.265 125.095 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11747,7 +11747,7 @@
 			)
 		)
 		(property "Description" "PC Test Point, Miniature Phosphor Bronze Silver Plating Surface Mount Mounting Type"
-			(at 218.44 119.38 0)
+			(at 215.265 125.095 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11756,7 +11756,7 @@
 			)
 		)
 		(property "PartNo" "5029"
-			(at 218.44 119.38 0)
+			(at 215.265 125.095 0)
 			(effects
 				(font
 					(size 1.27 1.27)

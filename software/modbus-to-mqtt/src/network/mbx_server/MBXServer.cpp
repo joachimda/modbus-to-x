@@ -40,7 +40,7 @@ void MBXServer::begin() const {
         configureAccessPointRoutes();
         server->begin();
         IndicatorService::instance().setPortalMode(true);
-        // Disable MQTT while portal is active to avoid transient connects
+        // Disable MQTT while the portal is active to avoid transient connects
         MqttManager::setMQTTEnabled(false);
         portal.begin();
     }
@@ -56,25 +56,23 @@ void MBXServer::loop() {
 }
 
 void MBXServer::configureRoutes() const {
-    _logger->logDebug("MBXServer::configureRoutes - begin");
     server->serveStatic("/", SPIFFS, Routes::ROOT)
             .setDefaultFile("index.html")
             .setCacheControl("no-store");
 
     server->on(Routes::CONFIGURE, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
-        req->send(SPIFFS, "/pages/configure.html", HttpMediaTypes::HTML);
+        req->send(SPIFFS, "/pages/configure_modbus.html", HttpMediaTypes::HTML);
     });
-
 
     server->on("/__stream/index", HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         streamSPIFFSFileChunked(req, "/index.html", HttpMediaTypes::HTML);
     });
 
-    server->on(Routes::PUT_MODBUS_CONFIG, HTTP_PUT, [this](AsyncWebServerRequest *req) {
+    server->on(Routes::PUT_MODBUS_CONFIG, HTTP_PUT, [this](const AsyncWebServerRequest *req) {
         logRequest(req);
-    }, nullptr,[](AsyncWebServerRequest *req, uint8_t *data, size_t len, size_t index, size_t total) {
+    }, nullptr,[](AsyncWebServerRequest *req, const uint8_t *data, const size_t len, const size_t index, const size_t total) {
         MBXServerHandlers::handlePutModbusConfigBody(req, data, len, index, total);
     });
 
@@ -83,15 +81,15 @@ void MBXServer::configureRoutes() const {
         serveSPIFFSFile(req, "/conf/config.json", nullptr, HttpMediaTypes::JSON, _logger);
     });
 
-    server->on(Routes::PUT_MQTT_CONFIG, HTTP_PUT, [this](AsyncWebServerRequest *req) {
+    server->on(Routes::PUT_MQTT_CONFIG, HTTP_PUT, [this](const AsyncWebServerRequest *req) {
         logRequest(req);
-    }, nullptr,[](AsyncWebServerRequest *req, uint8_t *data, size_t len, size_t index, size_t total) {
+    }, nullptr,[](AsyncWebServerRequest *req, const uint8_t *data, const size_t len, const size_t index, const size_t total) {
         MBXServerHandlers::handlePutMqttConfigBody(req, data, len, index, total);
     });
 
-    server->on(Routes::PUT_MQTT_SECRET, HTTP_POST, [this](AsyncWebServerRequest *req) {
+    server->on(Routes::PUT_MQTT_SECRET, HTTP_POST, [this](const AsyncWebServerRequest *req) {
         logRequest(req);
-    }, nullptr,[](AsyncWebServerRequest *req, uint8_t *data, size_t len, size_t index, size_t total) {
+    }, nullptr,[](AsyncWebServerRequest *req, const uint8_t *data, const size_t len, const size_t index, const size_t total) {
         MBXServerHandlers::handlePutMqttSecretBody(req, data, len, index, total);
     });
 
@@ -138,19 +136,17 @@ void MBXServer::configureRoutes() const {
     server->on(Routes::OTA_FILESYSTEM, HTTP_POST, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); }
-    }, [this](AsyncWebServerRequest *req, const String &fn, const size_t index, uint8_t *data, const size_t len, bool final) {
+    }, [this](AsyncWebServerRequest *req, const String &fn, const size_t index, uint8_t *data, const size_t len, const bool final) {
         MBXServerHandlers::handleOtaFilesystemUpload(req, fn, index, data, len, final, _logger);
     });
     server->onNotFound([this](AsyncWebServerRequest *req) {
         logRequest(req);
         req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT, "I haz no file");
     });
-    server->on(Routes::DEVICE_RESET, HTTP_POST, [this](AsyncWebServerRequest *req) {
+    server->on(Routes::DEVICE_RESET, HTTP_POST, [this](const AsyncWebServerRequest *req) {
         logRequest(req);
         MBXServerHandlers::handleDeviceReset(_logger);
     });
-
-    _logger->logDebug("MBXServer::configureRoutes - end");
 }
 
 void MBXServer::configureAccessPointRoutes() const {
@@ -269,6 +265,7 @@ void MBXServer::logRequest(const AsyncWebServerRequest *request) const {
 void MBXServer::ensureConfigFile() const {
     if (!SPIFFS.exists("/conf/config.json")) {
         _logger->logWarning("MBXServer::ensureConfigFile - Config file not found. Creating new one");
+
         File file = SPIFFS.open("/conf/config.json", FILE_WRITE);
         if (!file) {
             return;
@@ -277,11 +274,12 @@ void MBXServer::ensureConfigFile() const {
         file.print("{}");
         file.close();
     }
+
     if (!SPIFFS.exists("/conf/mqtt.json")) {
         _logger->logWarning("MBXServer::ensureConfigFile - MQTT config file not found. Creating new one");
         File file = SPIFFS.open("/conf/mqtt.json", FILE_WRITE);
         if (file) {
-            file.print("{\"broker_ip\":\"0.0.0.0\",\"broker_url\":\"\",\"broker_port\":\"1883\",\"user\":\"\",\"root_topic\":\"mbx_root\"}");
+            file.print(R"({"broker_ip":"0.0.0.0","broker_url":"","broker_port":"1883","user":"","root_topic":"mbx_root"})");
             file.close();
         }
     }

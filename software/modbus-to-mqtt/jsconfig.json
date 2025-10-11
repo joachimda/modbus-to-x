@@ -4,7 +4,8 @@
     "paths": {
       "app": ["data/js/app.js"],
       "index": ["data/js/index.js"],
-      "configure": ["data/js/configure_v2.js"],
+      "configure_modbus": ["data/js/configure_modbus.js"],
+      "configure_mqtt": ["data/js/configure_mqtt.js"],
       "styles": ["data/style.css"]
     },
     "module": "esnext",

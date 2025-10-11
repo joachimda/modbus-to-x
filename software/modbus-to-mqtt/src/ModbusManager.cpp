@@ -13,6 +13,7 @@
 #include "services/IndicatorService.h"
 
 static std::atomic<bool> BUS_ACTIVE{false};
+static std::atomic<uint32_t> BUS_ERROR_COUNT{0};
 static const std::map<String, uint32_t> communicationModes = {
     {"8N1", SERIAL_8N1},
     {"8N2", SERIAL_8N2},
@@ -504,6 +505,7 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
                                ", slave=" + String(dev.slaveId) +
                                ", bus=" + String(_modbusRoot.bus.baud) + "," + _modbusRoot.bus.serialFormat +
                                ", code=" + String(result) + " (" + statusToString(result) + ")" + rxDump).c_str());
+            incrementBusErrorCount();
         }
         // Schedule next read regardless of success to avoid hammering bus
         if (dp.pollIntervalMs > 0) {
@@ -597,6 +599,10 @@ auto ModbusManager::sliceRegister(uint16_t word, RegisterSlice slice) -> uint16_
     }
 }
 
+const ConfigurationRoot & ModbusManager::getConfiguration() const {
+    return _modbusRoot;
+}
+
 uint8_t ModbusManager::executeCommand(uint8_t slaveId,
                                       const int function,
                                       const uint16_t addr,
@@ -682,6 +688,10 @@ uint8_t ModbusManager::executeCommand(uint8_t slaveId,
 
     if (g_teeSerial1) {
         rxDump = g_teeSerial1->dumpHex();
+    }
+
+    if (status != ModbusMaster::ku8MBSuccess) {
+        incrementBusErrorCount();
     }
 
     g_modbusBusy.store(false, std::memory_order_release);
@@ -820,7 +830,7 @@ String ModbusManager::buildAvailabilityTopic(const ModbusDevice &device) const {
     return topic;
 }
 
-String ModbusManager::buildDeviceSegment(const ModbusDevice &device) const {
+String ModbusManager::buildDeviceSegment(const ModbusDevice &device) {
     String deviceName = device.name;
     deviceName.trim();
     String segment = slugify(deviceName);
@@ -838,7 +848,7 @@ String ModbusManager::buildDeviceSegment(const ModbusDevice &device) const {
     return segment;
 }
 
-String ModbusManager::buildDatapointSegment(const ModbusDatapoint &dp) const {
+String ModbusManager::buildDatapointSegment(const ModbusDatapoint &dp) {
     String dpName = dp.name;
     dpName.trim();
     String segment = slugify(dpName);
@@ -1038,7 +1048,7 @@ String ModbusManager::slugify(const String &text) {
     out.reserve(text.length());
     bool lastUnderscore = false;
     for (size_t i = 0; i < text.length(); ++i) {
-        const unsigned char raw = static_cast<unsigned char>(text[i]);
+        const auto raw = static_cast<unsigned char>(text[i]);
         if (std::isalnum(raw)) {
             const char lower = static_cast<char>(std::tolower(raw));
             out += lower;
@@ -1052,8 +1062,16 @@ String ModbusManager::slugify(const String &text) {
         out.remove(out.length() - 1);
     }
     if (out.length() == 0U) {
-        return String("device");
+        return {"device"};
     }
     return out;
 }
 
+void ModbusManager::incrementBusErrorCount() const {
+    BUS_ERROR_COUNT.fetch_add(1, std::memory_order_relaxed);
+    _logger->logDebug(("Total errors: " + String(getBusErrorCount())).c_str());
+}
+
+uint32_t ModbusManager::getBusErrorCount() {
+    return BUS_ERROR_COUNT.load(std::memory_order_relaxed);
+}

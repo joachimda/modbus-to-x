@@ -82,7 +82,7 @@ async function render() {
         kv("Broker", sys.broker || "—"),
         kv("Client ID", sys.clientId || "—"),
         kv("Last publish", sys.lastPublishIso || "—"),
-        kv("Errors", sys.errorCount ?? 0),
+        kv("Errors", sys.mqttErrorCount ?? "—"),
     ].join("");
 
     // Modbus card
@@ -90,9 +90,8 @@ async function render() {
         kv("Buses", sys.buses ?? "—"),
         kv("Devices", sys.devices ?? "—"),
         kv("Datapoints", sys.datapoints ?? "—"),
-        kv("Poll interval", sys.pollIntervalMs ? `${sys.pollIntervalMs} ms` : "—"),
         kv("Last poll", sys.lastPollIso || "—"),
-        kv("Errors", sys.errorCount ?? 0),
+        kv("Errors", sys.modbusErrorCount ?? "—"),
     ].join("");
 
     // Storage card

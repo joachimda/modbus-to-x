@@ -2,6 +2,8 @@
 
 #include <SPIFFS.h>
 #include <WiFi.h>
+
+#include "Modbus/ModbusManager.h"
 #include "network/mbx_server/MBXServerHandlers.h"
 
 #ifndef FW_VERSION
@@ -76,19 +78,30 @@ JsonDocument StatService::appendMQTTStats(JsonDocument &document) {
     const bool connected = (link && link->getMQTTState() == 0);
     document["mqttConnected"] = connected;
     document["broker"] = link ? String(link->getMqttBroker()) : "N/A";
-    document["clientId"] = "N/A";
+    document["clientId"] = link ? link->getClientId() : "N/A";
     document["lastPublishIso"] = "N/A";
-    document["errorCount"] = 0;
+    document["mqttErrorCount"] = 0;
     return document;
 }
 
 JsonDocument StatService::appendModbusStats(JsonDocument &document) {
+    const ModbusManager *modbusManager = MBXServerHandlers::getModbusManager();
+
+    if (modbusManager == nullptr) {
+        return document;
+    }
+
+    const auto config = modbusManager->getConfiguration();
+
     document["buses"] = 1;
-    document["devices"] = 0;
-    document["datapoints"] = 0;
-    document["pollIntervalMs"] = 0;
+    document["devices"] =  config.devices.size();
+    size_t totalDatapoints = 0;
+    for (const auto &dev : config.devices) {
+        totalDatapoints += dev.datapoints.size();
+    }
+    document["datapoints"] = totalDatapoints;
     document["lastPollIso"] = "";
-    document["errorCount"] = 0;
+    document["modbusErrorCount"] = ModbusManager::getBusErrorCount();
     return document;
 }
 

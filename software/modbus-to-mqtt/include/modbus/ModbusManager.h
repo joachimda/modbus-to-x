@@ -16,6 +16,8 @@ public:
 
     bool begin();
 
+    bool loadConfiguration();
+
     void initializeWiring() const;
 
     void loop();
@@ -38,21 +40,29 @@ public:
                            String &rxDump);
 
     uint8_t findSlaveIdByDatapointId(const String &dpId) const;
+
     const ModbusDatapoint *findDatapointById(const String &dpId, const ModbusDevice **outDevice = nullptr) const;
+
     void setMqttManager(MqttManager *mqtt);
 
     static const char *statusToString(uint8_t code);
+
     static String registersToAscii(const uint16_t *buf, uint16_t count);
 
     // Reload /conf/config.json at runtime and reinitialize wiring.
     // Returns true if the new config is loaded and the bus stays active.
     bool reconfigureFromFile();
+
     static uint16_t sliceRegister(uint16_t word, RegisterSlice slice);
+
+    const ConfigurationRoot &getConfiguration() const;
+
+    static uint32_t getBusErrorCount();
 
 private:
     bool readModbusDevice(const ModbusDevice &dev);
 
-    bool loadConfiguration();
+    void incrementBusErrorCount() const;
 
     static void preTransmissionHandler();
 
@@ -61,16 +71,27 @@ private:
     static const char *functionToString(ModbusFunctionType fn);
 
     void publishDatapoint(const ModbusDevice &device, const ModbusDatapoint &dp, const String &payload) const;
+
     String buildDatapointTopic(const ModbusDevice &device, const ModbusDatapoint &dp) const;
+
     String buildAvailabilityTopic(const ModbusDevice &device) const;
-    String buildDeviceSegment(const ModbusDevice &device) const;
-    String buildDatapointSegment(const ModbusDatapoint &dp) const;
+
+    static String buildDeviceSegment(const ModbusDevice &device);
+
+    static String buildDatapointSegment(const ModbusDatapoint &dp);
+
     String buildFriendlyName(const ModbusDevice &device, const ModbusDatapoint &dp) const;
+
     static bool isReadOnlyFunction(ModbusFunctionType fn);
+
     void handleMqttConnected();
+
     void handleMqttDisconnected();
+
     void publishAvailabilityOnline(ModbusDevice &device) const;
+
     void publishHomeAssistantDiscovery(ModbusDevice &device) const;
+
     static String slugify(const String &text);
 
     std::vector<ModbusDatapoint> _modbusRegisters;

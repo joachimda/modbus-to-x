@@ -40,6 +40,8 @@ public:
 
     static void setMemoryLogger(MemoryLogger *mem);
 
+    static void handleCaptivePortalRedirect(AsyncWebServerRequest *req);
+
     static void setMqttManager(MqttManager *mqttManager);
 
     static MqttManager *getMqttManager();

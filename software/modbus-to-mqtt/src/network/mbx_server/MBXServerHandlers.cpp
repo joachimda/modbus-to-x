@@ -9,6 +9,7 @@
 
 #include "constants/HttpMediaTypes.h"
 #include "constants/HttpResponseCodes.h"
+#include "constants/Routes.h"
 #include "network/NetworkPortal.h"
 #include "services/StatService.h"
 #include "services/OtaService.h"
@@ -80,6 +81,22 @@ void MBXServerHandlers::setPortal(NetworkPortal *portal) {
 
 void MBXServerHandlers::setMemoryLogger(MemoryLogger *mem) {
     g_memlog.store(mem, std::memory_order_release);
+}
+
+void MBXServerHandlers::handleCaptivePortalRedirect(AsyncWebServerRequest *req) {
+    const IPAddress apIp = WiFi.softAPIP();
+    const String target = String("http://") + apIp.toString() + Routes::ROOT;
+    String html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\">";
+    html += R"(<meta http-equiv="refresh" content="0; url=)" + target + "\">";
+    html += "<title>Configuration Portal</title></head><body>";
+    html += "<p>Redirecting to <a href=\"" + target + "\">configuration portal</a>...</p>";
+    html += "</body></html>";
+
+    auto *response = req->beginResponse(HttpResponseCodes::OK, HttpMediaTypes::HTML, html);
+    response->addHeader("Cache-Control", "no-store");
+    response->addHeader("Pragma", "no-cache");
+    response->addHeader("Location", target);
+    req->send(response);
 }
 
 void MBXServerHandlers::setMqttManager(MqttManager *mqttManager) {

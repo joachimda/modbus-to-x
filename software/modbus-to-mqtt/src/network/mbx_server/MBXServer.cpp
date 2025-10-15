@@ -16,12 +16,23 @@ static constexpr auto WIFI_CONNECT_DELAY_MS = 100;
 static constexpr auto WIFI_CONNECT_TIMEOUT = 30000;
 static WifiConnectionController g_wifi;
 
+static const char *const CAPTIVE_PORTAL_ENDPOINTS[] = {
+    "/generate_204",
+    "/gen_204",
+    "/hotspot-detect.html",
+    "/library/test/success.html",
+    "/connecttest.txt",
+    "/connecttest",
+    "/ncsi.txt",
+    "/redirect",
+    "/success.txt",
+};
+
 MBXServer::MBXServer(AsyncWebServer *server, DNSServer *dnsServer, Logger *logger) : _logger(logger), server(server),
     _dnsServer(dnsServer) {
 }
 
 void MBXServer::begin() const {
-    _logger->logDebug("MBXServer::begin - begin");
     ensureConfigFile();
     if (tryConnectWithStoredCreds()) {
         configureRoutes();
@@ -43,8 +54,6 @@ void MBXServer::begin() const {
         MqttManager::setMQTTEnabled(false);
         portal.begin();
     }
-
-    _logger->logDebug("MBXServer::begin - end");
 }
 
 void MBXServer::loop() {
@@ -147,8 +156,6 @@ void MBXServer::configureRoutes() const {
 }
 
 void MBXServer::configureAccessPointRoutes() const {
-    _logger->logDebug("MBXServer::configureAccessPointRoutes - begin");
-
     server->serveStatic("/", SPIFFS, "/")
             .setDefaultFile("/pages/configure_network.html")
             .setCacheControl("no-store");
@@ -202,7 +209,16 @@ void MBXServer::configureAccessPointRoutes() const {
     }, [this](AsyncWebServerRequest *req, const String &fn, const size_t index, uint8_t *data, const size_t len, const bool final) {
         MBXServerHandlers::handleOtaFilesystemUpload(req, fn, index, data, len, final, _logger);
     });
-    _logger->logDebug("MBXServer::configureAccessPointRoutes - end");
+
+    for (const char *path : CAPTIVE_PORTAL_ENDPOINTS) {
+        server->on(path, HTTP_ANY, [](AsyncWebServerRequest *req) {
+            MBXServerHandlers::handleCaptivePortalRedirect(req);
+        });
+    }
+
+    server->onNotFound([](AsyncWebServerRequest *req) {
+        MBXServerHandlers::handleCaptivePortalRedirect(req);
+    });
 }
 
 auto MBXServer::accessPointFilter(AsyncWebServerRequest *request) -> bool {
@@ -212,8 +228,6 @@ auto MBXServer::accessPointFilter(AsyncWebServerRequest *request) -> bool {
 }
 
 auto MBXServer::tryConnectWithStoredCreds() const -> bool {
-    _logger->logDebug("MBXServer::tryConnectWithStoredCreds - begin");
-
     if (WiFiClass::getMode() != WIFI_MODE_STA) {
         WiFiClass::mode(WIFI_MODE_STA);
         delay(300);
@@ -241,10 +255,8 @@ void MBXServer::serveSPIFFSFile(AsyncWebServerRequest *reqPtr, const char *path,
         logger->logDebug(("Serving file: " + String(path)).c_str());
         reqPtr->send(SPIFFS, path, contentType);
         if (onServed) {
-            reqPtr->onDisconnect([onServed, logger]() {
-                logger->logDebug("Calling onServed (deferred)");
+            reqPtr->onDisconnect([onServed] {
                 onServed();
-                logger->logDebug("onServed called (deferred)");
             });
         }
     } else {

@@ -1,4 +1,4 @@
-import {API, safeGet} from "app";
+import {API, safeGet, reboot} from "app";
 
 window.initIndex = async function initIndex() {
     $("#btn-reboot").addEventListener("click", reboot);
@@ -146,22 +146,6 @@ async function fetchLogs(forceScroll) {
         }
     } catch (e) {
         el.textContent = `Error loading logs: ${e.message}`;
-    }
-}
-
-async function reboot() {
-    if (!confirm("Reboot the device now?")) return;
-    try {
-        const r = await fetch(API.POST_SYSTEM_RESET, { method: "POST" });
-        if (r.ok) {
-            alert("Rebooting… The page will try to reconnect automatically.");
-            // Optional: try to reload after a short pause
-            setTimeout(() => location.reload(), 5000);
-        } else {
-            alert("Reboot request failed.");
-        }
-    } catch (e) {
-        alert("Reboot request failed: " + e.message);
     }
 }
 

@@ -9,6 +9,7 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <esp_system.h>
+#include <esp_wifi.h>
 
 static std::atomic<bool> s_mqttEnabled{false};
 static MqttManager *s_activeMqttManager = nullptr;

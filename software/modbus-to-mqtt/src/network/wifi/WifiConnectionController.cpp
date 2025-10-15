@@ -40,8 +40,6 @@ bool WifiConnectionController::connect(const String &ssid, const String &pass, c
         if (_status.state == WifiConnectionState::Connecting) {
             return false;
         }
-
-        Serial.println("WiFiConnectController::connect called");
         _status = {};
         _status.state = WifiConnectionState::Connecting;
         _status.ssid = ssid;
@@ -52,7 +50,6 @@ bool WifiConnectionController::connect(const String &ssid, const String &pass, c
         setApChannelIfNeeded(channel);
 
         if (static_config.any()) {
-            Serial.println("WiFiConnectController::connect - Using static config");
 
             IPAddress ip, gw, mask, dns1, dns2;
             if (!ip.fromString(static_config.ip) || !gw.fromString(static_config.gateway) || !mask.fromString(static_config.subnet)) {
@@ -67,7 +64,6 @@ bool WifiConnectionController::connect(const String &ssid, const String &pass, c
             }
             WiFi.config(ip, gw, mask, dns1, dns2);
         } else {
-            Serial.println("WiFiConnectController::connect - Using DHCP config");
             WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
         }
 
@@ -78,7 +74,6 @@ bool WifiConnectionController::connect(const String &ssid, const String &pass, c
         uint8_t bssid[6];
         const bool useBssid = parseBssid(bssidStr, bssid);
 
-        Serial.printf("WiFiConnectController::connect - Wi-Fi Persist 0/1: %d\n", save);
         WiFi.persistent(save);
 
         const int staChan = channel ? channel : 0;
@@ -96,8 +91,6 @@ bool WifiConnectionController::connect(const String &ssid, const String &pass, c
             _persistSsid = ssid;
             _persistPass = pass;
         }
-        Serial.printf("WiFiConnectController::connect - WiFi.begin(%s, ******) returned OK", ssid.c_str());
-        Serial.println();
         return true;
 }
 

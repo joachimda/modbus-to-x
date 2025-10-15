@@ -6,7 +6,6 @@
 #include <ESPAsyncWebServer.h>
 #include <SPIFFS.h>
 #include <WiFi.h>
-#include <ArduinoJson.h>
 #include "Config.h"
 #include "network/NetworkPortal.h"
 #include "network/mbx_server/MBXServerHandlers.h"
@@ -105,9 +104,7 @@ void MBXServer::configureRoutes() const {
 
     server->on(Routes::RESET_NETWORK, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
-        serveSPIFFSFile(req, "/pages/reset_result.html",
-                        MBXServerHandlers::handleNetworkReset,
-                        HttpMediaTypes::HTML,
+        serveSPIFFSFile(req, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML,
                         _logger);
     });
 

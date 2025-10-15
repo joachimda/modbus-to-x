@@ -2,6 +2,7 @@
 #include <atomic>
 #include <SPIFFS.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include "Config.h"
@@ -33,8 +34,6 @@ static std::atomic<ModbusManager *> g_mb{nullptr};
 bool parseConnectPayload(uint8_t *data, size_t len, String &ssid, String &pass,
                          String &bssid, bool &save, WifiStaticConfig &st,
                          uint8_t &channel) {
-    Serial.print("MBXServerHandlers::parseConnectPayload called with: ");
-    Serial.println("data: " + String(data, len));
     JsonDocument doc;
     const DeserializationError err = deserializeJson(doc, data, len);
     if (err) return false;
@@ -179,12 +178,50 @@ void MBXServerHandlers::getSsidListAsJson(AsyncWebServerRequest *req) {
 
 void MBXServerHandlers::handleNetworkReset() {
     Serial.println("MBXServerHandlers::handleNetworkReset called");
-    delay(NETWORK_RESET_DELAY_MS);
-    WiFi.persistent(true);
-    WiFi.disconnect(true, true);
-    WiFi.persistent(false);
-    WiFiClass::mode(WIFI_MODE_APSTA);
+    xTaskCreatePinnedToCore([](void *) {
+        WiFi.persistent(true);
+        WiFi.setAutoReconnect(false);
+        esp_wifi_set_storage(WIFI_STORAGE_FLASH);
+
+        wifi_config_t emptyStaConfig{};
+        const esp_err_t cfgRes = esp_wifi_set_config(WIFI_IF_STA, &emptyStaConfig);
+        Serial.printf("handleNetworkReset: esp_wifi_set_config(WIFI_IF_STA) -> %d\n", static_cast<int>(cfgRes));
+        const esp_err_t restoreRes = esp_wifi_restore();
+        Serial.printf("handleNetworkReset: esp_wifi_restore() -> %d\n", static_cast<int>(restoreRes));
+        WiFi.disconnect(true, true);
+        const bool eraseOk = WiFi.eraseAP(); // clear credentials stored in NVS
+        WiFi.eraseAP();
+        Serial.printf("handleNetworkReset: WiFi.eraseAP() -> %s\n", eraseOk ? "true" : "false");
+
+        esp_wifi_set_storage(WIFI_STORAGE_RAM);
+        WiFi.persistent(false);
+        WiFiClass::mode(WIFI_MODE_APSTA);
+        vTaskDelay(pdMS_TO_TICKS(200)); // let flash writes finish
+        ESP.restart();
+    }, "netReset", 4096, nullptr, 1, nullptr, APP_CPU_NUM);
 }
+
+/*
+ *
+* MBXServerHandlers::handleNetworkReset called
+E (58724) task_wdt: Task watchdog got triggered. The following tasks did not reset the watchdog in time:
+E (58724) task_wdt:  - async_tcp (CPU 0/1)
+E (58724) task_wdt: Tasks currently running:
+E (58724) task_wdt: CPU 0: wifi
+E (58724) task_wdt: CPU 1: IDLE1
+E (58724) task_wdt: Aborting.
+
+abort() was called at PC 0x400ff3c0 on core 0
+  #0  0x400ff3c0 in task_wdt_isr at /home/runner/work/esp32-arduino-lib-builder/esp32-arduino-lib-builder/esp-idf/components/esp_system/task_wdt.c:158
+
+
+
+Backtrace: 0x400837d1:0x3ffbec8c |<-CORRUPTED
+  #0  0x400837d1 in panic_abort at /home/runner/work/esp32-arduino-lib-builder/esp32-arduino-lib-builder/esp-idf/components/esp_system/panic.c:408
+  #1  0x3ffbec8c in port_IntStack at ??:?
+
+
+ */
 
 void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
                                                   const size_t index,
@@ -368,7 +405,8 @@ void MBXServerHandlers::handleMqttTestConnection(AsyncWebServerRequest *req) {
     if (!link) {
         doc["ok"] = false;
         doc["error"] = "mqtt_unavailable";
-        String out; serializeJson(doc, out);
+        String out;
+        serializeJson(doc, out);
         req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::JSON, out);
         return;
     }
@@ -378,7 +416,8 @@ void MBXServerHandlers::handleMqttTestConnection(AsyncWebServerRequest *req) {
     doc["broker"] = link->getMqttBroker();
     doc["user"] = link->getMQTTUser();
     doc["state"] = link->getMQTTState();
-    String out; serializeJson(doc, out);
+    String out;
+    serializeJson(doc, out);
     req->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, out);
 }
 
@@ -437,7 +476,7 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
         hasWriteVal = true;
     }
 
-    const uint8_t status = mb->executeCommand(slave, (int)func, (uint16_t)addr, (uint16_t)len,
+    const uint8_t status = mb->executeCommand(slave, (int) func, (uint16_t) addr, (uint16_t) len,
                                               writeVal, hasWriteVal,
                                               outBuf, 16, outCount, rxDump);
 
@@ -454,7 +493,7 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
     if (outCount > 0) {
         JsonArray raw = doc["result"]["raw"].to<JsonArray>();
         for (uint16_t i = 0; i < outCount; ++i) {
-            (void)raw.add(outBuf[i]);
+            (void) raw.add(outBuf[i]);
         }
         if (dpMeta && dpMeta->dataType == TEXT) {
             doc["result"]["value"] = ModbusManager::registersToAscii(outBuf, outCount);
@@ -488,7 +527,7 @@ void MBXServerHandlers::handleOtaFirmwareUpload(AsyncWebServerRequest *r, const 
             if (logger) {
                 logger->logError("OTA begin firmware failed");
             }
-            r->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, OTA_FW_UPLOAD_BEGIN_FAIL_RESP );
+            r->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, OTA_FW_UPLOAD_BEGIN_FAIL_RESP);
             return;
         }
     }
@@ -513,7 +552,8 @@ void MBXServerHandlers::handleOtaFirmwareUpload(AsyncWebServerRequest *r, const 
 }
 
 void MBXServerHandlers::handleOtaFilesystemUpload(AsyncWebServerRequest *r, const String &fn, const size_t index,
-                                                  uint8_t *data, const size_t len, const bool final, const Logger *logger) {
+                                                  uint8_t *data, const size_t len, const bool final,
+                                                  const Logger *logger) {
     if (index == 0U) {
         if (logger) logger->logInformation((String("OTA filesystem upload start: ") + fn).c_str());
         if (!OtaService::beginFilesystem(0, logger)) {

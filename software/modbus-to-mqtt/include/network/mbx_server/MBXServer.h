@@ -28,8 +28,6 @@ private:
 
     auto readConfig() const -> String;
 
-    static void streamSPIFFSFileChunked(AsyncWebServerRequest *req, const char *path, const char *contentType) ;
-
     static auto accessPointFilter(AsyncWebServerRequest *request) -> bool;
 
     void configureAccessPointRoutes() const;

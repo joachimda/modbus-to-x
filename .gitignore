@@ -90,3 +90,12 @@ fp-info-cache
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+
+# UI
+ui/node_modules/
+
+# Optional: ignore other build artefacts
+**/ui/node_modules
+**/ui/.cache/*
+**/ui/package-lock.json

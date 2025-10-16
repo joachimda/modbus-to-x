@@ -73,11 +73,6 @@ void MBXServer::configureRoutes() const {
         req->send(SPIFFS, "/pages/configure_modbus.html", HttpMediaTypes::HTML);
     });
 
-    server->on("/__stream/index", HTTP_GET, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        streamSPIFFSFileChunked(req, "/index.html", HttpMediaTypes::HTML);
-    });
-
     server->on(Routes::PUT_MODBUS_CONFIG, HTTP_PUT, [this](const AsyncWebServerRequest *req) {
         logRequest(req);
     }, nullptr,[](AsyncWebServerRequest *req, const uint8_t *data, const size_t len, const size_t index, const size_t total) {
@@ -322,28 +317,4 @@ auto MBXServer::readConfig() const -> String {
     String json = file.readString();
     file.close();
     return json;
-}
-
-void MBXServer::streamSPIFFSFileChunked(AsyncWebServerRequest *req, const char *path, const char *contentType) {
-    if (!SPIFFS.exists(path)) {
-        req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT, "Page not found");
-        return;
-    }
-
-    auto filePtr = std::make_shared<File>(SPIFFS.open(path, FILE_READ));
-    if (!filePtr || !(*filePtr)) {
-        req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::PLAIN_TEXT, "File open failed");
-        return;
-    }
-
-    auto *response = req->beginChunkedResponse(contentType,
-                                               [filePtr](uint8_t *buffer, const size_t maxLen, size_t) -> size_t {
-                                                   if (!*filePtr) return 0;
-                                                   const size_t n = filePtr->read(buffer, maxLen);
-                                                   // Returning 0 signals end-of-stream; shared_ptr will release and close
-                                                   return n;
-                                               });
-
-    response->addHeader("Cache-Control", "no-store");
-    req->send(response);
 }

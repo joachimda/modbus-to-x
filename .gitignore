@@ -97,5 +97,4 @@ ui/node_modules/
 
 # Optional: ignore other build artefacts
 **/ui/node_modules
-**/ui/.cache/*
 **/ui/package-lock.json

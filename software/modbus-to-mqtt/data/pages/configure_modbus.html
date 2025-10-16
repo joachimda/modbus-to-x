@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Modbus To X - Configuration</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/mbx_graphics.svg" />
     <link rel="stylesheet" href="/assets/app.css" />
     <link rel="stylesheet" href="../assets/app.css" />
     <script type="importmap">
@@ -25,7 +26,7 @@
             </div>
             <nav class="flex flex-wrap items-center gap-2">
                 <button
-                    class="inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition duration-150 ease-out hover:-translate-y-0.5 hover:border-brand hover:text-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                    class="icon-btn"
                     onclick="window.location.href='/'"
                     aria-label="Back to dashboard">
                     <svg class="h-5 w-5" viewBox="0 0 309.143 309.143" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -34,17 +35,19 @@
                  c-2.929,2.929-2.929,7.678,0,10.606l147.071,147.071c1.406,1.407,3.314,2.197,5.303,2.197
                  c1.989,0,3.897-0.79,5.303-2.197l14.142-14.143c2.929-2.929,2.929-7.678,0-10.606L112.855,154.571z" />
                     </svg>
+                    <span class="tooltip">Back</span>
                 </button>
 
-                <button class="inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition duration-150 ease-out hover:-translate-y-0.5 hover:border-brand hover:text-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                <button class="icon-btn"
                         id="btn-export"
                         aria-label="Download configuration">
                     <svg class="h-5 w-5" viewBox="0 0 384 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                         <path d="M169.4 470.6c12.5 12.5 32.8 12.5 45.3 0l160-160c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L224 370.8 224 64c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 306.7L54.6 265.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l160 160z" />
                     </svg>
+                    <span class="tooltip">Download Config</span>
                 </button>
 
-                <label class="inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition duration-150 ease-out hover:-translate-y-0.5 hover:border-brand hover:text-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                <label class="icon-btn cursor-pointer"
                        for="file-import"
                        aria-label="Upload configuration">
                     <svg class="h-5 w-5" viewBox="0 0 384 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -54,18 +57,20 @@
                  c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8
                  0-45.3l-160-160z"></path>
                     </svg>
+                    <span class="tooltip">Upload Config</span>
                 </label>
                 <input id="file-import" type="file" accept="application/json" class="hidden" />
 
-                <button class="inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition duration-150 ease-out hover:-translate-y-0.5 hover:border-brand hover:text-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                <button class="icon-btn"
                         id="btn-reload"
                         aria-label="Reload configuration from device">
                     <svg class="h-5 w-5" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                         <path d="M440 0H328c-13.3 0-24 10.7-24 24s10.7 24 24 24h73.4L285.5 164.9c-69.7-53.1-169.4-46.2-232.6 17-69.2 69.2-69.2 181.5 0 250.7s181.5 69.2 250.7 0c63.2-63.2 70.1-162.9 17-232.6L464 110.6V184c0 13.3 10.7 24 24 24s24-10.7 24-24V72c0-39.8-32.2-72-72-72zM240 448c-66.3 0-120-53.7-120-120s53.7-120 120-120 120 53.7 120 120-53.7 120-120 120z" />
                     </svg>
+                    <span class="tooltip">Reload</span>
                 </button>
 
-                <button class="inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition duration-150 ease-out hover:-translate-y-0.5 hover:border-brand hover:text-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                <button class="btn btn-primary inline-flex items-center gap-2"
                         id="btn-save-apply">
                     <svg class="h-4 w-4" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                         <path d="M18.1716 1C18.702 1 19.2107 1.21071 19.5858 1.58579L22.4142 4.41421C22.7893 4.78929 23 5.29799 23 5.82843V20C23 21.6569 21.6569 23 20 23H4C2.34315 23 1 21.6569 1 20V4C1 2.34315 2.34315 1 4 1H18.1716ZM12 20C13.6569 20 15 18.6569 15 17C15 15.3431 13.6569 14 12 14C10.3431 14 9 15.3431 9 17C9 18.6569 10.3431 20 12 20ZM17.5 5H6.5C6.22386 5 6 5.22386 6 5.5V10.5C6 10.7761 6.22386 11 6.5 11H17.5C17.7761 11 18 10.7761 18 10.5V5.5C18 5.22386 17.7761 5 17.5 5Z" />
@@ -77,7 +82,7 @@
     </header>
 
     <section class="grid gap-6 lg:grid-cols-[320px,1fr]">
-        <aside class="card flex h-full flex-col gap-4">
+        <aside class="card flex h-full flex-col gap-4 max-h-[calc(100vh-220px)] overflow-hidden">
             <div class="flex items-center justify-between gap-3">
                 <div>
                     <h2 class="text-lg font-semibold text-slate-900">Configuration</h2>
@@ -100,7 +105,7 @@
             </div>
         </aside>
 
-        <main class="card space-y-8 overflow-y-auto">
+        <main class="card space-y-8 overflow-y-auto max-h-[calc(100vh-220px)]">
             <div id="editor-placeholder" class="muted text-sm">Select a device or datapoint to edit, or click the bus to adjust serial settings.</div>
 
             <div id="editor-bus" class="space-y-6" style="display:none">
@@ -214,9 +219,9 @@
                         <select id="dp-device"></select>
                     </label>
 
-                    <label for="dp-function">
+                    <label for="dp-func">
                         <span>Function Code</span>
-                        <select id="dp-function">
+                        <select id="dp-func">
                             <option value="1">1 (READ_COIL)</option>
                             <option value="2">2 (READ_DI)</option>
                             <option value="3">3 (READ_HREG)</option>
@@ -321,6 +326,7 @@
                 <svg class="h-4 w-4" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                     <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
+                <span class="tooltip">Close</span>
             </button>
         </h3>
         <p class="muted text-sm">Review and back up your current configuration before applying changes.</p>

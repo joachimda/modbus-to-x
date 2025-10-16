@@ -16,7 +16,17 @@
 
 @layer components {
     .page {
-        @apply min-h-screen bg-slate-100 text-slate-900;
+        @apply relative min-h-screen bg-slate-100 text-slate-900;
+    }
+
+    .page-home::before {
+        content: "";
+        @apply pointer-events-none fixed inset-0 z-0 opacity-20;
+        background: url("/assets/mbx_graphics.svg") no-repeat center/75vmin;
+    }
+
+    .page-home > * {
+        @apply relative z-10;
     }
 
     .card {
@@ -83,8 +93,12 @@
         @apply flex-1;
     }
 
-    .footer {
-        @apply mt-10 text-center text-sm text-slate-500;
+    .site-footer {
+        @apply fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white/90 backdrop-blur;
+    }
+
+    .site-footer__inner {
+        @apply mx-auto flex max-w-6xl items-center justify-center gap-2 px-4 py-3 text-sm text-slate-600;
     }
 
     .footer-logo {
@@ -121,7 +135,16 @@
     }
 
     .icon-btn {
-        @apply inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition duration-150 ease-out hover:-translate-y-0.5 hover:border-brand hover:text-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand;
+        @apply relative inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition duration-150 ease-out hover:-translate-y-0.5 hover:border-brand hover:text-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand;
+    }
+
+    .icon-btn .tooltip {
+        @apply pointer-events-none absolute -bottom-10 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white opacity-0 shadow transition duration-150;
+    }
+
+    .icon-btn:hover .tooltip,
+    .icon-btn:focus-visible .tooltip {
+        @apply opacity-100;
     }
 
     .input-text {

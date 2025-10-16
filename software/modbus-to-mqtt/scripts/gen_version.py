@@ -18,7 +18,7 @@ branch = _git("git rev-parse --abbrev-ref HEAD")
 dirty_flag = "1" if _git("git status --porcelain") else "0"
 
 version = describe or commit or "dev"
-build_date = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+build_date = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 flags = [
     f'-DFW_VERSION=\\"{version}\\"',

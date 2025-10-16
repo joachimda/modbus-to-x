@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Light/Dark tokens (optional) */
+:root {
+    --card-bg: #ffffff;
+    --card-border: #e5e7eb;
+}
+:root.dark {
+    --card-bg: #0b1220;
+    --card-border: #1f2937;
+}
+
+/* Reusable card */
+.card {
+    @apply rounded-2xl p-4 border;
+    background: var(--card-bg);
+    border-color: var(--card-border);
+}
+
+/* Buttons */
+.btn {
+    @apply inline-flex items-center gap-2 rounded-xl px-3 py-2 border font-medium;
+}
+.btn-primary {
+    @apply bg-brand text-white border-transparent hover:bg-brand-dark transition;
+}
+.btn-ghost {
+    @apply border-neutral-200 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800;
+}
+
+/* Tables */
+.table {
+    @apply w-full text-sm;
+}
+.table thead th {
+    @apply text-left font-semibold border-b border-neutral-200 dark:border-neutral-700 pb-2;
+}
+.table tbody tr {
+    @apply border-b border-neutral-100 dark:border-neutral-800;
+}
+.table td { @apply py-2; }

@@ -1,0 +1,14 @@
+{
+  "name": "mbx-ui",
+  "private": true,
+  "scripts": {
+    "dev": "TAILWIND_MODE=watch npx tailwindcss -i ./src/input.css -o ../data/assets/app.css --watch",
+    "build": "npx tailwindcss -i ./src/input.css -o ../data/assets/app.css --minify && node ./scripts/gzip.mjs ../data/assets/app.css ../data/assets/app.css.gz",
+    "clean": "rm -f ../data/assets/app.css ../data/assets/app.css.gz || del ..\\data\\assets\\app.css*"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13"
+  }
+}

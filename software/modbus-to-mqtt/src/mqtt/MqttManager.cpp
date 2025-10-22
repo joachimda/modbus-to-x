@@ -9,6 +9,7 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <esp_system.h>
+#include <esp_wifi.h>
 
 static std::atomic<bool> s_mqttEnabled{false};
 static MqttManager *s_activeMqttManager = nullptr;
@@ -20,6 +21,7 @@ static constexpr auto default_mqtt_port = "1883";
 static constexpr auto default_mqtt_root_topic = "mbx_root";
 static const String system_subscription_network_reset = "/system/network/reset";
 static const String system_subscription_echo = "/system/log/echo";
+
 static String buildDefaultClientId() {
     const uint64_t mac = ESP.getEfuseMac();
     char buf[13];
@@ -359,4 +361,8 @@ void MqttManager::setClientId(String clientId) {
         return;
     }
     _clientId = clientId;
+}
+
+String MqttManager::getClientId() {
+    return _clientId;
 }

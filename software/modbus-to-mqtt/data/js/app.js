@@ -26,7 +26,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (page === 'configure_network' && typeof window.initConfigureNetwork === 'function') await window.initConfigureNetwork();
     if (page === 'configure_mqtt' && typeof window.initConfigureMqtt === 'function') await window.initConfigureMqtt();
 });
-
+export async function reboot() {
+    if (!confirm("Reboot the device now?")) return;
+    try {
+        const r = await fetch(API.POST_SYSTEM_RESET, { method: "POST" });
+        if (r.ok) {
+            alert("Rebooting… The page will try to reconnect automatically.");
+            // Optional: try to reload after a short pause
+            setTimeout(() => location.reload(), 5000);
+        } else {
+            alert("Reboot request failed.");
+        }
+    } catch (e) {
+        alert("Reboot request failed: " + e.message);
+    }
+}
 export function rssiToBars(rssi) {
     const level = rssi >= -55 ? 4 : rssi >= -65 ? 3 : rssi >= -75 ? 2 : rssi >= -85 ? 1 : 0;
     return '📶'.repeat(level) + '·'.repeat(4 - level);

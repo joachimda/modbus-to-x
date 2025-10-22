@@ -20,27 +20,32 @@ public:
     auto mqttPublish(const char *topic, const char *payload, bool retain = false) const -> bool;
 
     void configureWill(const String &topic, const String &payload, uint8_t qos, bool retain);
+
     void clearWill();
 
     auto isConnected() const -> bool;
 
-    void onMqttMessage(const String& topic, const uint8_t *payload, size_t length) const;
+    void onMqttMessage(const String &topic, const uint8_t *payload, size_t length) const;
 
     auto startMqttTask() -> bool;
 
-    auto getMqttBroker() -> char*;
+    auto getMqttBroker() -> char *;
 
     auto getMQTTState() const -> int;
 
     auto getMQTTUser() -> char *;
+
     auto getRootTopic() const -> const String &;
 
     static void setMQTTEnabled(bool enabled);
+
     static auto isMQTTEnabled() -> bool;
 
     auto testConnectOnce() -> bool;
 
     void reconfigureFromFile();
+
+    String getClientId();
 
 private:
     [[noreturn]] static void processMQTTAsync(void *parameter);

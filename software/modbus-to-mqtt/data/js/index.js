@@ -1,4 +1,4 @@
-import {API, safeGet} from "app";
+import {API, safeGet, reboot} from "app";
 
 window.initIndex = async function initIndex() {
     $("#btn-reboot").addEventListener("click", reboot);
@@ -82,7 +82,7 @@ async function render() {
         kv("Broker", sys.broker || "—"),
         kv("Client ID", sys.clientId || "—"),
         kv("Last publish", sys.lastPublishIso || "—"),
-        kv("Errors", sys.errorCount ?? 0),
+        kv("Errors", sys.mqttErrorCount ?? "—"),
     ].join("");
 
     // Modbus card
@@ -90,9 +90,8 @@ async function render() {
         kv("Buses", sys.buses ?? "—"),
         kv("Devices", sys.devices ?? "—"),
         kv("Datapoints", sys.datapoints ?? "—"),
-        kv("Poll interval", sys.pollIntervalMs ? `${sys.pollIntervalMs} ms` : "—"),
         kv("Last poll", sys.lastPollIso || "—"),
-        kv("Errors", sys.errorCount ?? 0),
+        kv("Errors", sys.modbusErrorCount ?? "—"),
     ].join("");
 
     // Storage card
@@ -147,22 +146,6 @@ async function fetchLogs(forceScroll) {
         }
     } catch (e) {
         el.textContent = `Error loading logs: ${e.message}`;
-    }
-}
-
-async function reboot() {
-    if (!confirm("Reboot the device now?")) return;
-    try {
-        const r = await fetch(API.POST_SYSTEM_RESET, { method: "POST" });
-        if (r.ok) {
-            alert("Rebooting… The page will try to reconnect automatically.");
-            // Optional: try to reload after a short pause
-            setTimeout(() => location.reload(), 5000);
-        } else {
-            alert("Reboot request failed.");
-        }
-    } catch (e) {
-        alert("Reboot request failed: " + e.message);
     }
 }
 

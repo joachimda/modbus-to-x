@@ -37,9 +37,9 @@
         "other_text_thickness": 0.15,
         "other_text_upright": false,
         "pads": {
-          "drill": 0.0,
+          "drill": 0.3,
           "height": 0.6,
-          "width": 1.95
+          "width": 0.6
         },
         "silk_line_width": 0.1,
         "silk_text_italic": false,
@@ -58,36 +58,7 @@
           "width": 0.0
         }
       ],
-      "drc_exclusions": [
-        [
-          "lib_footprint_issues|115400000|116200000|323b4a22-5277-4650-b617-550e3597feaf|00000000-0000-0000-0000-000000000000",
-          ""
-        ],
-        [
-          "lib_footprint_mismatch|107527600|115214400|a3d72208-bb62-4048-8d21-97229dae6c3e|00000000-0000-0000-0000-000000000000",
-          ""
-        ],
-        [
-          "lib_footprint_mismatch|117402200|115445700|a5a3da89-1ff8-4d51-acc4-390394466efe|00000000-0000-0000-0000-000000000000",
-          ""
-        ],
-        [
-          "lib_footprint_mismatch|121525650|123118000|4ad16d76-f084-462d-b0db-5c4144b7f3dd|00000000-0000-0000-0000-000000000000",
-          ""
-        ],
-        [
-          "lib_footprint_mismatch|123515650|123118000|b9eb40fb-4446-44a9-a118-bc2ab4abe084|00000000-0000-0000-0000-000000000000",
-          ""
-        ],
-        [
-          "lib_footprint_mismatch|125505650|123118000|468c465a-fe46-4eaf-a481-d3e4ee526372|00000000-0000-0000-0000-000000000000",
-          ""
-        ],
-        [
-          "lib_footprint_mismatch|127495650|123118000|5233d271-3fed-42e2-874c-65d974fc035b|00000000-0000-0000-0000-000000000000",
-          ""
-        ]
-      ],
+      "drc_exclusions": [],
       "meta": {
         "version": 2
       },
@@ -495,7 +466,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "modbus-to-x.kicad_pro",
+    "filename": "power_tester.kicad_pro",
     "version": 3
   },
   "net_settings": {

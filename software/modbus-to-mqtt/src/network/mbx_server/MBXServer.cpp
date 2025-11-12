@@ -40,7 +40,7 @@ void MBXServer::begin() const {
         IndicatorService::instance().setPortalMode(false);
         IndicatorService::instance().setWifiConnected(true);
         // Enable MQTT in normal (non-portal) mode
-        MqttManager::setMQTTEnabled(true);
+        MqttManager::setMQTTEnabled(false);
         ArduinoOtaManager::begin(_logger);
     } else {
         g_wifi.begin("modbus-to-x");

@@ -49,7 +49,7 @@ auto MqttManager::begin() -> bool {
 
     // Do NOT attempt connection here; Wi‑Fi/LWIP may not be initialized yet.
     // The background task will handle connecting once Wi‑Fi is up.
-    setMQTTEnabled(true);
+    setMQTTEnabled(false);
     return startMqttTask();
 }
 
@@ -342,7 +342,7 @@ void MqttManager::reconfigureFromFile() {
     addSubscriptionHandlers(_mqttRootTopic);
 
     // Resume MQTT processing
-    setMQTTEnabled(true);
+    setMQTTEnabled(false);
 
     // If Wi-Fi is up, try to connect and resubscribe immediately
     if (WiFiClass::status() == WL_CONNECTED) {

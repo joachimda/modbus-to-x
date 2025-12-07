@@ -59,6 +59,10 @@ public:
 
     static uint32_t getBusErrorCount();
 
+    static void setModbusEnabled(bool enabled);
+
+    static bool getBusState();
+
 private:
     bool readModbusDevice(const ModbusDevice &dev);
 

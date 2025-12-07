@@ -99,6 +99,10 @@ JsonDocument StatService::appendModbusStats(JsonDocument &document) {
     for (const auto &dev : config.devices) {
         totalDatapoints += dev.datapoints.size();
     }
+
+    const bool enabled = ModbusManager::getBusState();
+
+    document["mbusEnabled"] = enabled;
     document["datapoints"] = totalDatapoints;
     document["lastPollIso"] = "";
     document["modbusErrorCount"] = ModbusManager::getBusErrorCount();

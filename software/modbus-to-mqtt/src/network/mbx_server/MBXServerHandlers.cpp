@@ -218,28 +218,6 @@ void MBXServerHandlers::handleNetworkReset() {
     }, "netReset", 4096, nullptr, 1, nullptr, APP_CPU_NUM);
 }
 
-/*
- *
-* MBXServerHandlers::handleNetworkReset called
-E (58724) task_wdt: Task watchdog got triggered. The following tasks did not reset the watchdog in time:
-E (58724) task_wdt:  - async_tcp (CPU 0/1)
-E (58724) task_wdt: Tasks currently running:
-E (58724) task_wdt: CPU 0: wifi
-E (58724) task_wdt: CPU 1: IDLE1
-E (58724) task_wdt: Aborting.
-
-abort() was called at PC 0x400ff3c0 on core 0
-  #0  0x400ff3c0 in task_wdt_isr at /home/runner/work/esp32-arduino-lib-builder/esp32-arduino-lib-builder/esp-idf/components/esp_system/task_wdt.c:158
-
-
-
-Backtrace: 0x400837d1:0x3ffbec8c |<-CORRUPTED
-  #0  0x400837d1 in panic_abort at /home/runner/work/esp32-arduino-lib-builder/esp32-arduino-lib-builder/esp-idf/components/esp_system/panic.c:408
-  #1  0x3ffbec8c in port_IntStack at ??:?
-
-
- */
-
 void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
                                                   const size_t index,
                                                   const size_t total) {
@@ -258,6 +236,13 @@ void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, co
         }
         req->send(HttpResponseCodes::NO_CONTENT);
     }
+}
+
+void MBXServerHandlers::handleModbusDisable(AsyncWebServerRequest *req, bool state) {
+        if (const auto *mb = g_mb.load(std::memory_order_acquire)) {
+            ModbusManager::setModbusEnabled(state);
+        }
+        req->send(HttpResponseCodes::OK);
 }
 
 void MBXServerHandlers::handlePutMqttConfigBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
@@ -304,7 +289,6 @@ void MBXServerHandlers::handlePutMqttSecretBody(AsyncWebServerRequest *req, cons
     prefs.end();
     req->send(HttpResponseCodes::NO_CONTENT);
 }
-
 
 void MBXServerHandlers::handleWifiConnect(AsyncWebServerRequest *req, WifiConnectionController &wifi,
                                           const uint8_t *data, const size_t len,

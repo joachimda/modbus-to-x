@@ -33,6 +33,9 @@ public:
      * }
      */
     constexpr static auto POST_MODBUS_EXECUTE = "/api/modbus/execute";
+    constexpr static auto GET_MBUS_STATE = "/api/modbus/state";
+    constexpr static auto POST_MBUS_DISABLE = "/api/modbus/state/disable";
+    constexpr static auto POST_MBUS_ENABLE = "/api/modbus/state/enable";
 
     // System
     constexpr static auto OTA_FIRMWARE = "/api/system/ota/firmware";

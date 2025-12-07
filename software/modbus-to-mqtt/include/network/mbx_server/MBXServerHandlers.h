@@ -24,6 +24,7 @@ public:
     static void handlePutMqttSecretBody(AsyncWebServerRequest *req, const uint8_t *data, size_t len, size_t index,
                                         size_t total);
 
+    static void handleModbusDisable(AsyncWebServerRequest * req, bool state);
 
     static void handleNetworkReset();
 
@@ -66,6 +67,7 @@ public:
 
     static void handleOtaFilesystemUpload(AsyncWebServerRequest *r, const String &fn, size_t index,
                                           uint8_t *data, size_t len, bool final, const Logger *logger);
+
 };
 
 #endif

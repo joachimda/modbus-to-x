@@ -86,7 +86,12 @@ async function render() {
     ].join("");
 
     // Modbus card
+    const mbusEnabled = (sys.mbusEnabled !== undefined) ? sys.mbusEnabled : false;
+    const mbusDot = sys.__error ? dot("bad", "Unknown") :
+        mbusEnabled ? dot("ok", "Enabled") :
+            dot("bad", "Disabled");
     $("#modbus-kvs").innerHTML = sys.__error ? kv("Error", sys.__error) : [
+        kv("Status", mbusDot),
         kv("Buses", sys.buses ?? "—"),
         kv("Devices", sys.devices ?? "—"),
         kv("Datapoints", sys.datapoints ?? "—"),

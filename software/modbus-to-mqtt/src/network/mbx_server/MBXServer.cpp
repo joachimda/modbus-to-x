@@ -132,6 +132,16 @@ void MBXServer::configureRoutes() const {
         MBXServerHandlers::handleModbusExecute(req);
     });
 
+    server->on(Routes::POST_MBUS_DISABLE, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        MBXServerHandlers::handleModbusDisable(req, false);
+    });
+
+    server->on(Routes::POST_MBUS_ENABLE, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        MBXServerHandlers::handleModbusDisable(req, true);
+    });
+
     server->on(Routes::OTA_FIRMWARE, HTTP_POST, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); }
@@ -145,10 +155,12 @@ void MBXServer::configureRoutes() const {
     }, [this](AsyncWebServerRequest *req, const String &fn, const size_t index, uint8_t *data, const size_t len, const bool final) {
         MBXServerHandlers::handleOtaFilesystemUpload(req, fn, index, data, len, final, _logger);
     });
+
     server->onNotFound([this](AsyncWebServerRequest *req) {
         logRequest(req);
         req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT, "I haz no file");
     });
+
     server->on(Routes::DEVICE_RESET, HTTP_POST, [this](const AsyncWebServerRequest *req) {
         logRequest(req);
         MBXServerHandlers::handleDeviceReset(_logger);

@@ -272,7 +272,6 @@ void ModbusManager::loop() {
     _mqttConnectedLastLoop = mqttConnectedNow;
 
     if (!BUS_ACTIVE.load(std::memory_order_acquire)) {
-        _logger->logDebug("ModbusManager::loop - INACTIVE Entry");
         IndicatorService::instance().setModbusConnected(false);
         return;
     }
@@ -956,4 +955,12 @@ void ModbusManager::incrementBusErrorCount() const {
 
 uint32_t ModbusManager::getBusErrorCount() {
     return BUS_ERROR_COUNT.load(std::memory_order_relaxed);
+}
+
+void ModbusManager::setModbusEnabled(const bool enabled) {
+    BUS_ACTIVE.store(enabled, std::memory_order_release);
+}
+
+bool ModbusManager::getBusState() {
+    return BUS_ACTIVE.load(std::memory_order_acquire);
 }

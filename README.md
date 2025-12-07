@@ -28,7 +28,8 @@ The project is split between dedicated hardware design files and a PlatformIO fi
 
 ### Hardware
 - Four-layer ESP32 carrier featuring an ESP32-WROOM-32D module, MAX3485 RS-485 transceiver
-- Terminal block breakouts route differential RS-485 pairs alongside field power for quick deployment.
+- RJ12 Connector exposing differential RS-485 pair alongside field power for quick deployment.
+- Wide input voltage range (4.5 - 40V)
 - Supporting assets include datasheets, fabrication rules, and release notes for each board revision under `hardware/`.
 
 ### Firmware
@@ -42,7 +43,7 @@ The project is split between dedicated hardware design files and a PlatformIO fi
 
 ### Prerequisites
 - Modbus-to-X hardware (v0.1 alpha or later) and Modbus RTU devices wired to the RS-485 terminals.
-- 7–24 VDC field power (buck input validated in the current design) and a USB-to-UART adapter if not using OTA uploads.
+- 4.5–40 VDC field power (buck input validated in the current design) and a USB-to-UART adapter if not using OTA uploads.
 - Development host with Python 3, [PlatformIO Core](https://platformio.org/install/cli), and a working `git` toolchain. Required Python build dependencies are installed automatically by `scripts/install_build_deps.py` when PlatformIO runs.【F:software/modbus-to-mqtt/scripts/install_build_deps.py†L1-L32】
 
 ### Build and Flash

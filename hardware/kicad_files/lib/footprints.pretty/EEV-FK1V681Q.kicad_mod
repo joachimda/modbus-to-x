@@ -332,11 +332,7 @@
 			(tracks not_allowed)
 			(vias not_allowed)
 			(pads allowed)
-<<<<<<< HEAD
-			(copperpour allowed)
-=======
 			(copperpour not_allowed)
->>>>>>> 3a1132b539ea1851202e922b4753c13c3441fb62
 			(footprints allowed)
 		)
 		(placement
@@ -368,11 +364,7 @@
 			(tracks not_allowed)
 			(vias not_allowed)
 			(pads allowed)
-<<<<<<< HEAD
-			(copperpour allowed)
-=======
 			(copperpour not_allowed)
->>>>>>> 3a1132b539ea1851202e922b4753c13c3441fb62
 			(footprints allowed)
 		)
 		(placement
@@ -417,11 +409,7 @@
 		)
 		(polygon
 			(pts
-<<<<<<< HEAD
-				(xy -2.3575 -6.8509) (xy 2.3575 -6.8509) (xy 2.3575 6.8509) (xy -2.3575 6.8509)
-=======
 				(xy -2.8575 -0.8509) (xy 2.8575 -0.8509) (xy 2.8575 0.8509) (xy -2.8575 0.8509)
->>>>>>> 3a1132b539ea1851202e922b4753c13c3441fb62
 			)
 		)
 	)

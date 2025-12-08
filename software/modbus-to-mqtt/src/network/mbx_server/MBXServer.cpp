@@ -39,7 +39,6 @@ void MBXServer::begin() const {
         server->begin();
         IndicatorService::instance().setPortalMode(false);
         IndicatorService::instance().setWifiConnected(true);
-        // Enable MQTT in normal (non-portal) mode
         MqttManager::setMQTTEnabled(false);
         ArduinoOtaManager::begin(_logger);
     } else {
@@ -50,7 +49,6 @@ void MBXServer::begin() const {
         configureAccessPointRoutes();
         server->begin();
         IndicatorService::instance().setPortalMode(true);
-        // Disable MQTT while the portal is active to avoid transient connects
         MqttManager::setMQTTEnabled(false);
         portal.begin();
     }
@@ -71,11 +69,6 @@ void MBXServer::configureRoutes() const {
     server->on(Routes::CONFIGURE, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         req->send(SPIFFS, "/pages/configure_modbus.html", HttpMediaTypes::HTML);
-    });
-
-    server->on("/__stream/index", HTTP_GET, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        streamSPIFFSFileChunked(req, "/index.html", HttpMediaTypes::HTML);
     });
 
     server->on(Routes::PUT_MODBUS_CONFIG, HTTP_PUT, [this](const AsyncWebServerRequest *req) {

@@ -535,7 +535,7 @@
       "plot": "manufactoring/rev2",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "",
+      "step": "modbus-to-x.step",
       "svg": "",
       "vrml": ""
     },

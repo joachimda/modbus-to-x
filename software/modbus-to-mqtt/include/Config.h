@@ -39,9 +39,6 @@
 #define LED_C_PIN 33
 #endif
 
-#define RESET_BUTTON_PIN 13
-#define RESET_HOLD_TIME_MS 3000
-
 /****************************************************
  * MODBUS
  ****************************************************/
@@ -58,21 +55,13 @@
 /****************************************************
  * EEPROM & PREFERENCE STORAGE
  ****************************************************/
-#define EEPROM_WRITE_CYCLE_MS 5
 
 #define MQTT_PREFS_NAMESPACE "mqtt"
-#define MODBUS_PREFS_NAMESPACE "modbus"
-
-#define MODBUS_MAX_REGISTERS 100
 
 /****************************************************
  * MQTT
  ****************************************************/
 #define MQTT_RECONNECT_INTERVAL_MS 5000
-
-#ifndef MQTT_OTA_BROKER
-#define MQTT_OTA_BROKER "localhost"
-#endif
 
 #ifndef MQTT_BUFFER_SIZE
 #define MQTT_BUFFER_SIZE 4096

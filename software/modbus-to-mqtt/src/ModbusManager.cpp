@@ -26,6 +26,114 @@ static const std::map<String, uint32_t> communicationModes = {
 ModbusManager::ModbusManager(Logger *logger) : _logger(logger) {
 }
 
+class TeeStream : public Stream {
+public:
+    TeeStream(Stream &inner, Logger *logger) : _inner(inner), _logger(logger) {
+    }
+
+    void enableCapture(const bool en) {
+        _capture = en;
+        if (en) {
+            _bufLen = 0;
+            _sawFirstByte = false;
+        }
+    }
+
+    String dumpHex() const {
+        if (_bufLen == 0) return {""};
+        String s;
+        s.reserve(_bufLen * 3 + 8);
+        s = " RX=";
+        for (size_t i = 0; i < _bufLen; ++i) {
+            if (_buf[i] < 16) s += "0";
+            s += String(_buf[i], HEX);
+            if (i + 1 < _bufLen) s += " ";
+        }
+        return s;
+    }
+
+    int available() override {
+#if RS485_DROP_LEADING_ZERO
+        if (_capture && !_sawFirstByte) {
+            // Non-blocking purge of leading 0x00 bytes
+            while (_inner.available() > 0) {
+                const int pk = _inner.peek();
+                if (pk != 0x00) break;
+                // Drop zero
+                (void) _inner.read();
+                // Do not record in the capture buffer and do not set _sawFirstByte
+            }
+        }
+#endif
+        return _inner.available();
+    }
+
+    int read() override {
+        int b = _inner.read();
+#if RS485_DROP_LEADING_ZERO
+        if (_capture && !_sawFirstByte) {
+            // Drop leading 0x00 bytes; if the next byte isn't immediately available,
+            // wait briefly for it to arrive to avoid returning a spurious 0x00.
+            uint32_t waited = 0;
+            int drops = 0;
+            while (b == 0x00 && drops < 8) {
+                if (_inner.available() > 0) {
+                    b = _inner.read();
+                    drops++;
+                    continue;
+                }
+                if (waited >= RS485_FIRSTBYTE_WAIT_US) {
+                    // Do not propagate a zero as the first byte; report "no data"
+                    return -1;
+                }
+                delayMicroseconds(20);
+                waited += 20;
+            }
+        }
+#endif
+        if (_capture && b >= 0 && _bufLen < sizeof(_buf)) {
+            _buf[_bufLen++] = static_cast<uint8_t>(b);
+            if (!_sawFirstByte && b != 0x00) {
+                _sawFirstByte = true;
+            }
+        } else if (_capture && !_sawFirstByte && b == 0x00) {
+            // Explicitly ignore zero as the first byte for state tracking
+        }
+        return b;
+    }
+
+    int peek() override {
+#if RS485_DROP_LEADING_ZERO
+        if (_capture && !_sawFirstByte) {
+            // Purge any leading zeros so peek exposes the first non-zero
+            while (_inner.available() > 0) {
+                const int pk = _inner.peek();
+                if (pk != 0x00) break;
+                (void) _inner.read(); // drop zero
+            }
+        }
+#endif
+        return _inner.peek();
+    }
+
+    void flush() override { _inner.flush(); }
+    size_t write(const uint8_t ch) override {
+        return _inner.write(ch);
+    }
+    size_t write(const uint8_t *buffer, const size_t size) override {
+        return _inner.write(buffer, size);
+    }
+
+private:
+    Stream &_inner;
+    Logger *_logger;
+    bool _capture{false};
+    uint8_t _buf[64]{};
+    size_t _bufLen{0};
+    bool _sawFirstByte{false};
+};
+
+static TeeStream *g_teeSerial1 = nullptr;
 static std::atomic<bool> g_modbusBusy{false};
 
 bool ModbusManager::begin() {
@@ -248,16 +356,18 @@ bool ModbusManager::loadConfiguration() {
 void ModbusManager::initializeWiring() const {
     _logger->logDebug("ModbusManager::initialize - Entry");
 
-    pinMode(RS485_DE_PIN, OUTPUT);
-    pinMode(RS485_RE_PIN, OUTPUT);
+    pinMode(RS485_DERE_PIN, OUTPUT);
 
-    digitalWrite(RS485_DE_PIN, LOW);
-    digitalWrite(RS485_RE_PIN, LOW);
+    digitalWrite(RS485_DERE_PIN, LOW);
 
     Serial1.begin(_modbusRoot.bus.baud,
                   communicationModes.at(_modbusRoot.bus.serialFormat),
                   RX2, TX2);
 
+    if (!g_teeSerial1) {
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        g_teeSerial1 = new TeeStream(Serial1, _logger);
+    }
 
     _logger->logDebug("ModbusManager::initialize - Exit");
 }
@@ -309,7 +419,12 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
     _logger->logDebug(
         ("ModbusManager::readModbusDevice - Reading Device: " + String(dev.name) + " SlaveId: " + String(dev.slaveId)).
         c_str());
-    node.begin(dev.slaveId, Serial1);
+    // Use tee stream to capture incoming bytes for diagnostics
+    if (g_teeSerial1) {
+        node.begin(dev.slaveId, *g_teeSerial1);
+    } else {
+        node.begin(dev.slaveId, Serial1);
+    }
     node.preTransmission(preTransmissionHandler);
     node.postTransmission(postTransmissionHandler);
 
@@ -411,8 +526,8 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
 
 void ModbusManager::preTransmissionHandler() {
     // Enable TX, disable RX; stop capture
-    digitalWrite(RS485_DE_PIN, HIGH);
-    digitalWrite(RS485_RE_PIN, HIGH);
+    digitalWrite(RS485_DERE_PIN, HIGH);
+    if (g_teeSerial1) g_teeSerial1->enableCapture(false);
     // Allow transceiver to settle before sending
     delayMicroseconds(RS485_DIR_GUARD_US);
 }
@@ -420,8 +535,8 @@ void ModbusManager::preTransmissionHandler() {
 void ModbusManager::postTransmissionHandler() {
     Serial1.flush();
     // Disable TX, enable RX; start capture
-    digitalWrite(RS485_DE_PIN, LOW);
-    digitalWrite(RS485_RE_PIN, LOW);
+    digitalWrite(RS485_DERE_PIN, LOW);
+    if (g_teeSerial1) g_teeSerial1->enableCapture(true);
     // Small guard so RX is ready before the slave replies
     delayMicroseconds(RS485_DIR_GUARD_US);
 }
@@ -514,11 +629,13 @@ uint8_t ModbusManager::executeCommand(uint8_t slaveId,
     }
 
     // Best-effort ensure wiring is initialized
-    if (_modbusRoot.bus.baud == 0) {
-        _modbusRoot.bus.baud = DEFAULT_MODBUS_BAUD_RATE;
-        _modbusRoot.bus.serialFormat = DEFAULT_MODBUS_MODE;
+    if (!g_teeSerial1) {
+        if (_modbusRoot.bus.baud == 0) {
+            _modbusRoot.bus.baud = DEFAULT_MODBUS_BAUD_RATE;
+            _modbusRoot.bus.serialFormat = DEFAULT_MODBUS_MODE;
+        }
+        initializeWiring();
     }
-    initializeWiring();
 
     // guard against concurrent access
     bool was = false;
@@ -526,8 +643,14 @@ uint8_t ModbusManager::executeCommand(uint8_t slaveId,
         return 0xE4; // busy
     }
 
+    if (g_teeSerial1) g_teeSerial1->enableCapture(true);
+
     // Configure node
-    node.begin(slaveId, Serial1);
+    if (g_teeSerial1) {
+        node.begin(slaveId, *g_teeSerial1);
+    } else {
+        node.begin(slaveId, Serial1);
+    }
     node.preTransmission(preTransmissionHandler);
     node.postTransmission(postTransmissionHandler);
 
@@ -569,6 +692,9 @@ uint8_t ModbusManager::executeCommand(uint8_t slaveId,
         outCount = n;
     }
 
+    if (g_teeSerial1) {
+        rxDump = g_teeSerial1->dumpHex();
+    }
 
     if (status != ModbusMaster::ku8MBSuccess) {
         incrementBusErrorCount();

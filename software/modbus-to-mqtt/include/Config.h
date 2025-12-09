@@ -4,12 +4,8 @@
 /****************************************************
  * WIRING
  ****************************************************/
-#ifndef RS485_DE_PIN
-#define RS485_DE_PIN 15
-#endif
-
-#ifndef RS485_RE_PIN
-#define RS485_RE_PIN 15
+#ifndef RS485_DERE_PIN
+#define RS485_DERE_PIN 15
 #endif
 
 // Guard delay around RS485 direction changes (in microseconds)

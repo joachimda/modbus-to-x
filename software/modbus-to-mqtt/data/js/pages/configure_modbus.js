@@ -193,8 +193,8 @@ function validateSchemaConfig(cfg) {
             if (typeof p.unit === "string" && p.unit.length > 5) {
                 errors.push(`Datapoint ${p.id}: unit max length 5`);
             }
-            if (typeof p.name === "string" && p.name.length > 16) {
-                errors.push(`Datapoint ${p.id}: name max length 16`);
+            if (typeof p.name === "string" && p.name.length > 64) {
+                errors.push(`Datapoint ${p.id}: name max length 64`);
             }
         }
     }
@@ -340,8 +340,8 @@ function buildTree() {
             dpNode.className = "node" + (selection.kind==="dp" && selection.datapointId===p.id ? " active" : "");
             dpNode.style.marginLeft = "2rem";
             dpNode.innerHTML =
-                `<div class="mono">${p.id}</div>
-                 <div class="meta">${p.name} • F${p.func} @ 0x${numberToHex(p.address)}</div>`;
+                `<div class="mono">${p.name}</div>
+                 <div class="meta">${p.id} • F${p.func} @ 0x${numberToHex(p.address)} | ${p.address}</div>`;
             dpNode.onclick = () => {
                 selection = {
                     kind:"dp", deviceId:d.id, datapointId:p.id
@@ -397,13 +397,24 @@ function showBusEditor() {
     $("#bus-serial-parity").value = b.parity || "N";
     $("#bus-serial-stop-bits").value = b.stop_bits || 1;
     $("#bus-data-bits").value = b.data_bits || 8;
-    $("#btn-bus-save").onclick = () => {
-        b.baud = Number($("#bus-baud").value);
-        b.data_bits = $("#bus-data-bits").value;
-        b.parity = $("#bus-serial-parity").value;
-        b.stop_bits = $("#bus-serial-stop-bits").value;
-        buildTree();
-        toast("Bus updated (draft)");
+    // No explicit Save button anymore; values are auto-saved via handlers below.
+
+    // Auto-save on change
+    $("#bus-baud").oninput = () => {
+        b.baud = Number($("#bus-baud").value) || 0;
+        refreshTree();
+    };
+    $("#bus-data-bits").onchange = () => {
+        b.data_bits = Number($("#bus-data-bits").value) || 8;
+        refreshTree();
+    };
+    $("#bus-serial-parity").onchange = () => {
+        b.parity = $("#bus-serial-parity").value || "N";
+        refreshTree();
+    };
+    $("#bus-serial-stop-bits").onchange = () => {
+        b.stop_bits = Number($("#bus-serial-stop-bits").value) || 1;
+        refreshTree();
     };
 }
 
@@ -432,19 +443,43 @@ function showDeviceEditor() {
 
     renderDeviceDatapointTable(device);
 
-    $("#btn-dev-save").onclick = () => {
+    // No explicit Save button anymore; values are auto-saved via handlers below.
+
+    // Auto-save on change
+    $("#dev-name").oninput = () => {
         device.name = $("#dev-name").value.trim() || "device";
-        device.slaveId = Number($("#dev-slave").value);
-        device.notes = $("#dev-notes").value.trim();
-        if (mqttToggle) {
-            device.mqttEnabled = mqttToggle.checked;
+        // Propagate new device name into child datapoint IDs (and keep them unique)
+        updateDeviceDatapointIds(device);
+        // Re-render table so IDs shown under this device update immediately
+        renderDeviceDatapointTable(device);
+        refreshTree();
+        // If datapoint editor is open and this device is selected, update preview ID
+        if (document.querySelector('#editor-dp')?.style.display !== 'none') {
+            try { recomputeId(); } catch {}
+            // Re-open to reflect any datapoint ID changes and keep selection in sync
+            showDatapointEditor();
         }
-        if (haToggle) {
-            device.homeassistantDiscoveryEnabled = haToggle.checked;
-        }
-        buildTree();
-        toast("Device updated (draft)");
     };
+    $("#dev-slave").oninput = () => {
+        const v = Number($("#dev-slave").value);
+        if (Number.isInteger(v)) {
+            device.slaveId = v;
+            refreshTree();
+        }
+    };
+    $("#dev-notes").oninput = () => {
+        device.notes = $("#dev-notes").value;
+    };
+    if (mqttToggle) {
+        mqttToggle.onchange = () => {
+            device.mqttEnabled = Boolean(mqttToggle.checked);
+        };
+    }
+    if (haToggle) {
+        haToggle.onchange = () => {
+            device.homeassistantDiscoveryEnabled = Boolean(haToggle.checked);
+        };
+    }
 
     $("#btn-dev-delete").onclick = () => {
         if (!confirm("Delete this device and its datapoints?"))
@@ -551,54 +586,15 @@ function showDatapointEditor() {
         };
     });
 
-    $("#btn-dp-save").onclick = () => {
-        const newDevId = $("#dp-device").value;
-        const name = $("#dp-name").value.trim();
-        const newId = dpIdFrom(getDevice(newDevId)?.name || "device", name || "datapoint");
-
-        if (findDpById(newId) && newId !== datapoint.id) {
-            alert(`Datapoint ID "${newId}" already exists.`);
-            return;
-        }
-
-        // content
-        datapoint.name = name || "datapoint";
-        datapoint.func = Number($("#dp-func").value);
-        const parsedAddress = parseAddressInput(addrInput.value, currentAddressFormat);
-        if (!Number.isInteger(parsedAddress) || parsedAddress < 0) {
-            const fmtLabel = currentAddressFormat === "hex" ? "hex" : "decimal";
-            alert(`Address must be a valid non-negative ${fmtLabel} value.`);
-            return;
-        }
-        datapoint.address = parsedAddress;
-        datapoint.slice = normalizeRegisterSlice($("#dp-slice").value);
-        datapoint.length = Number($("#dp-len").value);
-        datapoint.type = $("#dp-type").value;
-        datapoint.scale = Number($("#dp-scale").value);
-        datapoint.unit = ($("#dp-unit").value || "").trim();
-        datapoint.topic = ($("#dp-topic").value || "").trim();
-        datapoint.poll_secs = Math.max(0, Number($("#dp-poll").value) || 0);
-
-        // move and rename if a device changed
-        if (newDevId !== selection.deviceId) {
-            const oldDev = getDevice(selection.deviceId);
-            oldDev.datapoints = (oldDev.datapoints || []).filter(x => x.id !== datapoint.id);
-            const newDev = getDevice(newDevId);
-            datapoint.id = newId;
-            newDev.datapoints = newDev.datapoints || [];
-            newDev.datapoints.push(datapoint);
-            selection = {
-                kind: "dp", deviceId: newDevId, datapointId: datapoint.id
-            };
-        }
-        else {
-            datapoint.id = newId;
-        }
-
-        buildTree();
-        showDatapointEditor();
-        toast("Datapoint updated (draft)");
-    };
+    // Replace Save with "Add Next" which creates a new datapoint on the same device
+    const btnAddNext = $("#btn-dp-add-next");
+    if (btnAddNext) {
+        btnAddNext.onclick = () => {
+            addDatapointToCurrentDevice();
+            // focus name field of the newly added datapoint editor
+            setTimeout(() => { $("#dp-name")?.focus(); }, 0);
+        };
+    }
     $("#btn-dp-delete").onclick = () => {
         if (!confirm("Delete this datapoint?"))
         {
@@ -666,6 +662,85 @@ function showDatapointEditor() {
     if (writeBtn) {
         writeBtn.onclick = () => document.querySelector('#btn-dp-test-read').click();
     }
+
+    // --- Auto-save bindings for datapoint fields ---
+    // Device reassignment
+    devSel.onchange = () => {
+        const newDevId = devSel.value;
+        if (!newDevId || newDevId === selection.deviceId) return;
+        const newDev = getDevice(newDevId);
+        if (!newDev) return;
+        // Propose new id based on target device name and current dp name
+        const baseId = dpIdFrom(newDev.name || 'device', (datapoint.name || 'datapoint'));
+        let unique = baseId, i = 2;
+        while (findDpById(unique)) unique = `${baseId}_${i++}`;
+        // remove from old device
+        const oldDev = getDevice(selection.deviceId);
+        if (oldDev) {
+            oldDev.datapoints = (oldDev.datapoints || []).filter(p => p.id !== datapoint.id);
+        }
+        // set new id and push to new device
+        datapoint.id = unique;
+        newDev.datapoints = newDev.datapoints || [];
+        newDev.datapoints.push(datapoint);
+        selection = { kind: 'dp', deviceId: newDevId, datapointId: datapoint.id };
+        refreshTree();
+        // Re-render to bind new controls/context
+        showDatapointEditor();
+    };
+
+    // Name change: update name immediately, adjust preview id; only rename id on blur if unique
+    $("#dp-name").oninput = () => {
+        datapoint.name = $("#dp-name").value.trim();
+        recomputeId();
+        refreshTree();
+    };
+    $("#dp-name").onblur = () => {
+        const dev = getDevice($("#dp-device").value);
+        const desired = dpIdFrom(dev?.name || 'device', ($("#dp-name").value.trim() || 'datapoint'));
+        if (desired !== datapoint.id && !findDpById(desired)) {
+            datapoint.id = desired;
+            $("#dp-autoid").textContent = desired;
+            refreshTree();
+        }
+    };
+
+    $("#dp-func").onchange = () => {
+        datapoint.func = Number($("#dp-func").value) || 3;
+    };
+    // Address input: update model when valid
+    $("#dp-addr").oninput = () => {
+        const parsed = parseAddressInput($("#dp-addr").value, currentAddressFormat);
+        if (Number.isInteger(parsed) && parsed >= 0) {
+            datapoint.address = parsed;
+        }
+    };
+    $("#dp-slice").onchange = () => {
+        datapoint.slice = normalizeRegisterSlice($("#dp-slice").value);
+    };
+    $("#dp-len").oninput = () => {
+        const v = Number($("#dp-len").value);
+        if (Number.isInteger(v) && v > 0) {
+            datapoint.length = v;
+        }
+    };
+    $("#dp-type").onchange = () => {
+        datapoint.type = $("#dp-type").value;
+    };
+    $("#dp-scale").oninput = () => {
+        const v = Number($("#dp-scale").value);
+        if (!Number.isNaN(v)) datapoint.scale = v;
+    };
+    $("#dp-unit").oninput = () => {
+        datapoint.unit = $("#dp-unit").value || "";
+    };
+    $("#dp-topic").oninput = () => {
+        datapoint.topic = ($("#dp-topic").value || "").trim();
+    };
+    $("#dp-poll").oninput = () => {
+        const v = Number($("#dp-poll").value);
+        datapoint.poll_secs = Math.max(0, Number.isFinite(v) ? v : 0);
+    };
 }
 
 /*
@@ -680,6 +755,32 @@ const dpIdFrom = (deviceName, dpName) => `${slug(deviceName)}.${slug(dpName)}`;
 const getBus = () => model.buses[0];
 const getDevice = (did) => (getBus()?.devices || []).find(d => d.id === did);
 const getDatapoint = (did, pid) => (getDevice(did)?.datapoints || []).find(p => p.id === pid);
+
+// When a device name changes, all its datapoint IDs must reflect the new device name.
+// This updates IDs to `${slug(device.name)}.${slug(dp.name)}` while keeping them unique across the whole config.
+function updateDeviceDatapointIds(device) {
+    if (!device || !Array.isArray(device.datapoints)) return;
+    for (const p of device.datapoints) {
+        const base = dpIdFrom(device.name || "device", p.name || "datapoint");
+        if (p.id === base) {
+            continue;
+        }
+        // Ensure global uniqueness, but allow matching this very datapoint object
+        let candidate = base;
+        let i = 2;
+        let conflict = findDpById(candidate);
+        while (conflict && conflict !== p) {
+            candidate = `${base}_${i++}`;
+            conflict = findDpById(candidate);
+        }
+        const oldId = p.id;
+        p.id = candidate;
+        // Maintain current selection if this datapoint is active
+        if (selection.kind === 'dp' && selection.deviceId === device.id && selection.datapointId === oldId) {
+            selection = { kind: 'dp', deviceId: device.id, datapointId: p.id };
+        }
+    }
+}
 
 function parseAddressInput(value, format) {
     const raw = (value ?? "").toString().trim();
@@ -769,6 +870,16 @@ const recomputeId = () => {
     const name = $("#dp-name").value;
     $("#dp-autoid").textContent = dpIdFrom(dev?.name || "device", name || "datapoint");
 };
+
+// Small helper to avoid rebuilding the tree too often while typing
+function debounce(fn, ms = 150) {
+    let t;
+    return (...args) => {
+        clearTimeout(t);
+        t = setTimeout(() => fn(...args), ms);
+    };
+}
+const refreshTree = debounce(() => buildTree(), 120);
 function showOnly(id) {
     $("#editor-placeholder").style.display = "none";
     ["#editor-bus","#editor-device","#editor-dp"].forEach(s => $(s).style.display = "none");

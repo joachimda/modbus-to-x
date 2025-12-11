@@ -136,8 +136,7 @@
                 </div>
                 <div class="divider"></div>
                 <div class="hstack">
-                    <button class="btn" id="btn-bus-save">Save</button>
-                    <span class="hint">Bus is fixed across all configured devices; .</span>
+                    <span class="hint">Bus settings are saved automatically. Click “Save and Apply” to push changes.</span>
                 </div>
             </div>
 
@@ -181,7 +180,6 @@
                 </table>
                 <div class="divider"></div>
                 <div class="hstack">
-                    <button class="btn" id="btn-dev-save">Save</button>
                     <button class="btn danger" id="btn-dev-delete">Delete Device</button>
                 </div>
             </div>
@@ -190,7 +188,7 @@
             <div id="editor-dp" style="display:none">
                 <h3 class="with-actions">Edit Datapoint <span class="spacer"></span><span id="dp-autoid"
                                                                                           class="mono pill">—</span></h3>
-                <div class="kvs kvs-3">
+                <div class="kvs">
                     <div>Device</div>
                     <label for="dp-device"></label><select id="dp-device"></select>
                     <div>Datapoint Name</div>
@@ -267,7 +265,7 @@
 
                 <div class="divider"></div>
                 <div class="hstack">
-                    <button class="btn" id="btn-dp-save">Save</button>
+                    <button class="btn" id="btn-dp-add-next">Add Next</button>
                     <button class="btn danger" id="btn-dp-delete">Delete Datapoint</button>
                 </div>
             </div>

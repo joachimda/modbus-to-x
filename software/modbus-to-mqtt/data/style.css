@@ -36,7 +36,7 @@ header h1 {
 
 .layout {
     display: grid;
-    grid-template-columns: 310px 1fr;
+    grid-template-columns: 30% 1fr;
     gap: 1rem;
     align-items: start;
 }
@@ -45,6 +45,13 @@ main {
     max-width: 980px;
     margin: 20px auto;
     padding: 0 16px 60px;
+}
+
+/* On the configure page, let the right editor fill the grid column without inner margins */
+body.configure main {
+    max-width: none;
+    margin: 0;
+    padding: 0; /* card provides its own padding */
 }
 
 .row {
@@ -159,24 +166,18 @@ input[type="password"]:focus {
 
 .node.active {
     border-color: #2f6fed;
-    box-shadow: 0 0 0 2px rgba(47, 111, 237, .15);
+    /* Keep a light outline without changing layout */
+    box-shadow: 0 0 0 2px rgba(47, 111, 237, .12);
     background: #fff;
 }
 body.configure .node.active {
+    /* Subtle highlight and left accent without shifting content */
     background: #eef2ff;
     border-color: #6366f1;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.18);
+    box-shadow: inset 2px 0 0 #6366f1, 0 0 0 2px rgba(99, 102, 241, 0.13);
 }
-body.configure .node.active::before {
-    content: "";
-    display: inline-block;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #6366f1;
-    margin-right: 6px;
-    vertical-align: 2px;
-}
+/* Remove the leading dot that nudged titles to the right */
+body.configure .node.active::before { display: none; content: none; }
 body.configure .node { transition: background .15s, box-shadow .15s, border-color .15s; }
 body.configure .node:hover { border-color: #c7d2fe; }
 body.configure .node.device.active .inline-actions { display: flex; }
@@ -272,10 +273,17 @@ summary {
     padding: 10px 12px;
 }
 
-.page {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 1rem;
+/* On configure pages, make the page container span the full viewport width so
+   header/content don't shrink to the width of the inner editor. Also avoid horizontal scroll. */
+body.configure .page {
+    width: 100%;
+    max-width: none;
+    padding: 0;
+}
+
+/* Avoid any accidental horizontal scrolling on configure pages */
+body.configure, body.configure .page {
+    overflow-x: hidden;
 }
 
 .page h1 {
@@ -661,9 +669,30 @@ summary {
     background: #fafafa;
 }
 
-.configure.layout {
-    grid-template-columns: 280px 1fr;
+.configure .layout {
+    /* Fix the sidebar width so it doesn't shrink when selecting items */
+    grid-template-columns: 360px minmax(0, 1fr);
     gap: .75rem;
+    /* Nudge the editors a bit below the sticky header, matching the sidebar offset */
+    margin-top: .5rem;
+}
+
+/* Prevent intrinsic-width overflow from children inside grid columns */
+.configure .layout > * {
+    min-width: 0;
+}
+
+/* Ensure cards (sidebar and editor) expand to fill their grid column width */
+.configure .card,
+.configure .scroll {
+    width: 100%;
+}
+
+/* On smaller screens, stack sidebar above editor to avoid overflow */
+@media (max-width: 860px) {
+    .configure .layout {
+        grid-template-columns: 1fr;
+    }
 }
 
 .configure .card {
@@ -674,7 +703,9 @@ summary {
     position: sticky;
     top: 0.5rem;
     max-height: calc(100vh - 2rem);
-    overflow: auto;
+    /* Prevent horizontal scrollbars while allowing vertical scroll */
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .configure .tree .header {

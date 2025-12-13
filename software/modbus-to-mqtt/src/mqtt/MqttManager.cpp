@@ -342,7 +342,7 @@ void MqttManager::reconfigureFromFile() {
     addSubscriptionHandlers(_mqttRootTopic);
 
     // Resume MQTT processing
-    setMQTTEnabled(false);
+    setMQTTEnabled(true);
 
     // If Wi-Fi is up, try to connect and resubscribe immediately
     if (WiFiClass::status() == WL_CONNECTED) {

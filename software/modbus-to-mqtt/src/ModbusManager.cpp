@@ -932,7 +932,7 @@ String ModbusManager::buildFriendlyName(const ModbusDevice &device, const Modbus
 }
 
 bool ModbusManager::isReadOnlyFunction(const ModbusFunctionType fn) {
-    return fn == READ_COIL || fn == READ_DISCRETE || fn == READ_HOLDING;
+    return fn == READ_COIL || fn == READ_DISCRETE || fn == READ_HOLDING || fn == READ_INPUT;
 }
 
 void ModbusManager::handleMqttConnected() {
@@ -981,6 +981,7 @@ void ModbusManager::publishAvailabilityOnline(ModbusDevice &device) const {
 }
 
 void ModbusManager::publishHomeAssistantDiscovery(ModbusDevice &device) const {
+    _logger->logDebug((String("[MQTT][HA] Publishing discovery for device ") + device.id).c_str());
     if (!device.homeassistantDiscoveryEnabled || !device.mqttEnabled || !_mqtt) {
         return;
     }

@@ -1,6 +1,6 @@
 {
-  "broker_ip": "192.168.1.57",
+  "broker_ip": "192.168.40.47",
   "broker_url": "",
   "broker_port": "1883",
-  "user": "testuser"
+  "user": "mbx"
 }

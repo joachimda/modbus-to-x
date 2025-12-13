@@ -112,17 +112,6 @@
           "poll_interval": 50
         },
         {
-          "id": "nilan.temp_heater",
-          "name": "temp_heater",
-          "function": 4,
-          "address": 209,
-          "numOfRegisters": 1,
-          "dataType": "uint16",
-          "scale": 0.01,
-          "unit": "C",
-          "poll_interval": 50
-        },
-        {
           "id": "nilan.airquality_relative_humidity",
           "name": "airquality_relative_humidity",
           "function": 4,
@@ -131,17 +120,6 @@
           "dataType": "uint16",
           "scale": 0.01,
           "unit": "%",
-          "poll_interval": 50
-        },
-        {
-          "id": "nilan.airquality_co2",
-          "name": "airquality_co2",
-          "function": 4,
-          "address": 222,
-          "numOfRegisters": 1,
-          "dataType": "uint16",
-          "scale": 1,
-          "unit": "ppm",
           "poll_interval": 50
         },
         {
@@ -299,15 +277,26 @@
           "poll_interval": 100
         },
         {
-          "id": "nilan.airtemp_temp_control",
-          "name": "airtemp.temp_control",
+          "id": "nilan.airtemp_heat_exchange_effifciency",
+          "name": "airtemp.heat_exchange_effifciency",
           "function": 4,
-          "address": 1104,
+          "address": 1204,
+          "numOfRegisters": 1,
+          "dataType": "uint16",
+          "scale": 0.01,
+          "unit": "%",
+          "poll_interval": 100
+        },
+        {
+          "id": "nilan.actual_sub_state",
+          "name": "Actual Sub State",
+          "function": 4,
+          "address": 1002,
           "numOfRegisters": 1,
           "dataType": "uint16",
           "scale": 1,
           "unit": "",
-          "poll_interval": 100
+          "poll_interval": 50
         }
       ]
     }

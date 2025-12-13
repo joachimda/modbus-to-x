@@ -29,7 +29,7 @@
 #endif
 
 #ifndef LED_A_PIN
-#define LED_A_PIN 26
+#define LED_A_PIN 27
 #endif
 
 #ifndef LED_B_PIN

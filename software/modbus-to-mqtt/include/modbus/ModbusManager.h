@@ -84,7 +84,7 @@ private:
 
     static String buildDatapointSegment(const ModbusDatapoint &dp);
 
-    String buildFriendlyName(const ModbusDevice &device, const ModbusDatapoint &dp) const;
+    static String buildFriendlyName(const ModbusDevice &device, const ModbusDatapoint &dp);
 
     static bool isReadOnlyFunction(ModbusFunctionType fn);
 
@@ -96,7 +96,6 @@ private:
 
     void publishHomeAssistantDiscovery(ModbusDevice &device) const;
 
-    static String slugify(const String &text);
 
     std::vector<ModbusDatapoint> _modbusRegisters;
     ModbusMaster node;

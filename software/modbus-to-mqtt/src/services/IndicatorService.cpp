@@ -32,7 +32,7 @@ void IndicatorService::setModbusConnected(const bool on) { _modbus.store(on, std
 void IndicatorService::setOtaActive(const bool on) { _ota.store(on, std::memory_order_release); }
 
 void IndicatorService::taskRunner(void *param) {
-    auto *self = static_cast<IndicatorService *>(param);
+    const auto *self = static_cast<IndicatorService *>(param);
     bool phase = false;
     TickType_t delayTicks = BLINK_INTERVAL_MS / portTICK_PERIOD_MS;
 

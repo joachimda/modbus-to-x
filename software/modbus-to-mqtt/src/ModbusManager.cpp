@@ -4,16 +4,19 @@
 #include <atomic>
 #include <map>
 #include <vector>
-#include <cctype>
-#include <cstdio>
 #include <SPIFFS.h>
 
 #include "ArduinoJson.h"
 #include "mqtt/MqttManager.h"
 #include "services/IndicatorService.h"
+#include "Modbus/ModbusConfigLoader.h"
+#include "utils/StringUtils.h"
+#include "utils/TeeStream.h"
 
 static std::atomic<bool> BUS_ACTIVE{false};
 static std::atomic<uint32_t> BUS_ERROR_COUNT{0};
+static std::atomic<bool> g_modbusBusy{false};
+
 static const std::map<String, uint32_t> communicationModes = {
     {"8N1", SERIAL_8N1},
     {"8N2", SERIAL_8N2},
@@ -25,116 +28,7 @@ static const std::map<String, uint32_t> communicationModes = {
 
 ModbusManager::ModbusManager(Logger *logger) : _logger(logger) {
 }
-
-class TeeStream : public Stream {
-public:
-    TeeStream(Stream &inner, Logger *logger) : _inner(inner), _logger(logger) {
-    }
-
-    void enableCapture(const bool en) {
-        _capture = en;
-        if (en) {
-            _bufLen = 0;
-            _sawFirstByte = false;
-        }
-    }
-
-    String dumpHex() const {
-        if (_bufLen == 0) return {""};
-        String s;
-        s.reserve(_bufLen * 3 + 8);
-        s = " RX=";
-        for (size_t i = 0; i < _bufLen; ++i) {
-            if (_buf[i] < 16) s += "0";
-            s += String(_buf[i], HEX);
-            if (i + 1 < _bufLen) s += " ";
-        }
-        return s;
-    }
-
-    int available() override {
-#if RS485_DROP_LEADING_ZERO
-        if (_capture && !_sawFirstByte) {
-            // Non-blocking purge of leading 0x00 bytes
-            while (_inner.available() > 0) {
-                const int pk = _inner.peek();
-                if (pk != 0x00) break;
-                // Drop zero
-                (void) _inner.read();
-                // Do not record in the capture buffer and do not set _sawFirstByte
-            }
-        }
-#endif
-        return _inner.available();
-    }
-
-    int read() override {
-        int b = _inner.read();
-#if RS485_DROP_LEADING_ZERO
-        if (_capture && !_sawFirstByte) {
-            // Drop leading 0x00 bytes; if the next byte isn't immediately available,
-            // wait briefly for it to arrive to avoid returning a spurious 0x00.
-            uint32_t waited = 0;
-            int drops = 0;
-            while (b == 0x00 && drops < 8) {
-                if (_inner.available() > 0) {
-                    b = _inner.read();
-                    drops++;
-                    continue;
-                }
-                if (waited >= RS485_FIRSTBYTE_WAIT_US) {
-                    // Do not propagate a zero as the first byte; report "no data"
-                    return -1;
-                }
-                delayMicroseconds(20);
-                waited += 20;
-            }
-        }
-#endif
-        if (_capture && b >= 0 && _bufLen < sizeof(_buf)) {
-            _buf[_bufLen++] = static_cast<uint8_t>(b);
-            if (!_sawFirstByte && b != 0x00) {
-                _sawFirstByte = true;
-            }
-        } else if (_capture && !_sawFirstByte && b == 0x00) {
-            // Explicitly ignore zero as the first byte for state tracking
-        }
-        return b;
-    }
-
-    int peek() override {
-#if RS485_DROP_LEADING_ZERO
-        if (_capture && !_sawFirstByte) {
-            // Purge any leading zeros so peek exposes the first non-zero
-            while (_inner.available() > 0) {
-                const int pk = _inner.peek();
-                if (pk != 0x00) break;
-                (void) _inner.read(); // drop zero
-            }
-        }
-#endif
-        return _inner.peek();
-    }
-
-    void flush() override { _inner.flush(); }
-    size_t write(const uint8_t ch) override {
-        return _inner.write(ch);
-    }
-    size_t write(const uint8_t *buffer, const size_t size) override {
-        return _inner.write(buffer, size);
-    }
-
-private:
-    Stream &_inner;
-    Logger *_logger;
-    bool _capture{false};
-    uint8_t _buf[64]{};
-    size_t _bufLen{0};
-    bool _sawFirstByte{false};
-};
-
 static TeeStream *g_teeSerial1 = nullptr;
-static std::atomic<bool> g_modbusBusy{false};
 
 bool ModbusManager::begin() {
     if (loadConfiguration()) {
@@ -149,177 +43,9 @@ bool ModbusManager::begin() {
 }
 
 bool ModbusManager::loadConfiguration() {
-    auto path = "/conf/config.json";
-    if (!SPIFFS.exists(path)) {
-        _logger->logDebug("Configuration file not found '/conf/config.json'");
-        // fallback to defaults
-        _modbusRoot.bus.baud = DEFAULT_MODBUS_BAUD_RATE;
-        _modbusRoot.bus.serialFormat = DEFAULT_MODBUS_MODE;
-        _modbusRoot.devices.clear();
+    const bool ok = ModbusConfigLoader::loadConfiguration(_logger, "/conf/config.json", _modbusRoot);
+    if (!ok) {
         return false;
-    }
-
-    _logger->logDebug("Found configuration file '/conf/config.json'");
-
-    File f = SPIFFS.open(path, FILE_READ);
-    if (!f) {
-        _logger->logError("ModbusManager::loadConfiguration - Failed to open /conf/config.json");
-        return false;
-    }
-    String json = f.readString();
-    f.close();
-
-    JsonDocument doc;
-    const DeserializationError err = deserializeJson(doc, json);
-    if (err) {
-        _logger->logError((String("ModbusManager::loadConfiguration - JSON parse error: ") + err.c_str()).c_str());
-        return false;
-    }
-
-    auto parseFunction = [](const int fn) -> ModbusFunctionType {
-        switch (fn) {
-            case 1: return READ_COIL;
-            case 2: return READ_DISCRETE;
-            case 3: return READ_HOLDING;
-            case 4: return READ_INPUT;
-            case 5: return WRITE_COIL;
-            case 6: return WRITE_HOLDING;
-            default: return READ_HOLDING;
-        }
-    };
-    auto parseDataType = [](const JsonVariant &v) -> ModbusDataType {
-        if (v.is<int>()) {
-            const int n = v.as<int>();
-            switch (n) {
-                case 1: return TEXT;
-                case 2: return INT16;
-                case 3: return INT32;
-                case 4: return INT64;
-                case 5: return UINT16;
-                case 6: return UINT32;
-                case 7: return UINT64;
-                case 8: return FLOAT32;
-                default: return UINT16;
-            }
-        }
-        String s = v.as<const char *>();
-        s.toLowerCase();
-        if (s == "text") {
-            return TEXT;
-        }
-        if (s == "int16") {
-            return INT16;
-        }
-        if (s == "int32") {
-            return INT32;
-        }
-        if (s == "int64") {
-            return INT64;
-        }
-        if (s == "uint16") {
-            return UINT16;
-        }
-        if (s == "uint32") {
-            return UINT32;
-        }
-        if (s == "uint64") {
-            return UINT64;
-        }
-        if (s == "float32") {
-            return FLOAT32;
-        }
-        return UINT16;
-    };
-
-    auto parseRegisterSlice = [](const JsonVariant &v) -> RegisterSlice {
-        if (v.is<int>()) {
-            switch (v.as<int>()) {
-                case 1: return RegisterSlice::LowByte;
-                case 2: return RegisterSlice::HighByte;
-                default: return RegisterSlice::Full;
-            }
-        }
-        if (v.is<const char *>()) {
-            String s = v.as<const char *>();
-            s.toLowerCase();
-            if (s == "low" || s == "low_byte" || s == "lowbyte" || s == "1") {
-                return RegisterSlice::LowByte;
-            }
-            if (s == "high" || s == "high_byte" || s == "highbyte" || s == "2") {
-                return RegisterSlice::HighByte;
-            }
-            if (s == "full" || s == "full_register") {
-                return RegisterSlice::Full;
-            }
-        }
-        return RegisterSlice::Full;
-    };
-
-    // bus
-    const JsonObject bus = doc["bus"].as<JsonObject>();
-    if (bus.isNull()) {
-        _logger->logWarning("ModbusManager::loadConfiguration - missing 'bus' object; using defaults");
-        _modbusRoot.bus.baud = DEFAULT_MODBUS_BAUD_RATE;
-        _modbusRoot.bus.serialFormat = DEFAULT_MODBUS_MODE;
-    } else {
-        _modbusRoot.bus.baud = bus["baud"] | DEFAULT_MODBUS_BAUD_RATE;
-        _modbusRoot.bus.serialFormat = String(bus["serialFormat"] | DEFAULT_MODBUS_MODE);
-    }
-
-    // devices
-    _modbusRoot.devices.clear();
-    const JsonArray devs = doc["devices"].as<JsonArray>();
-    if (!devs.isNull()) {
-        _modbusRoot.devices.reserve(devs.size());
-        for (JsonObject d: devs) {
-            ModbusDevice dev{};
-            dev.name = String(d["name"] | "device");
-            dev.name.trim();
-            dev.slaveId = static_cast<uint8_t>(d["slaveId"] | 1);
-            dev.id = String(d["id"] | "");
-            dev.id.trim();
-            if (dev.id.isEmpty()) {
-                dev.id = slugify(dev.name);
-                if (dev.id.isEmpty()) {
-                    dev.id = String("device_") + String(dev.slaveId);
-                }
-            }
-            dev.mqttEnabled = d["mqttEnabled"] | false;
-            dev.homeassistantDiscoveryEnabled = d["homeassistantDiscoveryEnabled"] | false;
-            dev.haAvailabilityOnlinePublished = false;
-            dev.haDiscoveryPublished = false;
-
-            const JsonArray dps = d["dataPoints"].as<JsonArray>();
-            if (!dps.isNull()) {
-                dev.datapoints.reserve(dps.size());
-                for (JsonObject p: dps) {
-                    ModbusDatapoint dp{};
-                    dp.id = String(p["id"] | "");
-                    dp.name = String(p["name"] | "");
-                    dp.function = parseFunction(p["function"] | 3);
-                    dp.address = static_cast<uint16_t>(p["address"] | 0);
-                    dp.numOfRegisters = static_cast<uint8_t>(p["numOfRegisters"] | 1);
-                    dp.scale = static_cast<float>(p["scale"] | 1.0);
-                    dp.dataType = parseDataType(p["dataType"]);
-                    dp.unit = String(p["unit"] | "");
-                    dp.topic = String(p["topic"] | "");
-                    dp.topic.trim();
-                    dp.registerSlice = parseRegisterSlice(p["registerSlice"]);
-                    // Optional per-datapoint poll interval (seconds in JSON) -> ms in runtime
-                    // Accept both poll_interval (seconds) and poll_interval_ms (milliseconds) if provided
-                    if (p["poll_interval_ms"].is<unsigned long>()) {
-                        const uint32_t ms = static_cast<uint32_t>(p["poll_interval_ms"].as<unsigned long>());
-                        dp.pollIntervalMs = ms;
-                    } else {
-                        const uint32_t sec = static_cast<uint32_t>(p["poll_interval"].as<unsigned long>());
-                        dp.pollIntervalMs = sec * 1000UL;
-                    }
-                    dp.nextDueAtMs = 0;
-                    dev.datapoints.push_back(dp);
-                }
-            }
-            _modbusRoot.devices.push_back(dev);
-        }
     }
 
     if (_mqtt) {
@@ -365,7 +91,6 @@ void ModbusManager::initializeWiring() const {
                   RX2, TX2);
 
     if (!g_teeSerial1) {
-        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
         g_teeSerial1 = new TeeStream(Serial1, _logger);
     }
 
@@ -411,7 +136,6 @@ void ModbusManager::loop() {
 }
 
 bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
-    // mark bus busy to avoid concurrent adhoc commands
     bool was = false;
     if (!g_modbusBusy.compare_exchange_strong(was, true, std::memory_order_acq_rel)) {
         return false;
@@ -432,7 +156,6 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
     bool successOnThisDevice = false;
     const uint32_t now = millis();
     for (auto &dp: const_cast<ModbusDevice &>(dev).datapoints) {
-        // Skip if not due yet
         if (dp.pollIntervalMs > 0 && now < dp.nextDueAtMs) {
             continue;
         }
@@ -453,11 +176,6 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
                 break;
             case READ_INPUT:
                 result = node.readInputRegisters(dp.address, dp.numOfRegisters);
-                break;
-            case WRITE_HOLDING:
-                result = node.writeMultipleRegisters(dp.address, dp.numOfRegisters);
-                Serial.print("Write Res: ");
-                Serial.println(result);
                 break;
             default:
                 result = -1;
@@ -525,7 +243,6 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
 }
 
 void ModbusManager::preTransmissionHandler() {
-    // Enable TX, disable RX; stop capture
     digitalWrite(RS485_DERE_PIN, HIGH);
     if (g_teeSerial1) g_teeSerial1->enableCapture(false);
     // Allow transceiver to settle before sending
@@ -534,7 +251,6 @@ void ModbusManager::preTransmissionHandler() {
 
 void ModbusManager::postTransmissionHandler() {
     Serial1.flush();
-    // Disable TX, enable RX; start capture
     digitalWrite(RS485_DERE_PIN, LOW);
     if (g_teeSerial1) g_teeSerial1->enableCapture(true);
     // Small guard so RX is ready before the slave replies
@@ -563,7 +279,7 @@ bool ModbusManager::reconfigureFromFile() {
     return ok;
 }
 
-auto ModbusManager::statusToString(uint8_t code) -> const char * {
+auto ModbusManager::statusToString(const uint8_t code) -> const char * {
     switch (code) {
         case 0x00: return "Success";
         case 0x01: return "IllegalFunction(0x01)";
@@ -579,7 +295,7 @@ auto ModbusManager::statusToString(uint8_t code) -> const char * {
     }
 }
 
-auto ModbusManager::functionToString(ModbusFunctionType fn) -> const char * {
+auto ModbusManager::functionToString(const ModbusFunctionType fn) -> const char * {
     switch (fn) {
         case READ_COIL: return "FC01-READ_COIL";
         case READ_DISCRETE: return "FC02-READ_DISCRETE";
@@ -591,7 +307,7 @@ auto ModbusManager::functionToString(ModbusFunctionType fn) -> const char * {
     }
 }
 
-auto ModbusManager::sliceRegister(uint16_t word, RegisterSlice slice) -> uint16_t {
+auto ModbusManager::sliceRegister(const uint16_t word, const RegisterSlice slice) -> uint16_t {
     switch (slice) {
         case RegisterSlice::LowByte:
             return static_cast<uint16_t>(word & 0x00FFU);
@@ -607,7 +323,7 @@ const ConfigurationRoot &ModbusManager::getConfiguration() const {
     return _modbusRoot;
 }
 
-uint8_t ModbusManager::executeCommand(uint8_t slaveId,
+uint8_t ModbusManager::executeCommand(const uint8_t slaveId,
                                       const int function,
                                       const uint16_t addr,
                                       const uint16_t len,
@@ -637,7 +353,6 @@ uint8_t ModbusManager::executeCommand(uint8_t slaveId,
         initializeWiring();
     }
 
-    // guard against concurrent access
     bool was = false;
     if (!g_modbusBusy.compare_exchange_strong(was, true, std::memory_order_acq_rel)) {
         return 0xE4; // busy
@@ -654,7 +369,7 @@ uint8_t ModbusManager::executeCommand(uint8_t slaveId,
     node.preTransmission(preTransmissionHandler);
     node.postTransmission(postTransmissionHandler);
 
-    uint8_t status = ModbusMaster::ku8MBIllegalFunction;
+    uint8_t status;
     switch (function) {
         case 1: status = node.readCoils(addr, len);
             break;
@@ -675,8 +390,6 @@ uint8_t ModbusManager::executeCommand(uint8_t slaveId,
             node.beginTransmission(addr);
             node.send(writeValue);
             status = node.writeSingleRegister(addr, writeValue);
-            Serial.print("Write Res: ");
-            Serial.println(status);
             break;
         }
         default:
@@ -796,7 +509,7 @@ String ModbusManager::buildDatapointTopic(const ModbusDevice &device, const Modb
         return topic;
     }
 
-    String root = (_mqtt != nullptr) ? _mqtt->getRootTopic() : String("");
+    String root = _mqtt->getRootTopic();
     root.trim();
 
     const String deviceSegment = buildDeviceSegment(device);
@@ -820,7 +533,7 @@ String ModbusManager::buildDatapointTopic(const ModbusDevice &device, const Modb
 
 String ModbusManager::buildAvailabilityTopic(const ModbusDevice &device) const {
     const String deviceSegment = buildDeviceSegment(device);
-    String root = (_mqtt != nullptr) ? _mqtt->getRootTopic() : String("");
+    String root = _mqtt->getRootTopic();
     root.trim();
 
     String topic;
@@ -840,14 +553,14 @@ String ModbusManager::buildAvailabilityTopic(const ModbusDevice &device) const {
 String ModbusManager::buildDeviceSegment(const ModbusDevice &device) {
     String deviceName = device.name;
     deviceName.trim();
-    String segment = slugify(deviceName);
+    String segment = StringUtils::slugify(deviceName);
     if (!segment.length()) {
         String fallbackId = device.id;
         fallbackId.trim();
         if (!fallbackId.length()) {
             fallbackId = String("device_") + String(device.slaveId);
         }
-        segment = slugify(fallbackId);
+        segment = StringUtils::slugify(fallbackId);
     }
     if (!segment.length()) {
         segment = String("device");
@@ -858,18 +571,18 @@ String ModbusManager::buildDeviceSegment(const ModbusDevice &device) {
 String ModbusManager::buildDatapointSegment(const ModbusDatapoint &dp) {
     String dpName = dp.name;
     dpName.trim();
-    String segment = slugify(dpName);
+    String segment = StringUtils::slugify(dpName);
     if (!segment.length()) {
         const int separatorIndex = dp.id.lastIndexOf('.');
         if (separatorIndex >= 0) {
-            const unsigned int nextIndex = static_cast<unsigned int>(separatorIndex + 1);
+            const auto nextIndex = static_cast<unsigned int>(separatorIndex + 1);
             if (nextIndex < dp.id.length()) {
-                segment = slugify(dp.id.substring(nextIndex));
+                segment = StringUtils::slugify(dp.id.substring(nextIndex));
             } else {
-                segment = slugify(dp.id);
+                segment = StringUtils::slugify(dp.id);
             }
         } else {
-            segment = slugify(dp.id);
+            segment = StringUtils::slugify(dp.id);
         }
     }
     if (!segment.length()) {
@@ -878,7 +591,7 @@ String ModbusManager::buildDatapointSegment(const ModbusDatapoint &dp) {
     return segment;
 }
 
-String ModbusManager::buildFriendlyName(const ModbusDevice &device, const ModbusDatapoint &dp) const {
+String ModbusManager::buildFriendlyName(const ModbusDevice &device, const ModbusDatapoint &dp) {
     auto toTitle = [](String value) {
         value.trim();
         if (!value.length()) {
@@ -888,7 +601,7 @@ String ModbusManager::buildFriendlyName(const ModbusDevice &device, const Modbus
         result.reserve(value.length() + 4);
         bool newWord = true;
         for (size_t i = 0; i < value.length(); ++i) {
-            const unsigned char raw = static_cast<unsigned char>(value[i]);
+            const auto raw = static_cast<unsigned char>(value[i]);
             if (raw == '_' || raw == '-' || raw == '.') {
                 if (result.length() && result[result.length() - 1] != ' ') {
                     result += ' ';
@@ -958,7 +671,7 @@ void ModbusManager::handleMqttDisconnected() {
 }
 
 void ModbusManager::publishAvailabilityOnline(ModbusDevice &device) const {
-    if (!device.homeassistantDiscoveryEnabled || !device.mqttEnabled || !_mqtt) {
+    if (!device.homeassistantDiscoveryEnabled || !device.mqttEnabled) {
         return;
     }
     if (!MqttManager::isMQTTEnabled() || !_mqtt->isConnected()) {
@@ -982,7 +695,7 @@ void ModbusManager::publishAvailabilityOnline(ModbusDevice &device) const {
 
 void ModbusManager::publishHomeAssistantDiscovery(ModbusDevice &device) const {
     _logger->logDebug((String("[MQTT][HA] Publishing discovery for device ") + device.id).c_str());
-    if (!device.homeassistantDiscoveryEnabled || !device.mqttEnabled || !_mqtt) {
+    if (!device.homeassistantDiscoveryEnabled || !device.mqttEnabled) {
         return;
     }
 
@@ -1051,29 +764,7 @@ void ModbusManager::publishHomeAssistantDiscovery(ModbusDevice &device) const {
     }
 }
 
-String ModbusManager::slugify(const String &text) {
-    String out;
-    out.reserve(text.length());
-    bool lastUnderscore = false;
-    for (size_t i = 0; i < text.length(); ++i) {
-        const auto raw = static_cast<unsigned char>(text[i]);
-        if (std::isalnum(raw)) {
-            const char lower = static_cast<char>(std::tolower(raw));
-            out += lower;
-            lastUnderscore = false;
-        } else if (!lastUnderscore && out.length() > 0U) {
-            out += '_';
-            lastUnderscore = true;
-        }
-    }
-    while (out.length() > 0U && out[out.length() - 1] == '_') {
-        out.remove(out.length() - 1);
-    }
-    if (out.length() == 0U) {
-        return {"device"};
-    }
-    return out;
-}
+// slugify moved to utils/StringUtils
 
 void ModbusManager::incrementBusErrorCount() const {
     BUS_ERROR_COUNT.fetch_add(1, std::memory_order_relaxed);

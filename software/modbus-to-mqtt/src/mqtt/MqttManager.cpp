@@ -45,7 +45,7 @@ auto MqttManager::begin() -> bool {
     const char *broker = {_mqttBroker};
     _mqttClient->setServer(broker, atoi(_mqttPort));
     _mqttClient->setCallback(handleMqttMessage);
-    addSubscriptionHandlers(_mqttRootTopic);
+    addSystemSubscriptionHandlers(_mqttRootTopic);
 
     // Do NOT attempt connection here; Wi‑Fi/LWIP may not be initialized yet.
     // The background task will handle connecting once Wi‑Fi is up.
@@ -180,7 +180,7 @@ void MqttManager::handleMqttMessage(char *topic, const byte *payload, const unsi
     }
 }
 
-void MqttManager::addSubscriptionHandlers(const String &rootTopic) const {
+void MqttManager::addSystemSubscriptionHandlers(const String &rootTopic) const {
     _subscriptionHandler->addHandler(rootTopic + system_subscription_network_reset, [this](const String &) {
         _logger->logInformation("[MQTT][Subscriptions] Network reset requested by MQTT message");
     });
@@ -339,7 +339,7 @@ void MqttManager::reconfigureFromFile() {
 
     // Rebuild subscriptions for new root topic
     _subscriptionHandler->clear();
-    addSubscriptionHandlers(_mqttRootTopic);
+    addSystemSubscriptionHandlers(_mqttRootTopic);
 
     // Resume MQTT processing
     setMQTTEnabled(true);

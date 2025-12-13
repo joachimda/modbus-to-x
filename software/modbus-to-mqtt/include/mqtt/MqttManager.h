@@ -11,7 +11,7 @@ public:
 
     static void handleMqttMessage(char *topic, const byte *payload, unsigned int length);
 
-    void addSubscriptionHandlers(const String &rootTopic) const;
+    void addSystemSubscriptionHandlers(const String &rootTopic) const;
 
     auto begin() -> bool;
 

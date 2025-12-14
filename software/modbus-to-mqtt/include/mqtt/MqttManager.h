@@ -25,6 +25,10 @@ public:
 
     auto isConnected() const -> bool;
 
+    void addSubscriptionHandler(const String &topic, MqttSubscriptionHandler::TopicHandlerFunc handler) const;
+
+    void removeSubscriptionHandlers(const std::vector<String> &topics) const;
+
     void onMqttMessage(const String &topic, const uint8_t *payload, size_t length) const;
 
     auto startMqttTask() -> bool;

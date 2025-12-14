@@ -4,6 +4,7 @@
 #include "ESPAsyncWebServer.h"
 #include <cstdio>
 #include <atomic>
+#include <utility>
 #include "services/IndicatorService.h"
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
@@ -189,6 +190,18 @@ void MqttManager::addSystemSubscriptionHandlers(const String &rootTopic) const {
         _logger->logInformation("[MQTT][Subscriptions] Echo requested");
         _logger->logInformation(msg.c_str());
     });
+}
+
+void MqttManager::addSubscriptionHandler(const String &topic, MqttSubscriptionHandler::TopicHandlerFunc handler) const {
+    _subscriptionHandler->addHandler(topic, std::move(handler));
+    if (_mqttClient->connected()) {
+        _mqttClient->subscribe(topic.c_str());
+        _logger->logDebug((String("[MQTT][Subscriptions] Subscribed to dynamic topic: ") + topic).c_str());
+    }
+}
+
+void MqttManager::removeSubscriptionHandlers(const std::vector<String> &topics) const {
+    _subscriptionHandler->removeHandlers(topics);
 }
 
 [[noreturn]] void MqttManager::processMQTTAsync(void *parameter) {

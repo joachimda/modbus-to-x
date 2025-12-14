@@ -3,7 +3,7 @@
 #include <SPIFFS.h>
 #include <WiFi.h>
 
-#include "Modbus/ModbusManager.h"
+#include "modbus/ModbusManager.h"
 #include "network/mbx_server/MBXServerHandlers.h"
 
 #ifndef FW_VERSION

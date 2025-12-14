@@ -1,9 +1,9 @@
 #include <SPIFFS.h>
 #include "ArduinoJson.h"
 
-#include "Modbus/ModbusConfigLoader.h"
+#include "modbus/ModbusConfigLoader.h"
 #include "Config.h"
-#include "Modbus/config_structs/ModbusDatapoint.h"
+#include "modbus/config_structs/ModbusDatapoint.h"
 #include "utils/StringUtils.h"
 
 // Slugify centralized in StringUtils

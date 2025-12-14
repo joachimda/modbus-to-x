@@ -1,7 +1,8 @@
 #include "Config.h"
-#include "Modbus/ModbusManager.h"
+#include "modbus/ModbusManager.h"
 
 #include <atomic>
+#include <cmath>
 #include <map>
 #include <vector>
 #include <SPIFFS.h>
@@ -9,7 +10,7 @@
 #include "ArduinoJson.h"
 #include "mqtt/MqttManager.h"
 #include "services/IndicatorService.h"
-#include "Modbus/ModbusConfigLoader.h"
+#include "modbus/ModbusConfigLoader.h"
 #include "utils/StringUtils.h"
 #include "utils/TeeStream.h"
 
@@ -72,6 +73,10 @@ bool ModbusManager::loadConfiguration() {
             _logger->logWarning(
                 "[MQTT][HA] Multiple devices requested Home Assistant discovery; LWT uses the first matched device");
         }
+    }
+
+    if (_mqtt) {
+        rebuildWriteSubscriptions();
     }
 
     _logger->logInformation((String("Loaded config: ") + String(_modbusRoot.devices.size()) + " devices; baud " +
@@ -270,6 +275,9 @@ bool ModbusManager::reconfigureFromFile() {
     const bool ok = loadConfiguration();
     if (ok) {
         initializeWiring();
+        if (_mqtt) {
+            rebuildWriteSubscriptions();
+        }
         BUS_ACTIVE.store(true, std::memory_order_release);
         _logger->logInformation("ModbusManager::reconfigureFromFile - applied and active");
     } else {
@@ -648,10 +656,125 @@ bool ModbusManager::isReadOnlyFunction(const ModbusFunctionType fn) {
     return fn == READ_COIL || fn == READ_DISCRETE || fn == READ_HOLDING || fn == READ_INPUT;
 }
 
+void ModbusManager::rebuildWriteSubscriptions() {
+    if (!_mqtt) return;
+
+    if (!_writeTopics.empty()) {
+        _mqtt->removeSubscriptionHandlers(_writeTopics);
+        _writeTopics.clear();
+    }
+
+    if (!MqttManager::isMQTTEnabled()) {
+        return;
+    }
+
+    for (const auto &device: _modbusRoot.devices) {
+        if (!device.mqttEnabled) continue;
+
+        for (const auto &dp: device.datapoints) {
+            if (isReadOnlyFunction(dp.function)) continue;
+
+            String topic = buildDatapointTopic(device, dp);
+            topic.trim();
+            if (!topic.length()) {
+                _logger->logWarning("ModbusManager::rebuildWriteSubscriptions - empty topic for write datapoint, skipping");
+                continue;
+            }
+
+            const uint8_t slaveId = device.slaveId;
+            const auto fn = dp.function;
+            const uint16_t addr = dp.address;
+            const uint8_t numRegs = dp.numOfRegisters ? dp.numOfRegisters : 1;
+            const float scale = dp.scale;
+
+            _mqtt->addSubscriptionHandler(topic, [this, topic, slaveId, fn, addr, numRegs, scale](const String &payload) {
+                handleWriteCommand(topic, slaveId, fn, addr, numRegs, scale, payload);
+            });
+            _writeTopics.push_back(topic);
+        }
+    }
+}
+
+void ModbusManager::handleWriteCommand(const String &topic,
+                                       const uint8_t slaveId,
+                                       const ModbusFunctionType fn,
+                                       const uint16_t addr,
+                                       const uint8_t numRegs,
+                                       const float scale,
+                                       const String &payload) {
+    String trimmed = payload;
+    trimmed.trim();
+
+    uint16_t writeValue = 0;
+    bool hasWriteValue = false;
+
+    if (fn == WRITE_COIL) {
+        if (trimmed.equalsIgnoreCase("true") || trimmed == "1") {
+            writeValue = 1;
+            hasWriteValue = true;
+        } else if (trimmed.equalsIgnoreCase("false") || trimmed == "0") {
+            writeValue = 0;
+            hasWriteValue = true;
+        } else if (trimmed.length()) {
+            writeValue = static_cast<uint16_t>(trimmed.toInt());
+            writeValue = writeValue ? 1 : 0;
+            hasWriteValue = true;
+        }
+    } else if (fn == WRITE_HOLDING) {
+        if (!trimmed.length()) {
+            _logger->logWarning("ModbusManager::handleWriteCommand - empty payload for holding register write");
+            return;
+        }
+        const float denom = (scale == 0.0f) ? 1.0f : scale;
+        const float requested = trimmed.toFloat();
+        const float raw = requested / denom;
+        float rounded = (raw >= 0.0f) ? (raw + 0.5f) : (raw - 0.5f);
+        if (rounded < 0.0f) rounded = 0.0f;
+        if (rounded > 65535.0f) rounded = 65535.0f;
+        writeValue = static_cast<uint16_t>(rounded);
+        hasWriteValue = true;
+    } else {
+        _logger->logWarning("ModbusManager::handleWriteCommand - unsupported function");
+        return;
+    }
+
+    if (!hasWriteValue) {
+        _logger->logWarning(
+            (String("ModbusManager::handleWriteCommand - Unable to parse payload for topic [") + topic + "]").c_str());
+        return;
+    }
+
+    uint16_t outBuf[1]{};
+    uint16_t outCount = 0;
+    String rxDump;
+    const uint8_t status = executeCommand(slaveId,
+                                          static_cast<int>(fn),
+                                          addr,
+                                          numRegs,
+                                          writeValue,
+                                          true,
+                                          outBuf,
+                                          0,
+                                          outCount,
+                                          rxDump);
+
+    if (status == ModbusMaster::ku8MBSuccess) {
+        _logger->logDebug(
+            (String("Modbus write OK - topic=") + topic + ", addr=" + String(addr) + ", value=" +
+             String(writeValue)).c_str());
+    } else {
+        _logger->logError(
+            (String("Modbus write ERR - topic=") + topic + ", addr=" + String(addr) +
+             ", code=" + String(status) + " (" + statusToString(status) + ")" +
+             (rxDump.length() ? String(", rx=") + rxDump : String(""))).c_str());
+    }
+}
+
 void ModbusManager::handleMqttConnected() {
     if (!_mqtt || !MqttManager::isMQTTEnabled()) {
         return;
     }
+    rebuildWriteSubscriptions();
     for (auto &device: _modbusRoot.devices) {
         if (!device.mqttEnabled) {
             continue;

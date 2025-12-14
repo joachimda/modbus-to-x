@@ -92,6 +92,16 @@ private:
 
     void handleMqttDisconnected();
 
+    void rebuildWriteSubscriptions();
+
+    void handleWriteCommand(const String &topic,
+                            uint8_t slaveId,
+                            ModbusFunctionType fn,
+                            uint16_t addr,
+                            uint8_t numRegs,
+                            float scale,
+                            const String &payload);
+
     void publishAvailabilityOnline(ModbusDevice &device) const;
 
     void publishHomeAssistantDiscovery(ModbusDevice &device) const;
@@ -104,5 +114,6 @@ private:
     ConfigurationRoot _modbusRoot{};
     MqttManager *_mqtt{nullptr};
     bool _mqttConnectedLastLoop{false};
+    std::vector<String> _writeTopics;
 };
 #endif

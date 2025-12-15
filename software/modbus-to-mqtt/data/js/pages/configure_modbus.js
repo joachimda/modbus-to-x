@@ -13,6 +13,7 @@ let selection = { kind: "bus", deviceId: null, datapointId: null };
 * * */
 const SERIAL_FORMATS = new Set(["7N1","7N2","7O1","7O2","7E1","7E2","8N1","8N2","8E1","8E2","8O1","8O2"]);
 const REGISTER_SLICES = new Set(["full","low_byte","high_byte"]);
+const WRITE_FUNCTIONS = new Set([5, 6]);
 function toSerialParts(fmt) {
     const def = { data_bits: 8, parity: "N", stop_bits: 1 };
     if (!fmt || typeof fmt !== "string" || fmt.length < 3) return def;
@@ -556,16 +557,44 @@ function showDatapointEditor() {
     $("#dp-unit").value = datapoint.unit || "";
     $("#dp-topic").value = datapoint.topic || "";
     $("#dp-poll").value = Number.isFinite(Number(datapoint.poll_secs)) ? Number(datapoint.poll_secs) : 0;
+    const applyWriteFieldsState = () => {
+        const func = Number($("#dp-func").value);
+        const isWrite = WRITE_FUNCTIONS.has(func);
+        const unitEl = $("#dp-unit");
+        const pollEl = $("#dp-poll");
+        if (unitEl) {
+            unitEl.disabled = isWrite;
+            unitEl.classList.toggle("field-disabled", isWrite);
+            if (isWrite) {
+                unitEl.value = "";
+                datapoint.unit = "";
+            }
+        }
+        if (pollEl) {
+            pollEl.disabled = isWrite;
+            pollEl.classList.toggle("field-disabled", isWrite);
+            if (isWrite) {
+                pollEl.value = 0;
+                datapoint.poll_secs = 0;
+            }
+        }
+    };
     const updateTestValueVisibility = () => {
         const func = Number($("#dp-func").value);
-        const isWrite = (func === 5 || func === 6);
+        const isWrite = WRITE_FUNCTIONS.has(func);
         const input = $("#dp-test-value");
         const label = document.querySelector('label[for="dp-test-value"]');
         if (input) input.style.display = isWrite ? "" : "none";
         if (label) label.style.display = "none"; // keep label hidden; placeholder explains usage
     };
+    const onFunctionChange = () => {
+        datapoint.func = Number($("#dp-func").value) || 3;
+        updateTestValueVisibility();
+        applyWriteFieldsState();
+    };
     updateTestValueVisibility();
-    $("#dp-func").onchange = updateTestValueVisibility;
+    applyWriteFieldsState();
+    $("#dp-func").onchange = onFunctionChange;
 
     const updateAddressField = (num) => {
         const sanitized = Number.isInteger(num) && num >= 0 ? num : 0;
@@ -705,9 +734,6 @@ function showDatapointEditor() {
         }
     };
 
-    $("#dp-func").onchange = () => {
-        datapoint.func = Number($("#dp-func").value) || 3;
-    };
     // Address input: update model when valid
     $("#dp-addr").oninput = () => {
         const parsed = parseAddressInput($("#dp-addr").value, currentAddressFormat);

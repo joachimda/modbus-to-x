@@ -182,6 +182,9 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
             case READ_INPUT:
                 result = node.readInputRegisters(dp.address, dp.numOfRegisters);
                 break;
+            case WRITE_COIL:
+            case WRITE_HOLDING:
+                continue;
             default:
                 result = -1;
                 _logger->logError(

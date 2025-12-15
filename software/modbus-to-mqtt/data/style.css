@@ -151,6 +151,15 @@ input[type="password"]:focus {
     cursor: not-allowed;
 }
 
+input:disabled,
+select:disabled,
+textarea:disabled,
+.field-disabled {
+    background: #f3f4f6;
+    color: #9ca3af;
+    cursor: not-allowed;
+}
+
 .list {
     display: grid;
     gap: 8px;

@@ -4,7 +4,6 @@
 
 #include <Arduino.h>
 #include <vector>
-#include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include "LoggerInterface.h"
 

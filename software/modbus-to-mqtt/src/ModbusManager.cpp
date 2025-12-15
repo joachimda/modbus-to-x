@@ -161,6 +161,9 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
     bool successOnThisDevice = false;
     const uint32_t now = millis();
     for (auto &dp: const_cast<ModbusDevice &>(dev).datapoints) {
+        if (!isReadOnlyFunction(dp.function)) {
+            continue;
+        }
         if (dp.pollIntervalMs > 0 && now < dp.nextDueAtMs) {
             continue;
         }
@@ -314,6 +317,7 @@ auto ModbusManager::functionToString(const ModbusFunctionType fn) -> const char 
         case READ_INPUT: return "FC04-READ_INPUT";
         case WRITE_COIL: return "FC05-WRITE_COIL";
         case WRITE_HOLDING: return "FC06-WRITE_HOLDING";
+        case WRITE_MULTIPLE_HOLDING: return "FC16-WRITE_MULTIPLE_HOLDING";
         default: return "FC-UNKNOWN";
     }
 }
@@ -346,7 +350,7 @@ uint8_t ModbusManager::executeCommand(const uint8_t slaveId,
                                       String &rxDump) {
     outCount = 0;
     rxDump = "";
-    const bool expectedWrite = (function == 5 || function == 6);
+    const bool expectedWrite = (function == 5 || function == 6 || function == 16);
     if (expectedWrite && !hasWriteValue) {
         return ModbusMaster::ku8MBIllegalDataValue;
     }
@@ -354,6 +358,7 @@ uint8_t ModbusManager::executeCommand(const uint8_t slaveId,
     if (!expectedRead && !expectedWrite) {
         return ModbusMaster::ku8MBIllegalFunction;
     }
+    const uint16_t effectiveLen = (function == 16) ? 1 : len;
 
     // Best-effort ensure wiring is initialized
     if (!g_teeSerial1) {
@@ -382,13 +387,13 @@ uint8_t ModbusManager::executeCommand(const uint8_t slaveId,
 
     uint8_t status;
     switch (function) {
-        case 1: status = node.readCoils(addr, len);
+        case 1: status = node.readCoils(addr, effectiveLen);
             break;
-        case 2: status = node.readDiscreteInputs(addr, len);
+        case 2: status = node.readDiscreteInputs(addr, effectiveLen);
             break;
-        case 3: status = node.readHoldingRegisters(addr, len);
+        case 3: status = node.readHoldingRegisters(addr, effectiveLen);
             break;
-        case 4: status = node.readInputRegisters(addr, len);
+        case 4: status = node.readInputRegisters(addr, effectiveLen);
             break;
         case 5: {
             const uint16_t v = writeValue ? 0xFF00 : 0x0000;
@@ -403,13 +408,18 @@ uint8_t ModbusManager::executeCommand(const uint8_t slaveId,
             status = node.writeSingleRegister(addr, writeValue);
             break;
         }
+        case 16: {
+            node.setTransmitBuffer(0, writeValue);
+            status = node.writeMultipleRegisters(addr, effectiveLen);
+            break;
+        }
         default:
             status = ModbusMaster::ku8MBIllegalFunction;
             break;
     }
 
     if (status == ModbusMaster::ku8MBSuccess && expectedRead && outBuf && outBufCap > 0) {
-        const uint16_t n = (len < outBufCap) ? len : outBufCap;
+        const uint16_t n = (effectiveLen < outBufCap) ? effectiveLen : outBufCap;
         for (uint16_t i = 0; i < n; ++i) {
             outBuf[i] = node.getResponseBuffer(i);
         }
@@ -659,6 +669,10 @@ bool ModbusManager::isReadOnlyFunction(const ModbusFunctionType fn) {
     return fn == READ_COIL || fn == READ_DISCRETE || fn == READ_HOLDING || fn == READ_INPUT;
 }
 
+bool ModbusManager::isWriteFunction(const ModbusFunctionType fn) {
+    return fn == WRITE_COIL || fn == WRITE_HOLDING || fn == WRITE_MULTIPLE_HOLDING;
+}
+
 void ModbusManager::rebuildWriteSubscriptions() {
     if (!_mqtt) return;
 
@@ -723,7 +737,7 @@ void ModbusManager::handleWriteCommand(const String &topic,
             writeValue = writeValue ? 1 : 0;
             hasWriteValue = true;
         }
-    } else if (fn == WRITE_HOLDING) {
+    } else if (fn == WRITE_HOLDING || fn == WRITE_MULTIPLE_HOLDING) {
         if (!trimmed.length()) {
             _logger->logWarning("ModbusManager::handleWriteCommand - empty payload for holding register write");
             return;
@@ -750,10 +764,11 @@ void ModbusManager::handleWriteCommand(const String &topic,
     uint16_t outBuf[1]{};
     uint16_t outCount = 0;
     String rxDump;
+    const uint8_t effectiveLen = (fn == WRITE_MULTIPLE_HOLDING) ? 1 : numRegs;
     const uint8_t status = executeCommand(slaveId,
                                           static_cast<int>(fn),
                                           addr,
-                                          numRegs,
+                                          effectiveLen,
                                           writeValue,
                                           true,
                                           outBuf,

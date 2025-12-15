@@ -439,7 +439,7 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
 
     const long func = sFunc.toInt();
     const long addr = sAddr.toInt();
-    const long len = sLen.toInt();
+    long len = sLen.toInt();
     if (func <= 0 || addr < 0 || len <= 0) {
         req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
         return;
@@ -475,6 +475,10 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
         else if (sValue.equalsIgnoreCase("false") || sValue == "0") writeVal = 0;
         else writeVal = static_cast<uint16_t>(sValue.toInt());
         hasWriteVal = true;
+    }
+
+    if (func == 5 || func == 6 || func == 16) {
+        len = 1; // single write workaround even for FC16
     }
 
     const uint8_t status = mb->executeCommand(slave, (int) func, (uint16_t) addr, (uint16_t) len,

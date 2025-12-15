@@ -8,5 +8,6 @@ enum ModbusFunctionType {
     READ_INPUT = 4,
     WRITE_COIL = 5,
     WRITE_HOLDING = 6,
+    WRITE_MULTIPLE_HOLDING = 16,
 };
 #endif

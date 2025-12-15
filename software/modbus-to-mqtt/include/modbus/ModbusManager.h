@@ -25,7 +25,7 @@ public:
     /**
      Execute an adhoc Modbus command against a slave.
      For read functions (1..4), fills outBuf with up to outBufCap words and sets outCount.
-     For write functions (5..6), writeValue is used if hasWriteValue=true; outCount will be 0 on success.
+     For write functions (5,6,16), writeValue is used if hasWriteValue=true; outCount will be 0 on success.
      Returns ModbusMaster status code (0 on success).
     */
     uint8_t executeCommand(uint8_t slaveId,
@@ -67,6 +67,8 @@ private:
     bool readModbusDevice(const ModbusDevice &dev);
 
     void incrementBusErrorCount() const;
+
+    static bool isWriteFunction(ModbusFunctionType fn);
 
     static void preTransmissionHandler();
 

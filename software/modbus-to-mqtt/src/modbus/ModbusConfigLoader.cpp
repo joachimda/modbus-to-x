@@ -45,6 +45,7 @@ bool ModbusConfigLoader::loadConfiguration(Logger *logger, const char *path, Con
             case 4: return READ_INPUT;
             case 5: return WRITE_COIL;
             case 6: return WRITE_HOLDING;
+            case 16: return WRITE_MULTIPLE_HOLDING;
             default: return READ_HOLDING;
         }
     };

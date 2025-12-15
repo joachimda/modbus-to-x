@@ -131,6 +131,7 @@ function uiToSchema(uiModel) {
 }
 function validateSchemaConfig(cfg) {
     const errors = [];
+    const isWriteFunction = (fn) => fn === 5 || fn === 6 || fn === 16;
     // bus
     if (!cfg.bus || typeof cfg.bus !== "object") {
         errors.push("Missing bus");
@@ -173,8 +174,8 @@ function validateSchemaConfig(cfg) {
             if (p.registerSlice && p.registerSlice !== "full" && Number(p.numOfRegisters) !== 1) {
                 errors.push(`Datapoint ${p.id}: registerSlice requires numOfRegisters = 1`);
             }
-            if (!Number.isInteger(p.function) || p.function < 1 || p.function > 6) {
-                errors.push(`Datapoint ${p.id}: function 1-6`);
+            if (!Number.isInteger(p.function) || (p.function < 1) || (p.function > 6 && p.function !== 16)) {
+                errors.push(`Datapoint ${p.id}: function 1-6 or 16`);
             }
             if (p.topic != null && typeof p.topic !== "string") {
                 errors.push(`Datapoint ${p.id}: topic must be a string`);
@@ -190,6 +191,9 @@ function validateSchemaConfig(cfg) {
             }
             if (!Number.isInteger(p.numOfRegisters) || p.numOfRegisters < 1 || p.numOfRegisters > 125) {
                 errors.push(`Datapoint ${p.id}: numOfRegisters 1-125`);
+            }
+            if (isWriteFunction(p.function) && p.numOfRegisters !== 1) {
+                errors.push(`Datapoint ${p.id}: write functions must use numOfRegisters = 1`);
             }
             if (typeof p.unit === "string" && p.unit.length > 5) {
                 errors.push(`Datapoint ${p.id}: unit max length 5`);
@@ -562,6 +566,7 @@ function showDatapointEditor() {
         const isWrite = WRITE_FUNCTIONS.has(func);
         const unitEl = $("#dp-unit");
         const pollEl = $("#dp-poll");
+        const lenEl = $("#dp-len");
         if (unitEl) {
             unitEl.disabled = isWrite;
             unitEl.classList.toggle("field-disabled", isWrite);
@@ -576,6 +581,14 @@ function showDatapointEditor() {
             if (isWrite) {
                 pollEl.value = 0;
                 datapoint.poll_secs = 0;
+            }
+        }
+        if (lenEl) {
+            lenEl.disabled = isWrite;
+            lenEl.classList.toggle("field-disabled", isWrite);
+            if (isWrite) {
+                lenEl.value = 1;
+                datapoint.length = 1;
             }
         }
     };

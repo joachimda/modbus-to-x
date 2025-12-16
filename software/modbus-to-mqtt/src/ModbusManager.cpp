@@ -1,7 +1,8 @@
 #include "Config.h"
-#include "Modbus/ModbusManager.h"
+#include "modbus/ModbusManager.h"
 
 #include <atomic>
+#include <cmath>
 #include <map>
 #include <vector>
 #include <SPIFFS.h>
@@ -9,7 +10,7 @@
 #include "ArduinoJson.h"
 #include "mqtt/MqttManager.h"
 #include "services/IndicatorService.h"
-#include "Modbus/ModbusConfigLoader.h"
+#include "modbus/ModbusConfigLoader.h"
 #include "utils/StringUtils.h"
 #include "utils/TeeStream.h"
 
@@ -72,6 +73,10 @@ bool ModbusManager::loadConfiguration() {
             _logger->logWarning(
                 "[MQTT][HA] Multiple devices requested Home Assistant discovery; LWT uses the first matched device");
         }
+    }
+
+    if (_mqtt) {
+        rebuildWriteSubscriptions();
     }
 
     _logger->logInformation((String("Loaded config: ") + String(_modbusRoot.devices.size()) + " devices; baud " +
@@ -140,9 +145,6 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
     if (!g_modbusBusy.compare_exchange_strong(was, true, std::memory_order_acq_rel)) {
         return false;
     }
-    _logger->logDebug(
-        ("ModbusManager::readModbusDevice - Reading Device: " + String(dev.name) + " SlaveId: " + String(dev.slaveId)).
-        c_str());
     // Use tee stream to capture incoming bytes for diagnostics
     if (g_teeSerial1) {
         node.begin(dev.slaveId, *g_teeSerial1);
@@ -156,6 +158,9 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
     bool successOnThisDevice = false;
     const uint32_t now = millis();
     for (auto &dp: const_cast<ModbusDevice &>(dev).datapoints) {
+        if (!isReadOnlyFunction(dp.function)) {
+            continue;
+        }
         if (dp.pollIntervalMs > 0 && now < dp.nextDueAtMs) {
             continue;
         }
@@ -177,6 +182,9 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
             case READ_INPUT:
                 result = node.readInputRegisters(dp.address, dp.numOfRegisters);
                 break;
+            case WRITE_COIL:
+            case WRITE_HOLDING:
+                continue;
             default:
                 result = -1;
                 _logger->logError(
@@ -270,6 +278,9 @@ bool ModbusManager::reconfigureFromFile() {
     const bool ok = loadConfiguration();
     if (ok) {
         initializeWiring();
+        if (_mqtt) {
+            rebuildWriteSubscriptions();
+        }
         BUS_ACTIVE.store(true, std::memory_order_release);
         _logger->logInformation("ModbusManager::reconfigureFromFile - applied and active");
     } else {
@@ -303,6 +314,7 @@ auto ModbusManager::functionToString(const ModbusFunctionType fn) -> const char 
         case READ_INPUT: return "FC04-READ_INPUT";
         case WRITE_COIL: return "FC05-WRITE_COIL";
         case WRITE_HOLDING: return "FC06-WRITE_HOLDING";
+        case WRITE_MULTIPLE_HOLDING: return "FC16-WRITE_MULTIPLE_HOLDING";
         default: return "FC-UNKNOWN";
     }
 }
@@ -333,16 +345,21 @@ uint8_t ModbusManager::executeCommand(const uint8_t slaveId,
                                       const uint16_t outBufCap,
                                       uint16_t &outCount,
                                       String &rxDump) {
+
+    _logger->logDebug("Execute called");
     outCount = 0;
     rxDump = "";
-    const bool expectedWrite = (function == 5 || function == 6);
+    const bool expectedWrite = (function == 5 || function == 6 || function == 16);
     if (expectedWrite && !hasWriteValue) {
+        _logger->logError("hasWriteValue is false");
         return ModbusMaster::ku8MBIllegalDataValue;
     }
     const bool expectedRead = (function >= 1 && function <= 4);
     if (!expectedRead && !expectedWrite) {
+        _logger->logError("function out of range");
         return ModbusMaster::ku8MBIllegalFunction;
     }
+    const uint16_t effectiveLen = (function == 16) ? 1 : len;
 
     // Best-effort ensure wiring is initialized
     if (!g_teeSerial1) {
@@ -371,13 +388,13 @@ uint8_t ModbusManager::executeCommand(const uint8_t slaveId,
 
     uint8_t status;
     switch (function) {
-        case 1: status = node.readCoils(addr, len);
+        case 1: status = node.readCoils(addr, effectiveLen);
             break;
-        case 2: status = node.readDiscreteInputs(addr, len);
+        case 2: status = node.readDiscreteInputs(addr, effectiveLen);
             break;
-        case 3: status = node.readHoldingRegisters(addr, len);
+        case 3: status = node.readHoldingRegisters(addr, effectiveLen);
             break;
-        case 4: status = node.readInputRegisters(addr, len);
+        case 4: status = node.readInputRegisters(addr, effectiveLen);
             break;
         case 5: {
             const uint16_t v = writeValue ? 0xFF00 : 0x0000;
@@ -392,13 +409,19 @@ uint8_t ModbusManager::executeCommand(const uint8_t slaveId,
             status = node.writeSingleRegister(addr, writeValue);
             break;
         }
+        case 16: {
+            _logger->logDebug(("Execute F16 on addr: " + String(addr) + " with Data: " + String(writeValue)).c_str());
+            node.setTransmitBuffer(0, writeValue);
+            status = node.writeMultipleRegisters(addr, effectiveLen);
+            break;
+        }
         default:
             status = ModbusMaster::ku8MBIllegalFunction;
             break;
     }
 
     if (status == ModbusMaster::ku8MBSuccess && expectedRead && outBuf && outBufCap > 0) {
-        const uint16_t n = (len < outBufCap) ? len : outBufCap;
+        const uint16_t n = (effectiveLen < outBufCap) ? effectiveLen : outBufCap;
         for (uint16_t i = 0; i < n; ++i) {
             outBuf[i] = node.getResponseBuffer(i);
         }
@@ -568,6 +591,7 @@ String ModbusManager::buildDeviceSegment(const ModbusDevice &device) {
     return segment;
 }
 
+
 String ModbusManager::buildDatapointSegment(const ModbusDatapoint &dp) {
     String dpName = dp.name;
     dpName.trim();
@@ -648,10 +672,130 @@ bool ModbusManager::isReadOnlyFunction(const ModbusFunctionType fn) {
     return fn == READ_COIL || fn == READ_DISCRETE || fn == READ_HOLDING || fn == READ_INPUT;
 }
 
+bool ModbusManager::isWriteFunction(const ModbusFunctionType fn) {
+    return fn == WRITE_COIL || fn == WRITE_HOLDING || fn == WRITE_MULTIPLE_HOLDING;
+}
+
+void ModbusManager::rebuildWriteSubscriptions() {
+    if (!_mqtt) return;
+
+    if (!_writeTopics.empty()) {
+        _mqtt->removeSubscriptionHandlers(_writeTopics);
+        _writeTopics.clear();
+    }
+
+    if (!MqttManager::isMQTTEnabled()) {
+        return;
+    }
+
+    for (const auto &device: _modbusRoot.devices) {
+        if (!device.mqttEnabled) continue;
+
+        for (const auto &dp: device.datapoints) {
+            if (isReadOnlyFunction(dp.function)) continue;
+
+            String topic = buildDatapointTopic(device, dp);
+            topic.trim();
+            if (!topic.length()) {
+                _logger->logWarning("ModbusManager::rebuildWriteSubscriptions - empty topic for write datapoint, skipping");
+                continue;
+            }
+
+            const uint8_t slaveId = device.slaveId;
+            const auto fn = dp.function;
+            const uint16_t addr = dp.address;
+            const uint8_t numRegs = dp.numOfRegisters ? dp.numOfRegisters : 1;
+            const float scale = dp.scale;
+
+            _mqtt->addSubscriptionHandler(topic, [this, topic, slaveId, fn, addr, numRegs, scale](const String &payload) {
+                handleWriteCommand(topic, slaveId, fn, addr, numRegs, scale, payload);
+            });
+            _writeTopics.push_back(topic);
+        }
+    }
+}
+
+void ModbusManager::handleWriteCommand(const String &topic,
+                                       const uint8_t slaveId,
+                                       const ModbusFunctionType fn,
+                                       const uint16_t addr,
+                                       const uint8_t numRegs,
+                                       const float scale,
+                                       const String &payload) {
+    String trimmed = payload;
+    trimmed.trim();
+
+    uint16_t writeValue = 0;
+    bool hasWriteValue = false;
+
+    if (fn == WRITE_COIL) {
+        if (trimmed.equalsIgnoreCase("true") || trimmed == "1") {
+            writeValue = 1;
+            hasWriteValue = true;
+        } else if (trimmed.equalsIgnoreCase("false") || trimmed == "0") {
+            writeValue = 0;
+            hasWriteValue = true;
+        } else if (trimmed.length()) {
+            writeValue = static_cast<uint16_t>(trimmed.toInt());
+            writeValue = writeValue ? 1 : 0;
+            hasWriteValue = true;
+        }
+    } else if (fn == WRITE_HOLDING || fn == WRITE_MULTIPLE_HOLDING) {
+        if (!trimmed.length()) {
+            _logger->logWarning("ModbusManager::handleWriteCommand - empty payload for holding register write");
+            return;
+        }
+        const float denom = (scale == 0.0f) ? 1.0f : scale;
+        const float requested = trimmed.toFloat();
+        const float raw = requested / denom;
+        float rounded = (raw >= 0.0f) ? (raw + 0.5f) : (raw - 0.5f);
+        if (rounded < 0.0f) rounded = 0.0f;
+        if (rounded > 65535.0f) rounded = 65535.0f;
+        writeValue = static_cast<uint16_t>(rounded);
+        hasWriteValue = true;
+    } else {
+        _logger->logWarning("ModbusManager::handleWriteCommand - unsupported function");
+        return;
+    }
+
+    if (!hasWriteValue) {
+        _logger->logWarning(
+            (String("ModbusManager::handleWriteCommand - Unable to parse payload for topic [") + topic + "]").c_str());
+        return;
+    }
+
+    uint16_t outBuf[1]{};
+    uint16_t outCount = 0;
+    String rxDump;
+    const uint8_t effectiveLen = (fn == WRITE_MULTIPLE_HOLDING) ? 1 : numRegs;
+    const uint8_t status = executeCommand(slaveId,
+                                          static_cast<int>(fn),
+                                          addr,
+                                          effectiveLen,
+                                          writeValue,
+                                          true,
+                                          outBuf,
+                                          0,
+                                          outCount,
+                                          rxDump);
+
+    if (status == ModbusMaster::ku8MBSuccess) {
+        _logger->logDebug(
+            (String("Modbus write OK - topic=") + topic + ", addr=" + String(addr) + ", value=" +
+             String(writeValue)).c_str());
+    } else {
+        _logger->logError(
+            (String("Modbus write ERR - topic=") + topic + ", addr=" + String(addr) +
+             ", code=" + String(status) + " (" + statusToString(status) + ")" +
+             (rxDump.length() ? String(", rx=") + rxDump : String(""))).c_str());
+    }
+}
+
 void ModbusManager::handleMqttConnected() {
     if (!_mqtt || !MqttManager::isMQTTEnabled()) {
         return;
     }
+    rebuildWriteSubscriptions();
     for (auto &device: _modbusRoot.devices) {
         if (!device.mqttEnabled) {
             continue;
@@ -713,33 +857,46 @@ void ModbusManager::publishHomeAssistantDiscovery(ModbusDevice &device) const {
 
     bool anyEligible = false;
     bool anyPublished = false;
+
+    auto findStateTopicForCommand = [&](const String &commandTopic) -> String {
+        for (const auto &candidate: device.datapoints) {
+            if (!isReadOnlyFunction(candidate.function)) {
+                continue;
+            }
+            String candidateTopic = buildDatapointTopic(device, candidate);
+            candidateTopic.trim();
+            if (candidateTopic == commandTopic) {
+                return candidateTopic;
+            }
+        }
+        return {};
+    };
+
     for (const auto &dp: device.datapoints) {
-        if (!isReadOnlyFunction(dp.function)) {
+        const bool readable = isReadOnlyFunction(dp.function);
+        const bool writeable = isWriteFunction(dp.function);
+        if (!readable && !writeable) {
             continue;
         }
         anyEligible = true;
 
-        String stateTopic = buildDatapointTopic(device, dp);
-        stateTopic.trim();
-        if (!stateTopic.length()) {
+        String datapointTopic = buildDatapointTopic(device, dp);
+        datapointTopic.trim();
+        if (!datapointTopic.length()) {
             continue;
         }
 
         const String datapointSegment = buildDatapointSegment(dp);
-        String discoveryTopic = String("homeassistant/sensor/") + deviceSegment + "/" + datapointSegment + "/config";
+        const String baseUniqueId = deviceSegment + "_" + datapointSegment;
+        String discoveryTopic;
 
         JsonDocument doc;
-        doc["name"] = buildFriendlyName(device, dp);
-        const String uniqueId = deviceSegment + "_" + datapointSegment;
+        const String friendlyName = buildFriendlyName(device, dp);
+        const String uniqueId = writeable ? baseUniqueId + "_cmd" : baseUniqueId;
+
+        doc["name"] = friendlyName;
         doc["unique_id"] = uniqueId;
         doc["object_id"] = uniqueId;
-        doc["state_topic"] = stateTopic;
-        if (dp.unit.length()) {
-            doc["unit_of_measurement"] = dp.unit;
-        }
-        if (dp.function == READ_HOLDING) {
-            doc["state_class"] = "measurement";
-        }
         doc["availability_topic"] = availabilityTopic;
         doc["payload_available"] = "online";
         doc["payload_not_available"] = "offline";
@@ -748,6 +905,52 @@ void ModbusManager::publishHomeAssistantDiscovery(ModbusDevice &device) const {
         auto identifiers = deviceObj["identifiers"].to<JsonArray>();
         identifiers.add(deviceIdentifier);
         deviceObj["name"] = device.name.length() ? device.name : deviceSegment;
+
+        if (readable) {
+            discoveryTopic =
+                String("homeassistant/sensor/") + deviceSegment + "/" + datapointSegment + "/config";
+            doc["state_topic"] = datapointTopic;
+            if (dp.unit.length()) {
+                doc["unit_of_measurement"] = dp.unit;
+            }
+            if (dp.function == READ_HOLDING) {
+                doc["state_class"] = "measurement";
+            }
+        } else if (dp.function == WRITE_COIL) {
+            discoveryTopic =
+                String("homeassistant/switch/") + deviceSegment + "/" + datapointSegment + "/config";
+            doc["command_topic"] = datapointTopic;
+            doc["payload_on"] = "1";
+            doc["payload_off"] = "0";
+            const String stateTopic = findStateTopicForCommand(datapointTopic);
+            if (stateTopic.length()) {
+                doc["state_topic"] = stateTopic;
+            } else {
+                doc["optimistic"] = true;
+            }
+        } else if (dp.function == WRITE_HOLDING || dp.function == WRITE_MULTIPLE_HOLDING) {
+            discoveryTopic =
+                String("homeassistant/number/") + deviceSegment + "/" + datapointSegment + "/config";
+            doc["command_topic"] = datapointTopic;
+            const String stateTopic = findStateTopicForCommand(datapointTopic);
+            if (stateTopic.length()) {
+                doc["state_topic"] = stateTopic;
+            } else {
+                doc["optimistic"] = true;
+            }
+            if (dp.unit.length()) {
+                doc["unit_of_measurement"] = dp.unit;
+            }
+            const float effectiveScale = (dp.scale == 0.0f) ? 1.0f : dp.scale;
+            const float step = (effectiveScale > 0.0f) ? effectiveScale : 1.0f;
+            const float maxValue = 65535.0f * ((effectiveScale > 0.0f) ? effectiveScale : 1.0f);
+            doc["min"] = 0;
+            doc["max"] = maxValue;
+            doc["step"] = step;
+            doc["mode"] = "box";
+        } else {
+            continue;
+        }
 
         String payload;
         serializeJson(doc, payload);

@@ -13,6 +13,7 @@ let selection = { kind: "bus", deviceId: null, datapointId: null };
 * * */
 const SERIAL_FORMATS = new Set(["7N1","7N2","7O1","7O2","7E1","7E2","8N1","8N2","8E1","8E2","8O1","8O2"]);
 const REGISTER_SLICES = new Set(["full","low_byte","high_byte"]);
+const WRITE_FUNCTIONS = new Set([5, 6, 16]);
 function toSerialParts(fmt) {
     const def = { data_bits: 8, parity: "N", stop_bits: 1 };
     if (!fmt || typeof fmt !== "string" || fmt.length < 3) return def;
@@ -130,6 +131,7 @@ function uiToSchema(uiModel) {
 }
 function validateSchemaConfig(cfg) {
     const errors = [];
+    const isWriteFunction = (fn) => fn === 5 || fn === 6 || fn === 16;
     // bus
     if (!cfg.bus || typeof cfg.bus !== "object") {
         errors.push("Missing bus");
@@ -172,8 +174,8 @@ function validateSchemaConfig(cfg) {
             if (p.registerSlice && p.registerSlice !== "full" && Number(p.numOfRegisters) !== 1) {
                 errors.push(`Datapoint ${p.id}: registerSlice requires numOfRegisters = 1`);
             }
-            if (!Number.isInteger(p.function) || p.function < 1 || p.function > 6) {
-                errors.push(`Datapoint ${p.id}: function 1-6`);
+            if (!Number.isInteger(p.function) || (p.function < 1) || (p.function > 6 && p.function !== 16)) {
+                errors.push(`Datapoint ${p.id}: function 1-6 or 16`);
             }
             if (p.topic != null && typeof p.topic !== "string") {
                 errors.push(`Datapoint ${p.id}: topic must be a string`);
@@ -189,6 +191,9 @@ function validateSchemaConfig(cfg) {
             }
             if (!Number.isInteger(p.numOfRegisters) || p.numOfRegisters < 1 || p.numOfRegisters > 125) {
                 errors.push(`Datapoint ${p.id}: numOfRegisters 1-125`);
+            }
+            if (isWriteFunction(p.function) && p.numOfRegisters !== 1) {
+                errors.push(`Datapoint ${p.id}: write functions must use numOfRegisters = 1`);
             }
             if (typeof p.unit === "string" && p.unit.length > 5) {
                 errors.push(`Datapoint ${p.id}: unit max length 5`);
@@ -556,16 +561,53 @@ function showDatapointEditor() {
     $("#dp-unit").value = datapoint.unit || "";
     $("#dp-topic").value = datapoint.topic || "";
     $("#dp-poll").value = Number.isFinite(Number(datapoint.poll_secs)) ? Number(datapoint.poll_secs) : 0;
+    const applyWriteFieldsState = () => {
+        const func = Number($("#dp-func").value);
+        const isWrite = WRITE_FUNCTIONS.has(func);
+        const unitEl = $("#dp-unit");
+        const pollEl = $("#dp-poll");
+        const lenEl = $("#dp-len");
+        if (unitEl) {
+            unitEl.disabled = isWrite;
+            unitEl.classList.toggle("field-disabled", isWrite);
+            if (isWrite) {
+                unitEl.value = "";
+                datapoint.unit = "";
+            }
+        }
+        if (pollEl) {
+            pollEl.disabled = isWrite;
+            pollEl.classList.toggle("field-disabled", isWrite);
+            if (isWrite) {
+                pollEl.value = 0;
+                datapoint.poll_secs = 0;
+            }
+        }
+        if (lenEl) {
+            lenEl.disabled = isWrite;
+            lenEl.classList.toggle("field-disabled", isWrite);
+            if (isWrite) {
+                lenEl.value = 1;
+                datapoint.length = 1;
+            }
+        }
+    };
     const updateTestValueVisibility = () => {
         const func = Number($("#dp-func").value);
-        const isWrite = (func === 5 || func === 6);
+        const isWrite = WRITE_FUNCTIONS.has(func);
         const input = $("#dp-test-value");
         const label = document.querySelector('label[for="dp-test-value"]');
         if (input) input.style.display = isWrite ? "" : "none";
         if (label) label.style.display = "none"; // keep label hidden; placeholder explains usage
     };
+    const onFunctionChange = () => {
+        datapoint.func = Number($("#dp-func").value) || 3;
+        updateTestValueVisibility();
+        applyWriteFieldsState();
+    };
     updateTestValueVisibility();
-    $("#dp-func").onchange = updateTestValueVisibility;
+    applyWriteFieldsState();
+    $("#dp-func").onchange = onFunctionChange;
 
     const updateAddressField = (num) => {
         const sanitized = Number.isInteger(num) && num >= 0 ? num : 0;
@@ -633,14 +675,18 @@ function showDatapointEditor() {
             addr: String(addr),
             len: String(len),
         });
-        if ((func === 5 || func === 6) && writeVal.length) {
+        const slaveId = Number(device?.slaveId);
+        if (Number.isInteger(slaveId) && slaveId > 0) {
+            q.set("slave", String(slaveId));
+        }
+        if ((func === 5 || func === 6 || func === 16) && writeVal.length) {
             q.set('value', writeVal);
         }
 
         const btn = $("#btn-dp-test-read");
         const resEl = $("#dp-test-result");
         btn.disabled = true;
-        resEl.textContent = (func === 5 || func === 6) ? "Writing…" : "Reading…";
+        resEl.textContent = (func === 5 || func === 6 || func === 16) ? "Writing…" : "Reading…";
         try {
             const r = await safeJson(`${API.POST_MODBUS_EXECUTE}?${q.toString()}`, { method: 'POST' });
             const raw = r?.result?.raw;
@@ -705,9 +751,6 @@ function showDatapointEditor() {
         }
     };
 
-    $("#dp-func").onchange = () => {
-        datapoint.func = Number($("#dp-func").value) || 3;
-    };
     // Address input: update model when valid
     $("#dp-addr").oninput = () => {
         const parsed = parseAddressInput($("#dp-addr").value, currentAddressFormat);

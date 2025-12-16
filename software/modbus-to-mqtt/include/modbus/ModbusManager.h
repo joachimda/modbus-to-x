@@ -25,7 +25,7 @@ public:
     /**
      Execute an adhoc Modbus command against a slave.
      For read functions (1..4), fills outBuf with up to outBufCap words and sets outCount.
-     For write functions (5..6), writeValue is used if hasWriteValue=true; outCount will be 0 on success.
+     For write functions (5,6,16), writeValue is used if hasWriteValue=true; outCount will be 0 on success.
      Returns ModbusMaster status code (0 on success).
     */
     uint8_t executeCommand(uint8_t slaveId,
@@ -68,6 +68,8 @@ private:
 
     void incrementBusErrorCount() const;
 
+    static bool isWriteFunction(ModbusFunctionType fn);
+
     static void preTransmissionHandler();
 
     static void postTransmissionHandler();
@@ -92,6 +94,16 @@ private:
 
     void handleMqttDisconnected();
 
+    void rebuildWriteSubscriptions();
+
+    void handleWriteCommand(const String &topic,
+                            uint8_t slaveId,
+                            ModbusFunctionType fn,
+                            uint16_t addr,
+                            uint8_t numRegs,
+                            float scale,
+                            const String &payload);
+
     void publishAvailabilityOnline(ModbusDevice &device) const;
 
     void publishHomeAssistantDiscovery(ModbusDevice &device) const;
@@ -104,5 +116,6 @@ private:
     ConfigurationRoot _modbusRoot{};
     MqttManager *_mqtt{nullptr};
     bool _mqttConnectedLastLoop{false};
+    std::vector<String> _writeTopics;
 };
 #endif

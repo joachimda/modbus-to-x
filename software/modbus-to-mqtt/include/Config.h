@@ -18,7 +18,7 @@
 // Some RS485 transceivers or wiring transitions can produce a spurious 0x00
 // which misaligns the Modbus frame. Enable to filter these.
 #ifndef RS485_DROP_LEADING_ZERO
-#define RS485_DROP_LEADING_ZERO 1
+#define RS485_DROP_LEADING_ZERO 0
 #endif
 
 // When dropping leading zeros, wait up to this many microseconds for the

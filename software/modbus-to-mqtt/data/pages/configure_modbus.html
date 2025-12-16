@@ -159,7 +159,7 @@
                     <label for="dev-mqtt"></label><input id="dev-mqtt" type="checkbox" />
                     <div>Enable Home Assistant Discovery</div>
                     <label for="dev-ha-discovery"></label><input id="dev-ha-discovery" type="checkbox" />
-                    <div class="hint" style="grid-column:1 / span 2;">When enabled, datapoints from this device publish to MQTT. Empty datapoint topics fall back to &lt;root-topic&gt;/&lt;deviceId&gt;/&lt;datapointId&gt;. Enable Home Assistant discovery to publish retained configs for read-only datapoints.</div>
+                    <div class="hint" style="grid-column:1 / span 2;">When enabled, datapoints from this device publish to MQTT. Empty datapoint topics fall back to &lt;root-topic&gt;/&lt;deviceId&gt;/&lt;datapointId&gt;. Enable Home Assistant discovery to publish retained configs for read and write datapoints.</div>
                 </div>
                 <div class="divider"></div>
 
@@ -202,6 +202,7 @@
                         <option value=4>4 (READ_IREG)</option>
                         <option value=5>5 (WRITE_COIL)</option>
                         <option value=6>6 (WRITE_HREG)</option>
+                        <option value=16>16 (WRITE_MHREG)</option>
                     </select>
                     <div>Address</div>
                     <label for="dp-addr"></label>

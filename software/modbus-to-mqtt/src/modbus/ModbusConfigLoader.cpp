@@ -1,9 +1,9 @@
 #include <SPIFFS.h>
 #include "ArduinoJson.h"
 
-#include "Modbus/ModbusConfigLoader.h"
+#include "modbus/ModbusConfigLoader.h"
 #include "Config.h"
-#include "Modbus/config_structs/ModbusDatapoint.h"
+#include "modbus/config_structs/ModbusDatapoint.h"
 #include "utils/StringUtils.h"
 
 // Slugify centralized in StringUtils
@@ -45,6 +45,7 @@ bool ModbusConfigLoader::loadConfiguration(Logger *logger, const char *path, Con
             case 4: return READ_INPUT;
             case 5: return WRITE_COIL;
             case 6: return WRITE_HOLDING;
+            case 16: return WRITE_MULTIPLE_HOLDING;
             default: return READ_HOLDING;
         }
     };

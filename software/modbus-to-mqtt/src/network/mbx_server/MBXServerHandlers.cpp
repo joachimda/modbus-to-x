@@ -436,10 +436,14 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
         req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
         return;
     }
+    String sSlave;
+    const bool hasSlaveOverride = getParam("slave", sSlave);
 
     const long func = sFunc.toInt();
     const long addr = sAddr.toInt();
-    const long len = sLen.toInt();
+    long len = sLen.toInt();
+    const long slaveOverride = hasSlaveOverride ? sSlave.toInt() : 0;
+    const bool slaveOverrideValid = slaveOverride > 0 && slaveOverride <= 247;
     if (func <= 0 || addr < 0 || len <= 0) {
         req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
         return;
@@ -462,7 +466,20 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
     // Resolve slave id by datapoint
     const ModbusDevice *dpDevice = nullptr;
     const ModbusDatapoint *dpMeta = mb->findDatapointById(dpId, &dpDevice);
-    uint8_t slave = dpDevice ? dpDevice->slaveId : 0;
+    uint8_t slave = 0;
+    if (slaveOverrideValid) {
+        slave = static_cast<uint8_t>(slaveOverride);
+    } else if (dpDevice) {
+        slave = dpDevice->slaveId;
+    } else {
+        const ConfigurationRoot &cfg = mb->getConfiguration();
+        for (const auto &dev: cfg.devices) {
+            if (dev.id == devId) {
+                slave = dev.slaveId;
+                break;
+            }
+        }
+    }
     if (slave == 0) slave = MODBUS_SLAVE_ID;
 
     uint16_t outBuf[16]{};
@@ -475,6 +492,10 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
         else if (sValue.equalsIgnoreCase("false") || sValue == "0") writeVal = 0;
         else writeVal = static_cast<uint16_t>(sValue.toInt());
         hasWriteVal = true;
+    }
+
+    if (func == 5 || func == 6 || func == 16) {
+        len = 1; // single write workaround even for FC16
     }
 
     const uint8_t status = mb->executeCommand(slave, (int) func, (uint16_t) addr, (uint16_t) len,

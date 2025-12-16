@@ -1,5 +1,6 @@
 #include "mqtt/MqttSubscriptionHandler.h"
 #include <utility>
+#include <algorithm>
 
 MqttSubscriptionHandler::MqttSubscriptionHandler(Logger *logger) : _logger(logger){}
 
@@ -17,6 +18,18 @@ void MqttSubscriptionHandler::addHandler(const String& topic, TopicHandlerFunc h
     entry.handlerFunc = std::move(handler);
     _handlers.push_back(entry);
     _logger->logInformation((String("Handler added for topic: [")+ topic + "]").c_str());
+}
+
+void MqttSubscriptionHandler::removeHandlers(const std::vector<String> &topics) {
+    if (topics.empty()) return;
+    _handlers.erase(
+        std::remove_if(_handlers.begin(), _handlers.end(), [&topics](const HandlerEntry &entry) {
+            for (const auto &t : topics) {
+                if (entry.topic == t) return true;
+            }
+            return false;
+        }),
+        _handlers.end());
 }
 
 void MqttSubscriptionHandler::handle(const String& topic, const String& message) const {

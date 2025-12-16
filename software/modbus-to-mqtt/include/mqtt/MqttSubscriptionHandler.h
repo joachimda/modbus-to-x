@@ -17,6 +17,8 @@ public:
 
     void addHandler(const String &topic, TopicHandlerFunc handler);
 
+    void removeHandlers(const std::vector<String> &topics);
+
     void clear();
 
     void handle(const String &topic, const String &message) const;

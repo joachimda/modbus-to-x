@@ -675,6 +675,10 @@ function showDatapointEditor() {
             addr: String(addr),
             len: String(len),
         });
+        const slaveId = Number(device?.slaveId);
+        if (Number.isInteger(slaveId) && slaveId > 0) {
+            q.set("slave", String(slaveId));
+        }
         if ((func === 5 || func === 6 || func === 16) && writeVal.length) {
             q.set('value', writeVal);
         }

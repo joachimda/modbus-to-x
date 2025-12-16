@@ -13,7 +13,7 @@ let selection = { kind: "bus", deviceId: null, datapointId: null };
 * * */
 const SERIAL_FORMATS = new Set(["7N1","7N2","7O1","7O2","7E1","7E2","8N1","8N2","8E1","8E2","8O1","8O2"]);
 const REGISTER_SLICES = new Set(["full","low_byte","high_byte"]);
-const WRITE_FUNCTIONS = new Set([5, 6]);
+const WRITE_FUNCTIONS = new Set([5, 6, 16]);
 function toSerialParts(fmt) {
     const def = { data_bits: 8, parity: "N", stop_bits: 1 };
     if (!fmt || typeof fmt !== "string" || fmt.length < 3) return def;
@@ -675,14 +675,14 @@ function showDatapointEditor() {
             addr: String(addr),
             len: String(len),
         });
-        if ((func === 5 || func === 6) && writeVal.length) {
+        if ((func === 5 || func === 6 || func === 16) && writeVal.length) {
             q.set('value', writeVal);
         }
 
         const btn = $("#btn-dp-test-read");
         const resEl = $("#dp-test-result");
         btn.disabled = true;
-        resEl.textContent = (func === 5 || func === 6) ? "Writing…" : "Reading…";
+        resEl.textContent = (func === 5 || func === 6 || func === 16) ? "Writing…" : "Reading…";
         try {
             const r = await safeJson(`${API.POST_MODBUS_EXECUTE}?${q.toString()}`, { method: 'POST' });
             const raw = r?.result?.raw;

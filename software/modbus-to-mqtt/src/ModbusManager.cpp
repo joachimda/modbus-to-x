@@ -145,9 +145,6 @@ bool ModbusManager::readModbusDevice(const ModbusDevice &dev) {
     if (!g_modbusBusy.compare_exchange_strong(was, true, std::memory_order_acq_rel)) {
         return false;
     }
-    _logger->logDebug(
-        ("ModbusManager::readModbusDevice - Reading Device: " + String(dev.name) + " SlaveId: " + String(dev.slaveId)).
-        c_str());
     // Use tee stream to capture incoming bytes for diagnostics
     if (g_teeSerial1) {
         node.begin(dev.slaveId, *g_teeSerial1);
@@ -348,14 +345,18 @@ uint8_t ModbusManager::executeCommand(const uint8_t slaveId,
                                       const uint16_t outBufCap,
                                       uint16_t &outCount,
                                       String &rxDump) {
+
+    _logger->logDebug("Execute called");
     outCount = 0;
     rxDump = "";
     const bool expectedWrite = (function == 5 || function == 6 || function == 16);
     if (expectedWrite && !hasWriteValue) {
+        _logger->logError("hasWriteValue is false");
         return ModbusMaster::ku8MBIllegalDataValue;
     }
     const bool expectedRead = (function >= 1 && function <= 4);
     if (!expectedRead && !expectedWrite) {
+        _logger->logError("function out of range");
         return ModbusMaster::ku8MBIllegalFunction;
     }
     const uint16_t effectiveLen = (function == 16) ? 1 : len;
@@ -409,6 +410,7 @@ uint8_t ModbusManager::executeCommand(const uint8_t slaveId,
             break;
         }
         case 16: {
+            _logger->logDebug(("Execute F16 on addr: " + String(addr) + " with Data: " + String(writeValue)).c_str());
             node.setTransmitBuffer(0, writeValue);
             status = node.writeMultipleRegisters(addr, effectiveLen);
             break;
@@ -588,6 +590,7 @@ String ModbusManager::buildDeviceSegment(const ModbusDevice &device) {
     }
     return segment;
 }
+
 
 String ModbusManager::buildDatapointSegment(const ModbusDatapoint &dp) {
     String dpName = dp.name;
@@ -854,33 +857,46 @@ void ModbusManager::publishHomeAssistantDiscovery(ModbusDevice &device) const {
 
     bool anyEligible = false;
     bool anyPublished = false;
+
+    auto findStateTopicForCommand = [&](const String &commandTopic) -> String {
+        for (const auto &candidate: device.datapoints) {
+            if (!isReadOnlyFunction(candidate.function)) {
+                continue;
+            }
+            String candidateTopic = buildDatapointTopic(device, candidate);
+            candidateTopic.trim();
+            if (candidateTopic == commandTopic) {
+                return candidateTopic;
+            }
+        }
+        return {};
+    };
+
     for (const auto &dp: device.datapoints) {
-        if (!isReadOnlyFunction(dp.function)) {
+        const bool readable = isReadOnlyFunction(dp.function);
+        const bool writeable = isWriteFunction(dp.function);
+        if (!readable && !writeable) {
             continue;
         }
         anyEligible = true;
 
-        String stateTopic = buildDatapointTopic(device, dp);
-        stateTopic.trim();
-        if (!stateTopic.length()) {
+        String datapointTopic = buildDatapointTopic(device, dp);
+        datapointTopic.trim();
+        if (!datapointTopic.length()) {
             continue;
         }
 
         const String datapointSegment = buildDatapointSegment(dp);
-        String discoveryTopic = String("homeassistant/sensor/") + deviceSegment + "/" + datapointSegment + "/config";
+        const String baseUniqueId = deviceSegment + "_" + datapointSegment;
+        String discoveryTopic;
 
         JsonDocument doc;
-        doc["name"] = buildFriendlyName(device, dp);
-        const String uniqueId = deviceSegment + "_" + datapointSegment;
+        const String friendlyName = buildFriendlyName(device, dp);
+        const String uniqueId = writeable ? baseUniqueId + "_cmd" : baseUniqueId;
+
+        doc["name"] = friendlyName;
         doc["unique_id"] = uniqueId;
         doc["object_id"] = uniqueId;
-        doc["state_topic"] = stateTopic;
-        if (dp.unit.length()) {
-            doc["unit_of_measurement"] = dp.unit;
-        }
-        if (dp.function == READ_HOLDING) {
-            doc["state_class"] = "measurement";
-        }
         doc["availability_topic"] = availabilityTopic;
         doc["payload_available"] = "online";
         doc["payload_not_available"] = "offline";
@@ -889,6 +905,52 @@ void ModbusManager::publishHomeAssistantDiscovery(ModbusDevice &device) const {
         auto identifiers = deviceObj["identifiers"].to<JsonArray>();
         identifiers.add(deviceIdentifier);
         deviceObj["name"] = device.name.length() ? device.name : deviceSegment;
+
+        if (readable) {
+            discoveryTopic =
+                String("homeassistant/sensor/") + deviceSegment + "/" + datapointSegment + "/config";
+            doc["state_topic"] = datapointTopic;
+            if (dp.unit.length()) {
+                doc["unit_of_measurement"] = dp.unit;
+            }
+            if (dp.function == READ_HOLDING) {
+                doc["state_class"] = "measurement";
+            }
+        } else if (dp.function == WRITE_COIL) {
+            discoveryTopic =
+                String("homeassistant/switch/") + deviceSegment + "/" + datapointSegment + "/config";
+            doc["command_topic"] = datapointTopic;
+            doc["payload_on"] = "1";
+            doc["payload_off"] = "0";
+            const String stateTopic = findStateTopicForCommand(datapointTopic);
+            if (stateTopic.length()) {
+                doc["state_topic"] = stateTopic;
+            } else {
+                doc["optimistic"] = true;
+            }
+        } else if (dp.function == WRITE_HOLDING || dp.function == WRITE_MULTIPLE_HOLDING) {
+            discoveryTopic =
+                String("homeassistant/number/") + deviceSegment + "/" + datapointSegment + "/config";
+            doc["command_topic"] = datapointTopic;
+            const String stateTopic = findStateTopicForCommand(datapointTopic);
+            if (stateTopic.length()) {
+                doc["state_topic"] = stateTopic;
+            } else {
+                doc["optimistic"] = true;
+            }
+            if (dp.unit.length()) {
+                doc["unit_of_measurement"] = dp.unit;
+            }
+            const float effectiveScale = (dp.scale == 0.0f) ? 1.0f : dp.scale;
+            const float step = (effectiveScale > 0.0f) ? effectiveScale : 1.0f;
+            const float maxValue = 65535.0f * ((effectiveScale > 0.0f) ? effectiveScale : 1.0f);
+            doc["min"] = 0;
+            doc["max"] = maxValue;
+            doc["step"] = step;
+            doc["mode"] = "box";
+        } else {
+            continue;
+        }
 
         String payload;
         serializeJson(doc, payload);

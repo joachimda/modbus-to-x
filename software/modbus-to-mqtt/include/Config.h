@@ -28,15 +28,15 @@
 #define RS485_FIRSTBYTE_WAIT_US 2500
 #endif
 
-#ifndef LED_A_PIN
-#define LED_A_PIN 27
+#ifndef WIFI_LED_A_PIN
+#define WIFI_LED_A_PIN 25
 #endif
 
-#ifndef LED_B_PIN
-#define LED_B_PIN 25
+#ifndef MQTT_LED_B_PIN
+#define MQTT_LED_B_PIN 26
 #endif
-#ifndef LED_C_PIN
-#define LED_C_PIN 33
+#ifndef MB_LED_C_PIN
+#define MB_LED_C_PIN 27
 #endif
 
 /****************************************************

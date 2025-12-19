@@ -10,9 +10,9 @@ IndicatorService &IndicatorService::instance() {
 }
 
 void IndicatorService::begin() {
-    pinMode(LED_A_PIN, OUTPUT);
-    pinMode(LED_B_PIN, OUTPUT);
-    pinMode(LED_C_PIN, OUTPUT);
+    pinMode(WIFI_LED_A_PIN, OUTPUT);
+    pinMode(MQTT_LED_B_PIN, OUTPUT);
+    pinMode(MB_LED_C_PIN, OUTPUT);
 
     xTaskCreatePinnedToCore(
         taskRunner,
@@ -34,27 +34,27 @@ void IndicatorService::setOtaActive(const bool on) { _ota.store(on, std::memory_
 void IndicatorService::taskRunner(void *param) {
     const auto *self = static_cast<IndicatorService *>(param);
     bool phase = false;
-    TickType_t delayTicks = BLINK_INTERVAL_MS / portTICK_PERIOD_MS;
+    TickType_t delayTicks;
 
     for (;;) {
         const bool ota = self->_ota.load(std::memory_order_acquire);
         const bool portal = self->_portal.load(std::memory_order_acquire);
         if (ota) {
             phase = !phase;
-            digitalWrite(LED_A_PIN, phase ? HIGH : LOW);
-            digitalWrite(LED_B_PIN, phase ? HIGH : LOW);
-            digitalWrite(LED_C_PIN, phase ? HIGH : LOW);
+            digitalWrite(WIFI_LED_A_PIN, phase ? HIGH : LOW);
+            digitalWrite(MQTT_LED_B_PIN, phase ? HIGH : LOW);
+            digitalWrite(MB_LED_C_PIN, phase ? HIGH : LOW);
             delayTicks = BLINK_FAST_INTERVAL_MS / portTICK_PERIOD_MS;
         } else if (portal) {
             phase = !phase;
-            digitalWrite(LED_A_PIN, phase ? HIGH : LOW);
-            digitalWrite(LED_B_PIN, phase ? HIGH : LOW);
-            digitalWrite(LED_C_PIN, phase ? HIGH : LOW);
+            digitalWrite(WIFI_LED_A_PIN, phase ? HIGH : LOW);
+            digitalWrite(MQTT_LED_B_PIN, phase ? HIGH : LOW);
+            digitalWrite(MB_LED_C_PIN, phase ? HIGH : LOW);
             delayTicks = BLINK_INTERVAL_MS / portTICK_PERIOD_MS;
         } else {
-            digitalWrite(LED_A_PIN, self->_wifi.load(std::memory_order_acquire) ? HIGH : LOW);
-            digitalWrite(LED_B_PIN, self->_mqtt.load(std::memory_order_acquire) ? HIGH : LOW);
-            digitalWrite(LED_C_PIN, self->_modbus.load(std::memory_order_acquire) ? HIGH : LOW);
+            digitalWrite(WIFI_LED_A_PIN, self->_wifi.load(std::memory_order_acquire) ? HIGH : LOW);
+            digitalWrite(MQTT_LED_B_PIN, self->_mqtt.load(std::memory_order_acquire) ? HIGH : LOW);
+            digitalWrite(MB_LED_C_PIN, self->_modbus.load(std::memory_order_acquire) ? HIGH : LOW);
             delayTicks = BLINK_INTERVAL_MS / portTICK_PERIOD_MS;
         }
         vTaskDelay(delayTicks);

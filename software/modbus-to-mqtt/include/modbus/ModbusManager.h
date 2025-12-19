@@ -7,6 +7,9 @@
 #include "config_structs/ModbusDatapoint.h"
 #include "ModbusMaster.h"
 #include "config_structs/ConfigurationRoot.h"
+#include "modbus/ModbusBus.h"
+#include "modbus/ModbusMqttBridge.h"
+#include "modbus/ModbusPollScheduler.h"
 
 class MqttManager;
 
@@ -17,8 +20,6 @@ public:
     bool begin();
 
     bool loadConfiguration();
-
-    void initializeWiring() const;
 
     void loop();
 
@@ -64,58 +65,21 @@ public:
     static bool getBusState();
 
 private:
-    bool readModbusDevice(const ModbusDevice &dev);
-
-    void incrementBusErrorCount() const;
-
-    static bool isWriteFunction(ModbusFunctionType fn);
-
-    static void preTransmissionHandler();
-
-    static void postTransmissionHandler();
+    bool readModbusDevice(ModbusDevice &dev, const std::vector<ModbusDatapoint *> &dueDatapoints, uint32_t nowMs);
 
     static const char *functionToString(ModbusFunctionType fn);
 
-    void publishDatapoint(const ModbusDevice &device, const ModbusDatapoint &dp, const String &payload) const;
-
-    String buildDatapointTopic(const ModbusDevice &device, const ModbusDatapoint &dp) const;
-
-    String buildAvailabilityTopic(const ModbusDevice &device) const;
-
-    static String buildDeviceSegment(const ModbusDevice &device);
-
-    static String buildDatapointSegment(const ModbusDatapoint &dp);
-
-    static String buildFriendlyName(const ModbusDevice &device, const ModbusDatapoint &dp);
-
-    static bool isReadOnlyFunction(ModbusFunctionType fn);
-
-    void handleMqttConnected();
-
-    void handleMqttDisconnected();
-
-    void rebuildWriteSubscriptions();
-
-    void handleWriteCommand(const String &topic,
-                            uint8_t slaveId,
-                            ModbusFunctionType fn,
-                            uint16_t addr,
-                            uint8_t numRegs,
-                            float scale,
-                            const String &payload);
-
-    void publishAvailabilityOnline(ModbusDevice &device) const;
-
-    void publishHomeAssistantDiscovery(ModbusDevice &device) const;
+    void incrementBusErrorCount();
 
 
     std::vector<ModbusDatapoint> _modbusRegisters;
-    ModbusMaster node;
+    ModbusBus _bus;
+    ModbusMqttBridge _mqttBridge;
     Logger *_logger;
     Preferences preferences;
     ConfigurationRoot _modbusRoot{};
     MqttManager *_mqtt{nullptr};
     bool _mqttConnectedLastLoop{false};
-    std::vector<String> _writeTopics;
+    std::vector<ModbusDatapoint *> _dueScratch;
 };
 #endif

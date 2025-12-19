@@ -56,6 +56,7 @@ void MBXServer::begin() const {
 
 void MBXServer::loop() {
     g_wifi.loop();
+    MBXServerHandlers::pumpEventStream();
     // Keep LED_A in sync with Wi-Fi status when not in portal mode
     IndicatorService::instance().setWifiConnected(WiFiClass::status() == WL_CONNECTED);
     ArduinoOtaManager::loop();
@@ -65,6 +66,8 @@ void MBXServer::configureRoutes() const {
     server->serveStatic("/", SPIFFS, Routes::ROOT)
             .setDefaultFile("index.html")
             .setCacheControl("no-store");
+
+    MBXServerHandlers::initEventStream(server, _logger);
 
     server->on(Routes::CONFIGURE, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);

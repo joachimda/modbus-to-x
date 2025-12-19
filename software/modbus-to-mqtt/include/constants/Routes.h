@@ -43,6 +43,7 @@ public:
     constexpr static auto DEVICE_RESET = "/api/system/reboot";
     constexpr static auto SYSTEM_STATS = "/api/stats/system";
     constexpr static auto LOGS = "/api/logs";
+    constexpr static auto EVENTS = "/api/events";
     constexpr static auto MQTT_TEST_CONNECT = "/api/mqtt/test";
 };
 #endif

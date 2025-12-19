@@ -1,12 +1,5 @@
 import {API, safeGet, reboot} from "app";
 
-window.initIndex = async function initIndex() {
-    $("#btn-reboot").addEventListener("click", reboot);
-    setupLogs();
-    await render();
-    // Refresh stats every 30s
-    setInterval(render, 30000);
-}
 const $ = (sel) => document.querySelector(sel);
 const kv = (k, v) => `<div class="key">${k}</div><div>${v ?? "—"}</div>`;
 const dot = (cls, label) => `<span class="status-dot ${cls}"></span>${label}`;
@@ -23,22 +16,120 @@ const fmtMs = (ms) => {
     if (ms == null) return "—";
     const s = Math.floor(ms/1000), d = Math.floor(s/86400), h = Math.floor((s%86400)/3600), m = Math.floor((s%3600)/60);
     const r = [];
-    if (d) {
-        r.push(`${d}d`);
-    }
-    if (h || d) {
-        r.push(`${h}h`);
-    }
+    if (d) r.push(`${d}d`);
+    if (h || d) r.push(`${h}h`);
     r.push(`${m}m`);
     return r.join(" ");
 };
 
-// --- Render functions ---
-async function render() {
-    const [sys] = await Promise.all([
-        safeGet(API.SYSTEM_STATS)
-    ]);
+let eventSource = null;
+let logsBuffer = "";
+const MAX_LOG_CHARS = 16000;
 
+window.initIndex = async function initIndex() {
+    $("#btn-reboot").addEventListener("click", reboot);
+    setupLogs();
+    startEventStream();
+
+    // Light fallback so the page renders even before the stream delivers the first event
+    const sys = await safeGet(API.SYSTEM_STATS);
+    if (!sys.__error) renderStats(sys);
+};
+
+function startEventStream() {
+    if (eventSource) eventSource.close();
+    eventSource = new EventSource(API.EVENTS);
+
+    eventSource.addEventListener("stats", (ev) => {
+        try {
+            renderStats(JSON.parse(ev.data || "{}"));
+        } catch (err) {
+            console.error("Failed to parse stats event", err);
+        }
+    });
+    eventSource.addEventListener("logs", (ev) => handleLogEvent(ev, true));
+    eventSource.addEventListener("log", (ev) => handleLogEvent(ev, false));
+    eventSource.addEventListener("error", () => {
+        const subtitle = $("#device-subtitle");
+        if (subtitle && !subtitle.dataset.streamWarned) {
+            subtitle.dataset.streamWarned = "true";
+            subtitle.textContent = `${subtitle.textContent || "Device"} • live stream reconnecting…`;
+        }
+    });
+}
+
+function handleLogEvent(ev, replace) {
+    try {
+        const payload = JSON.parse(ev.data || "{}");
+        const text = typeof payload.text === "string" ? payload.text : "";
+        const truncated = !!payload.truncated;
+        applyLogs(text, { replace, truncated });
+    } catch (err) {
+        console.error("Failed to parse log event", err);
+    }
+}
+
+function applyLogs(text, { replace = false, truncated = false } = {}) {
+    if (replace) {
+        logsBuffer = text || "";
+    } else {
+        logsBuffer += text || "";
+    }
+    if (logsBuffer.length > MAX_LOG_CHARS) {
+        logsBuffer = logsBuffer.slice(logsBuffer.length - MAX_LOG_CHARS);
+        truncated = true;
+    }
+    renderLogs({ forceScroll: replace, truncated });
+}
+
+function renderLogs({ forceScroll = false, truncated = false } = {}) {
+    const el = $("#logs-console");
+    const panel = $("#logs-panel");
+    if (!el) return;
+    if (truncated) el.dataset.truncated = "true";
+    if (panel && !panel.open && !forceScroll) return;
+
+    const atBottom = Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 30;
+    el.textContent = logsBuffer || "(no logs)";
+    if (forceScroll || atBottom) {
+        el.scrollTop = el.scrollHeight;
+    }
+}
+
+function setupLogs() {
+    const panel = $("#logs-panel");
+    const refreshBtn = $("#btn-refresh-logs");
+    if (panel) {
+        panel.addEventListener("toggle", () => {
+            if (panel.open) {
+                const truncated = $("#logs-console")?.dataset?.truncated === "true";
+                renderLogs({ forceScroll: true, truncated });
+            }
+        });
+    }
+    if (refreshBtn) refreshBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        fetchLogsSnapshot(true);
+    });
+}
+
+async function fetchLogsSnapshot(forceScroll = false) {
+    const el = $("#logs-console");
+    if (!el) return;
+    try {
+        const r = await fetch(API.GET_LOGS, { cache: "no-store" });
+        if (!r.ok) {
+            throw new Error(`${r.status} ${r.statusText}`);
+        }
+        const text = await r.text();
+        applyLogs(text, { replace: true });
+        renderLogs({ forceScroll });
+    } catch (e) {
+        el.textContent = `Error loading logs: ${e.message}`;
+    }
+}
+
+function renderStats(sys = {}) {
     // Header subtitle
     if (!sys.__error) {
         $("#device-subtitle").textContent =
@@ -106,51 +197,3 @@ async function render() {
         kv("SPIFFS usage", sys.spiffsTotal ? fmtPct(100 * (sys.spiffsUsed / sys.spiffsTotal)) : "—"),
     ].join("");
 }
-
-// --- Logs viewer ---
-let logsTimer = null;
-function setupLogs() {
-    const panel = $("#logs-panel");
-    const refreshBtn = $("#btn-refresh-logs");
-    if (!panel) return;
-    panel.addEventListener('toggle', () => {
-        if (panel.open) {
-            fetchLogs(true);
-            logsTimer = setInterval(fetchLogs, 10000);
-        } else if (logsTimer) {
-            clearInterval(logsTimer);
-            logsTimer = null;
-        }
-    });
-    if (refreshBtn) refreshBtn.addEventListener('click', (e) => { e.preventDefault(); fetchLogs(true); });
-}
-
-async function fetchLogs(forceScroll) {
-    const el = $("#logs-console");
-    if (!el) return;
-    try {
-        const r = await fetch(API.GET_LOGS, { cache: 'no-store' });
-        if (!r.ok) {
-            throw new Error(`${r.status} ${r.statusText}`);
-        }
-        const ct = r.headers.get('content-type') || '';
-        let text = '';
-        if (ct.includes('application/json')) {
-            const j = await r.json();
-            if (Array.isArray(j.lines)) text = j.lines.join('\n');
-            else if (typeof j.text === 'string') text = j.text;
-            else text = JSON.stringify(j, null, 2);
-        } else {
-            text = await r.text();
-        }
-
-        const atBottom = Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 30;
-        el.textContent = text || '(no logs)';
-        if (forceScroll || atBottom) {
-            el.scrollTop = el.scrollHeight;
-        }
-    } catch (e) {
-        el.textContent = `Error loading logs: ${e.message}`;
-    }
-}
-

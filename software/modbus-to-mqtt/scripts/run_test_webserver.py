@@ -126,6 +126,37 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"ok": True})
             return True
 
+        if path == "/api/events":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+
+            def send_event(name: str, obj):
+                payload = json.dumps(obj)
+                chunk = f"event: {name}\ndata: {payload}\n\n".encode("utf-8")
+                self.wfile.write(chunk)
+                self.wfile.flush()
+
+            now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            send_event("stats", {
+                "deviceName": "ESP32-DEV",
+                "fwVersion": "dev",
+                "buildDate": now_iso,
+                "chipModel": "ESP32",
+                "ip": "192.168.1.42",
+                "wifiConnected": True,
+                "mqttConnected": True,
+                "mbusEnabled": True,
+                "uptimeMs": int(time.time() * 1000) % (7 * 24 * 3600 * 1000),
+            })
+            send_event("logs", {"text": "Stream ready…\n", "truncated": False})
+            for i in range(3):
+                send_event("log", {"text": f"{time.strftime('%H:%M:%S')} [INFO] Tick {i}\n", "truncated": False})
+                time.sleep(1)
+            return True
+
         return False
 
     def do_GET(self):

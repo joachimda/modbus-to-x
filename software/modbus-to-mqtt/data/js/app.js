@@ -4,6 +4,7 @@ export const API = {
     STATUS: '/api/wifi/status',
     CANCEL: '/api/wifi/cancel',
     SYSTEM_STATS: '/api/stats/system',
+    EVENTS: '/api/events',
     GET_LOGS: '/api/logs',
     PUT_MODBUS_CONFIG: '/api/config/modbus',
     PUT_MQTT_CONFIG: '/api/config/mqtt',

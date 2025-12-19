@@ -7,6 +7,7 @@
 #include "MemoryLogger.h"
 #include "mqtt/MqttManager.h"
 
+class Logger;
 class ModbusManager; // fwd
 
 class MBXServerHandlers {
@@ -68,6 +69,8 @@ public:
     static void handleOtaFilesystemUpload(AsyncWebServerRequest *r, const String &fn, size_t index,
                                           uint8_t *data, size_t len, bool final, const Logger *logger);
 
+    static void initEventStream(AsyncWebServer *server, const Logger *logger);
+    static void pumpEventStream();
 };
 
 #endif

@@ -1,4 +1,5 @@
 #include "services/IndicatorService.h"
+#include <esp32-hal-gpio.h>
 #include "Config.h"
 
 static constexpr uint32_t BLINK_INTERVAL_MS = 300;

@@ -8,7 +8,7 @@
 #include "mqtt/MqttManager.h"
 
 class Logger;
-class ModbusManager; // fwd
+class ModbusManager;
 
 class MBXServerHandlers {
 public:

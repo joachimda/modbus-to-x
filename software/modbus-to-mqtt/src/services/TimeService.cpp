@@ -1,22 +1,30 @@
 #include "services/TimeService.h"
 
-#include <time.h>
+#include <ctime>
+#include <stdlib.h>
 #include <atomic>
 
 namespace {
 constexpr time_t TIME_VALID_THRESHOLD = 1600000000; // ~2020-09-13
 constexpr uint32_t TIME_SYNC_TIMEOUT_MS = 20000;
 constexpr uint32_t TIME_SYNC_POLL_MS = 500;
+constexpr auto DEFAULT_TZ = "CET-1CEST,M3.5.0/2,M10.5.0/3"; // Europe/Copenhagen
 
 std::atomic<bool> g_timeValid{false};
 bool g_syncInFlight = false;
 uint32_t g_syncStartedMs = 0;
 uint32_t g_lastPollMs = 0;
+bool g_tzApplied = false;
 } // namespace
 
 void TimeService::requestSync() {
     if (g_timeValid.load(std::memory_order_relaxed)) {
         return;
+    }
+    if (!g_tzApplied) {
+        setenv("TZ", DEFAULT_TZ, 1);
+        tzset();
+        g_tzApplied = true;
     }
     configTime(0, 0, "pool.ntp.org", "time.nist.gov");
     g_syncInFlight = true;
@@ -51,7 +59,7 @@ bool TimeService::hasValidTime() {
 }
 
 String TimeService::formatIso(const time_t t) {
-    struct tm tm{};
+    tm tm{};
     gmtime_r(&t, &tm);
     char buf[25];
     const size_t n = strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);

@@ -25,59 +25,47 @@
             <div class="muted">Configure the RS485 bus, Modbus devices, and their datapoints. Changes are saved and can be applied live.</div>
         </div>
         <nav class="toolbar">
-            <button class="circleButton backButton" onclick="window.location.href='/'">
-                <svg class="backSvgIcon" viewBox="0 0 309.143 309.143" xmlns="http://www.w3.org/2000/svg">
+            <button class="iconButton backButton" onclick="window.location.href='/'" aria-label="Back to dashboard" title="Back to dashboard">
+                <svg viewBox="0 0 309.143 309.143" xmlns="http://www.w3.org/2000/svg">
                     <path d="M112.855,154.571L240.481,26.946c2.929-2.929,2.929-7.678,0-10.606L226.339,2.197
                  C224.933,0.79,223.025,0,221.036,0c-1.989,0-3.897,0.79-5.303,2.197L68.661,149.268
                  c-2.929,2.929-2.929,7.678,0,10.606l147.071,147.071c1.406,1.407,3.314,2.197,5.303,2.197
-                 c1.989,0,3.897-0.79,5.303-2.197l14.142-14.143c2.929-2.929,2.929-7.678,0-10.606L112.855,154.571z" />
+                 c1.989,0,3.897-0.79,5.303-2.197l14.142-14.143c2.929-2.929,2.929-7.678,0-10.606L112.855,154.571z"
+                          fill="currentColor" />
                 </svg>
-                <span class="tooltip">Back</span>
             </button>
-
-            <!--Copyright - 2025 vinodjangid07 (Vinod Jangid)
-            Source: https://uiverse.io/vinodjangid07/wonderful-squid-57
-            Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:*/
-            The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.*/
-            THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-            /*********************************************/
-            /* Modifications by Joachim Andersen, 2025
-            /*********************************************/-->
-            <button class="circleButton downloadButton" id="btn-export">
-                <svg class="downloadSvgIcon" viewBox="0 0 384 512" height="1em" xmlns="http://www.w3.org/2000/svg">
+            <button class="iconButton downloadButton" id="btn-export" aria-label="Download configuration" title="Download configuration">
+                <svg viewBox="0 0 384 512" xmlns="http://www.w3.org/2000/svg">
                     <path
-                            d="M169.4 470.6c12.5 12.5 32.8 12.5 45.3 0l160-160c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L224 370.8 224 64c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 306.7L54.6 265.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l160 160z">
+                            d="M169.4 470.6c12.5 12.5 32.8 12.5 45.3 0l160-160c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L224 370.8 224 64c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 306.7L54.6 265.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l160 160z"
+                            fill="currentColor">
                     </path>
                 </svg>
-                <span class="downloadIcon"></span>
-                <span class="tooltip">Download</span>
             </button>
-            <label class="circleButton uploadButton" for="file-import">
-                <svg class="uploadSvgIcon" viewBox="0 0 384 512" height="1em" xmlns="http://www.w3.org/2000/svg">
+            <label class="iconButton uploadButton" for="file-import" aria-label="Upload configuration" title="Upload configuration">
+                <svg viewBox="0 0 384 512" xmlns="http://www.w3.org/2000/svg">
                     <path d="M214.6 41.4c-12.5-12.5-32.8-12.5-45.3 0l-160 160c-12.5 12.5-12.5 32.8
                  0 45.3s32.8 12.5 45.3 0L160 141.2V448c0 17.7
                  14.3 32 32 32s32-14.3 32-32V141.2l105.4 105.5
                  c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8
-                 0-45.3l-160-160z"></path>
+                 0-45.3l-160-160z" fill="currentColor"></path>
                 </svg>
-                <span class="uploadIcon"></span>
-                <span class="tooltip">Upload</span>
             </label>
             <input id="file-import" type="file" accept="application/json" style="display:none" />
-            <button class="circleButton reloadButton" id="btn-reload">
-                <span class="reloadIcon"></span>
-                <span class="tooltip">Reload</span>
+            <button class="iconButton reloadButton" id="btn-reload" aria-label="Reload configuration" title="Reload configuration">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <polyline points="23 4 23 10 17 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                    <polyline points="1 20 1 14 7 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                    <path d="M3.51 9A9 9 0 0 1 17 5.34L23 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
+                    <path d="M20.49 15A9 9 0 0 1 7 18.66L1 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
             </button>
-            <button class="circleButton saveButton" id="btn-save-apply">
-                <svg class="saveSvgIcon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <button class="iconButton primary saveButton" id="btn-save-apply" aria-label="Save and apply configuration" title="Save and apply configuration">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                     <path d="M18.1716 1C18.702 1 19.2107 1.21071 19.5858 1.58579L22.4142 4.41421C22.7893 4.78929 23 5.29799 23 5.82843V20C23 21.6569 21.6569 23 20 23H4C2.34315 23 1 21.6569 1 20V4C1 2.34315 2.34315 1 4 1H18.1716ZM4 3C3.44772 3 3 3.44772 3 4V20C3 20.5523 3.44772 21 4 21L5 21L5 15C5 13.3431 6.34315 12 8 12L16 12C17.6569 12 19 13.3431 19 15V21H20C20.5523 21 21 20.5523 21 20V6.82843C21 6.29799 20.7893 5.78929 20.4142 5.41421L18.5858 3.58579C18.2107 3.21071 17.702 3 17.1716 3H17V5C17 6.65685 15.6569 8 14 8H10C8.34315 8 7 6.65685 7 5V3H4ZM17 21V15C17 14.4477 16.5523 14 16 14L8 14C7.44772 14 7 14.4477 7 15L7 21L17 21ZM9 3H15V5C15 5.55228 14.5523 6 14 6H10C9.44772 6 9 5.55228 9 5V3Z"
                           fill="currentColor"/>
                 </svg>
-                <span class="tooltip">Save and Apply</span>
             </button>
-        <!--
-        /*********************************************/
-        /*********************************************/-->
         </nav>
     </header>
 

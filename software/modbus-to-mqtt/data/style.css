@@ -522,6 +522,22 @@ body.configure, body.configure .page {
 }
 
 /* Footer logo on index page */
+.footer-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    flex-wrap: wrap;
+    margin: 1rem 0 0;
+}
+.footer-meta .footer {
+    margin: 0;
+    color: #4b5563;
+}
+.footer-meta .githubBtn {
+    margin-left: auto;
+}
+
 .footer-logo {
     margin: 1rem auto 0;
     text-align: center;

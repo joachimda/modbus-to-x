@@ -2,7 +2,7 @@
 #define LED_SERVICE_H
 
 #include <atomic>
-#include <Arduino.h>
+
 class IndicatorService {
 public:
     static IndicatorService &instance();

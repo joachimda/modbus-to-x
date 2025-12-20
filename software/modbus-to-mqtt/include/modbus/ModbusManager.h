@@ -5,11 +5,9 @@
 
 #include "Logger.h"
 #include "config_structs/ModbusDatapoint.h"
-#include "ModbusMaster.h"
 #include "config_structs/ConfigurationRoot.h"
 #include "modbus/ModbusBus.h"
 #include "modbus/ModbusMqttBridge.h"
-#include "modbus/ModbusPollScheduler.h"
 
 class MqttManager;
 

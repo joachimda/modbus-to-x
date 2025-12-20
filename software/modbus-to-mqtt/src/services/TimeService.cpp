@@ -1,7 +1,6 @@
 #include "services/TimeService.h"
 
 #include <ctime>
-#include <stdlib.h>
 #include <atomic>
 
 namespace {

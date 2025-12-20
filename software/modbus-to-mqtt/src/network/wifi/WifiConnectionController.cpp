@@ -1,4 +1,5 @@
 #include "network/wifi/WifiConnectionController.h"
+#include "services/TimeService.h"
 
 void WifiConnectionController::begin(const String &hostname) {
     Serial.printf("WiFiConnectController::begin(%s) called\n", hostname.c_str());
@@ -123,6 +124,7 @@ void WifiConnectionController::onEvent(const arduino_event_id_t event, const ard
             _status.state = WifiConnectionState::Connected;
             _status.ip = WiFi.localIP().toString();
             _status.hasIp = true;
+            TimeService::requestSync();
             WiFi.setAutoReconnect(true);
             if (_persistRequested && _persistSsid.length()) {
                 writePlainCredsToNvs(_persistSsid, _persistPass);

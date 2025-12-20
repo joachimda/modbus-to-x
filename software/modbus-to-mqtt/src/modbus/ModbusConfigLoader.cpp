@@ -6,8 +6,6 @@
 #include "modbus/config_structs/ModbusDatapoint.h"
 #include "utils/StringUtils.h"
 
-// Slugify centralized in StringUtils
-
 bool ModbusConfigLoader::loadConfiguration(Logger *logger, const char *path, ConfigurationRoot &outConfig) {
     if (!path || !*path) path = "/conf/config.json";
 
@@ -159,6 +157,5 @@ bool ModbusConfigLoader::loadConfiguration(Logger *logger, const char *path, Con
             outConfig.devices.push_back(dev);
         }
     }
-
     return true;
 }

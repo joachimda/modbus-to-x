@@ -11,6 +11,7 @@
 #include "network/mbx_server/MBXServerHandlers.h"
 #include "services/IndicatorService.h"
 #include "services/ArduinoOtaManager.h"
+#include "services/TimeService.h"
 
 static constexpr auto WIFI_CONNECT_DELAY_MS = 100;
 static constexpr auto WIFI_CONNECT_TIMEOUT = 30000;
@@ -35,6 +36,7 @@ MBXServer::MBXServer(AsyncWebServer *server, DNSServer *dnsServer, Logger *logge
 void MBXServer::begin() const {
     ensureConfigFile();
     if (tryConnectWithStoredCreds()) {
+        TimeService::requestSync();
         configureRoutes();
         server->begin();
         IndicatorService::instance().setPortalMode(false);
@@ -56,6 +58,8 @@ void MBXServer::begin() const {
 
 void MBXServer::loop() {
     g_wifi.loop();
+    MBXServerHandlers::pumpEventStream();
+    TimeService::loop();
     // Keep LED_A in sync with Wi-Fi status when not in portal mode
     IndicatorService::instance().setWifiConnected(WiFiClass::status() == WL_CONNECTED);
     ArduinoOtaManager::loop();
@@ -65,6 +69,8 @@ void MBXServer::configureRoutes() const {
     server->serveStatic("/", SPIFFS, Routes::ROOT)
             .setDefaultFile("index.html")
             .setCacheControl("no-store");
+
+    MBXServerHandlers::initEventStream(server, _logger);
 
     server->on(Routes::CONFIGURE, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);

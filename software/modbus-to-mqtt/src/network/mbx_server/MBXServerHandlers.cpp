@@ -1,10 +1,14 @@
 #include "network/mbx_server/MBXServerHandlers.h"
 #include <atomic>
+#include <array>
+#include <memory>
 #include <SPIFFS.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
+#include <AsyncEventSource.h>
+#include <Arduino.h>
 #include "Config.h"
 
 #include "constants/HttpMediaTypes.h"
@@ -31,6 +35,47 @@ std::atomic<NetworkPortal *> g_portal{nullptr};
 static std::atomic<MemoryLogger *> g_memlog{nullptr};
 static std::atomic<MqttManager *> g_comm{nullptr};
 static std::atomic<ModbusManager *> g_mb{nullptr};
+static AsyncEventSource g_events(Routes::EVENTS);
+static const Logger *g_eventLogger = nullptr;
+static std::atomic<bool> g_eventsAttached{false};
+static std::atomic<uint32_t> g_lastPingAt{0};
+static std::atomic<size_t> g_lastLogCursor{0};
+static std::atomic<uint32_t> g_lastLogCheckAt{0};
+static std::atomic<uint32_t> g_eventSeq{0};
+
+constexpr uint32_t STATS_PUSH_INTERVAL_MS = 5000;
+constexpr uint32_t STATS_HEARTBEAT_MS = 30000;
+constexpr uint32_t STATS_UPTIME_QUANTUM_MS = 10000;
+constexpr uint32_t STATS_HEAP_QUANTUM_BYTES = 1024;
+constexpr uint32_t LOGS_CHECK_INTERVAL_MS = 1200;
+constexpr uint32_t EVENTS_PING_INTERVAL_MS = 30000;
+constexpr uint32_t EVENT_RETRY_MS = 5000;
+constexpr size_t LOG_CHUNK_BYTES = 2048;
+
+enum class StatsCategory : uint8_t {
+    System = 0,
+    Network,
+    MQTT,
+    Modbus,
+    Storage,
+    Health,
+    Count
+};
+
+constexpr const char *STAT_EVENT_NAMES[] = {
+    "stats-system",
+    "stats-network",
+    "stats-mqtt",
+    "stats-modbus",
+    "stats-storage",
+    "stats-health"
+};
+
+static_assert(static_cast<size_t>(StatsCategory::Count) == (sizeof(STAT_EVENT_NAMES) / sizeof(STAT_EVENT_NAMES[0])),
+              "STAT_EVENT_NAMES size mismatch");
+
+static std::array<String, static_cast<size_t>(StatsCategory::Count)> g_statsPayload;
+static std::array<uint32_t, static_cast<size_t>(StatsCategory::Count)> g_statsLastSent{};
 
 bool parseConnectPayload(uint8_t *data, size_t len, String &ssid, String &pass,
                          String &bssid, bool &save, WifiStaticConfig &st,
@@ -75,12 +120,235 @@ void sendJson(AsyncWebServerRequest *req, const JsonDocument &doc) {
     req->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, out);
 }
 
+namespace {
+
+bool eventStreamReady() {
+    return g_eventsAttached.load(std::memory_order_acquire);
+}
+
+bool eventStreamHasClients() {
+    return eventStreamReady() && g_events.count() > 0;
+}
+
+uint32_t nextEventId() {
+    return g_eventSeq.fetch_add(1, std::memory_order_relaxed) + 1;
+}
+
+size_t statsIndex(const StatsCategory c) {
+    return static_cast<size_t>(c);
+}
+
+uint32_t roundDown(const uint32_t value, const uint32_t quantum) {
+    if (quantum == 0) return value;
+    return (value / quantum) * quantum;
+}
+
+String buildStatsPayload(const StatsCategory cat) {
+    JsonDocument doc;
+    switch (cat) {
+        case StatsCategory::System: {
+            doc = StatService::appendSystemStats(doc, g_eventLogger);
+            const uint32_t uptime = doc["uptimeMs"] | 0;
+            doc["uptimeMs"] = roundDown(uptime, STATS_UPTIME_QUANTUM_MS);
+            doc["heapFree"] = roundDown(static_cast<uint32_t>(doc["heapFree"] | 0), STATS_HEAP_QUANTUM_BYTES);
+            doc["heapMin"] = roundDown(static_cast<uint32_t>(doc["heapMin"] | 0), STATS_HEAP_QUANTUM_BYTES);
+            break;
+        }
+        case StatsCategory::Network: {
+            doc = StatService::appendNetworkStats(doc);
+            break;
+        }
+        case StatsCategory::MQTT: {
+            doc = StatService::appendMQTTStats(doc);
+            break;
+        }
+        case StatsCategory::Modbus: {
+            doc = StatService::appendModbusStats(doc);
+            break;
+        }
+        case StatsCategory::Storage: {
+            doc = StatService::appendStorageStats(doc);
+            break;
+        }
+        case StatsCategory::Health: {
+            doc = StatService::appendHealthStats(doc);
+            break;
+        }
+        case StatsCategory::Count:
+        default: break;
+    }
+    String out;
+    serializeJson(doc, out);
+    return out;
+}
+
+void sendStatsPayload(const StatsCategory cat, const String &payload, const uint32_t now, AsyncEventSourceClient *client) {
+    const auto idx = statsIndex(cat);
+    g_statsPayload[idx] = payload;
+    g_statsLastSent[idx] = now;
+    if (client) {
+        client->send(payload.c_str(), STAT_EVENT_NAMES[idx], nextEventId());
+    } else {
+        g_events.send(payload.c_str(), STAT_EVENT_NAMES[idx], nextEventId());
+    }
+}
+
+void emitStats(bool force, AsyncEventSourceClient *client) {
+    const uint32_t now = millis();
+    for (uint8_t i = 0; i < static_cast<uint8_t>(StatsCategory::Count); ++i) {
+        const auto cat = static_cast<StatsCategory>(i);
+        const String payload = buildStatsPayload(cat);
+        if (payload.isEmpty()) continue;
+
+        const auto idx = statsIndex(cat);
+        const bool changed = payload != g_statsPayload[idx];
+        const uint32_t last = g_statsLastSent[idx];
+        const bool heartbeat = (now - last) >= STATS_HEARTBEAT_MS;
+
+        if (force || changed || heartbeat) {
+            sendStatsPayload(cat, payload, now, client);
+        }
+    }
+}
+
+String readLogChunk(MemoryLogger *mem, size_t start, size_t len) {
+    String out;
+    if (!mem || len == 0) {
+        return out;
+    }
+    std::unique_ptr<char[]> buf(new char[len + 1]);
+    const size_t wrote = mem->copyAsText(start, reinterpret_cast<uint8_t *>(buf.get()), len);
+    buf[wrote] = '\0';
+    out = buf.get();
+    return out;
+}
+
+void sendLogPayload(const String &text, const bool truncated, const char *eventName) {
+    if (text.isEmpty()) {
+        return;
+    }
+    JsonDocument doc;
+    doc["text"] = text;
+    doc["truncated"] = truncated;
+    String payload;
+    serializeJson(doc, payload);
+    g_events.send(payload.c_str(), eventName, nextEventId());
+}
+
+void sendInitialLogsToClient(AsyncEventSourceClient *client) {
+    auto *mem = g_memlog.load(std::memory_order_acquire);
+    if (!client || !mem) {
+        return;
+    }
+
+    const size_t total = mem->flattenedSize();
+    if (total == 0) {
+        return;
+    }
+    const size_t start = (total > LOG_CHUNK_BYTES) ? (total - LOG_CHUNK_BYTES) : 0;
+    const String text = readLogChunk(mem, start, total - start);
+    if (text.isEmpty()) {
+        return;
+    }
+
+    JsonDocument doc;
+    doc["text"] = text;
+    doc["truncated"] = start > 0;
+    String payload;
+    serializeJson(doc, payload);
+    client->send(payload.c_str(), "logs", nextEventId());
+}
+
+void broadcastLogDelta() {
+    auto *mem = g_memlog.load(std::memory_order_acquire);
+    if (!mem) {
+        return;
+    }
+
+    const size_t total = mem->flattenedSize();
+    if (total == 0) {
+        g_lastLogCursor.store(0, std::memory_order_relaxed);
+        return;
+    }
+
+    size_t lastCursor = g_lastLogCursor.load(std::memory_order_relaxed);
+    if (lastCursor > total) {
+        // Buffer rolled; send the latest window
+        const size_t start = (total > LOG_CHUNK_BYTES) ? (total - LOG_CHUNK_BYTES) : 0;
+        const String text = readLogChunk(mem, start, total - start);
+        sendLogPayload(text, true, "logs");
+        g_lastLogCursor.store(total, std::memory_order_relaxed);
+        return;
+    }
+
+    size_t remaining = total - lastCursor;
+    if (remaining == 0) {
+        return;
+    }
+
+    size_t offset = lastCursor;
+    while (remaining > 0) {
+        const size_t chunk = remaining > LOG_CHUNK_BYTES ? LOG_CHUNK_BYTES : remaining;
+        const String text = readLogChunk(mem, offset, chunk);
+        sendLogPayload(text, false, "log");
+        offset += chunk;
+        remaining -= chunk;
+    }
+    g_lastLogCursor.store(total, std::memory_order_relaxed);
+}
+
+} // namespace
+
 void MBXServerHandlers::setPortal(NetworkPortal *portal) {
     g_portal.store(portal, std::memory_order_release);
 }
 
 void MBXServerHandlers::setMemoryLogger(MemoryLogger *mem) {
     g_memlog.store(mem, std::memory_order_release);
+}
+
+void MBXServerHandlers::initEventStream(AsyncWebServer *server, const Logger *logger) {
+    g_eventLogger = logger;
+    bool expected = false;
+    if (!g_eventsAttached.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+        return;
+    }
+
+    g_events.onConnect([](AsyncEventSourceClient *client) {
+        if (!client) {
+            return;
+        }
+        client->send("ready", "ping", nextEventId(), EVENT_RETRY_MS);
+
+        // Warm-up snapshot for new client
+        emitStats(true, client);
+        sendInitialLogsToClient(client);
+    });
+
+    server->addHandler(&g_events);
+}
+
+void MBXServerHandlers::pumpEventStream() {
+    if (!eventStreamHasClients()) {
+        return;
+    }
+
+    const uint32_t now = millis();
+    static uint32_t lastStatsPoll = 0;
+    if (now - lastStatsPoll >= STATS_PUSH_INTERVAL_MS) {
+        lastStatsPoll = now;
+        emitStats(false, nullptr);
+    }
+
+    if (now - g_lastLogCheckAt.load(std::memory_order_relaxed) >= LOGS_CHECK_INTERVAL_MS) {
+        g_lastLogCheckAt.store(now, std::memory_order_relaxed);
+        broadcastLogDelta();
+    }
+
+    if (now - g_lastPingAt.load(std::memory_order_relaxed) >= EVENTS_PING_INTERVAL_MS) {
+        g_lastPingAt.store(now, std::memory_order_relaxed);
+        g_events.send("ping", "ping", nextEventId());
+    }
 }
 
 void MBXServerHandlers::handleCaptivePortalRedirect(AsyncWebServerRequest *req) {

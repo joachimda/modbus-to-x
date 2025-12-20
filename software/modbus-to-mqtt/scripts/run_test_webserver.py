@@ -126,6 +126,76 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"ok": True})
             return True
 
+        if path == "/api/events":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+
+            def send_event(name: str, obj):
+                payload = json.dumps(obj)
+                chunk = f"event: {name}\ndata: {payload}\n\n".encode("utf-8")
+                self.wfile.write(chunk)
+                self.wfile.flush()
+
+            now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            send_event("stats-system", {
+                "deviceName": "ESP32-DEV",
+                "fwVersion": "dev",
+                "buildDate": now_iso,
+                "chipModel": "ESP32",
+                "ip": "192.168.1.42",
+                "uptimeMs": int(time.time() * 1000) % (7 * 24 * 3600 * 1000),
+                "heapFree": 256000,
+                "heapMin": 192000,
+                "resetReason": "Power on",
+                "cpuFreqMHz": 240,
+                "sdkVersion": "IDF-5.x",
+            })
+            send_event("stats-network", {
+                "wifiConnected": True,
+                "wifiApMode": False,
+                "ssid": "TestNet",
+                "ip": "192.168.1.42",
+                "rssi": -62,
+                "mac": "AA:BB:CC:DD:EE:FF",
+            })
+            send_event("stats-mqtt", {
+                "mqttConnected": True,
+                "broker": "mqtt://localhost:1883",
+                "clientId": "esp32-dev",
+                "lastPublishIso": now_iso,
+                "mqttErrorCount": 0,
+            })
+            send_event("stats-modbus", {
+                "mbusEnabled": True,
+                "buses": 1,
+                "devices": 1,
+                "datapoints": 3,
+                "lastPollIso": now_iso,
+                "modbusErrorCount": 0,
+            })
+            send_event("stats-storage", {
+                "flashSize": 4 * 1024 * 1024,
+                "spiffsUsed": 512 * 1024,
+                "spiffsTotal": 2 * 1024 * 1024,
+            })
+            send_event("stats-health", {
+                "ok": True,
+                "components": {
+                    "wifi": "ok",
+                    "mqtt": "ok",
+                    "modbus": "ok",
+                    "fs": "ok",
+                }
+            })
+            send_event("logs", {"text": "Stream ready…\n", "truncated": False})
+            for i in range(3):
+                send_event("log", {"text": f"{time.strftime('%H:%M:%S')} [INFO] Tick {i}\n", "truncated": False})
+                time.sleep(1)
+            return True
+
         return False
 
     def do_GET(self):

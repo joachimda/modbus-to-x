@@ -1,6 +1,5 @@
 ﻿#include <Arduino.h>
 #include <SPIFFS.h>
-#include "MemoryLogger.h"
 #include "SerialLogger.h"
 #include "modbus/ModbusManager.h"
 #include "network/mbx_server/MBXServer.h"
@@ -10,6 +9,8 @@
 #include "mqtt/MqttSubscriptionHandler.h"
 #include "services/IndicatorService.h"
 #include <esp_system.h>
+
+#include "logging/MemoryLogger.h"
 
 Logger logger;
 MemoryLogger memory_logger(300);

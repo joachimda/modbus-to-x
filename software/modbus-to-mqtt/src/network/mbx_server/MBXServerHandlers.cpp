@@ -1,5 +1,6 @@
 #include "network/mbx_server/MBXServerHandlers.h"
 #include <atomic>
+#include <array>
 #include <memory>
 #include <SPIFFS.h>
 #include <WiFi.h>
@@ -37,8 +38,6 @@ static std::atomic<ModbusManager *> g_mb{nullptr};
 static AsyncEventSource g_events(Routes::EVENTS);
 static const Logger *g_eventLogger = nullptr;
 static std::atomic<bool> g_eventsAttached{false};
-static String g_lastStatsJson;
-static std::atomic<uint32_t> g_lastStatsAt{0};
 static std::atomic<uint32_t> g_lastPingAt{0};
 static std::atomic<size_t> g_lastLogCursor{0};
 static std::atomic<uint32_t> g_lastLogCheckAt{0};
@@ -46,10 +45,37 @@ static std::atomic<uint32_t> g_eventSeq{0};
 
 constexpr uint32_t STATS_PUSH_INTERVAL_MS = 5000;
 constexpr uint32_t STATS_HEARTBEAT_MS = 30000;
+constexpr uint32_t STATS_UPTIME_QUANTUM_MS = 10000;
+constexpr uint32_t STATS_HEAP_QUANTUM_BYTES = 1024;
 constexpr uint32_t LOGS_CHECK_INTERVAL_MS = 1200;
 constexpr uint32_t EVENTS_PING_INTERVAL_MS = 30000;
 constexpr uint32_t EVENT_RETRY_MS = 5000;
 constexpr size_t LOG_CHUNK_BYTES = 2048;
+
+enum class StatsCategory : uint8_t {
+    System = 0,
+    Network,
+    MQTT,
+    Modbus,
+    Storage,
+    Health,
+    Count
+};
+
+constexpr const char *STAT_EVENT_NAMES[] = {
+    "stats-system",
+    "stats-network",
+    "stats-mqtt",
+    "stats-modbus",
+    "stats-storage",
+    "stats-health"
+};
+
+static_assert(static_cast<size_t>(StatsCategory::Count) == (sizeof(STAT_EVENT_NAMES) / sizeof(STAT_EVENT_NAMES[0])),
+              "STAT_EVENT_NAMES size mismatch");
+
+static std::array<String, static_cast<size_t>(StatsCategory::Count)> g_statsPayload;
+static std::array<uint32_t, static_cast<size_t>(StatsCategory::Count)> g_statsLastSent{};
 
 bool parseConnectPayload(uint8_t *data, size_t len, String &ssid, String &pass,
                          String &bssid, bool &save, WifiStaticConfig &st,
@@ -108,17 +134,81 @@ uint32_t nextEventId() {
     return g_eventSeq.fetch_add(1, std::memory_order_relaxed) + 1;
 }
 
-String buildStatsPayload() {
+size_t statsIndex(const StatsCategory c) {
+    return static_cast<size_t>(c);
+}
+
+uint32_t roundDown(const uint32_t value, const uint32_t quantum) {
+    if (quantum == 0) return value;
+    return (value / quantum) * quantum;
+}
+
+String buildStatsPayload(const StatsCategory cat) {
     JsonDocument doc;
-    doc = StatService::appendSystemStats(doc, g_eventLogger);
-    doc = StatService::appendModbusStats(doc);
-    doc = StatService::appendMQTTStats(doc);
-    doc = StatService::appendNetworkStats(doc);
-    doc = StatService::appendStorageStats(doc);
-    doc = StatService::appendHealthStats(doc);
+    switch (cat) {
+        case StatsCategory::System: {
+            doc = StatService::appendSystemStats(doc, g_eventLogger);
+            const uint32_t uptime = doc["uptimeMs"] | 0;
+            doc["uptimeMs"] = roundDown(uptime, STATS_UPTIME_QUANTUM_MS);
+            doc["heapFree"] = roundDown(static_cast<uint32_t>(doc["heapFree"] | 0), STATS_HEAP_QUANTUM_BYTES);
+            doc["heapMin"] = roundDown(static_cast<uint32_t>(doc["heapMin"] | 0), STATS_HEAP_QUANTUM_BYTES);
+            break;
+        }
+        case StatsCategory::Network: {
+            doc = StatService::appendNetworkStats(doc);
+            break;
+        }
+        case StatsCategory::MQTT: {
+            doc = StatService::appendMQTTStats(doc);
+            break;
+        }
+        case StatsCategory::Modbus: {
+            doc = StatService::appendModbusStats(doc);
+            break;
+        }
+        case StatsCategory::Storage: {
+            doc = StatService::appendStorageStats(doc);
+            break;
+        }
+        case StatsCategory::Health: {
+            doc = StatService::appendHealthStats(doc);
+            break;
+        }
+        case StatsCategory::Count:
+        default: break;
+    }
     String out;
     serializeJson(doc, out);
     return out;
+}
+
+void sendStatsPayload(const StatsCategory cat, const String &payload, const uint32_t now, AsyncEventSourceClient *client) {
+    const auto idx = statsIndex(cat);
+    g_statsPayload[idx] = payload;
+    g_statsLastSent[idx] = now;
+    if (client) {
+        client->send(payload.c_str(), STAT_EVENT_NAMES[idx], nextEventId());
+    } else {
+        g_events.send(payload.c_str(), STAT_EVENT_NAMES[idx], nextEventId());
+    }
+}
+
+void emitStats(bool force, AsyncEventSourceClient *client) {
+    const uint32_t now = millis();
+    for (uint8_t i = 0; i < static_cast<uint8_t>(StatsCategory::Count); ++i) {
+        const auto cat = static_cast<StatsCategory>(i);
+        const String payload = buildStatsPayload(cat);
+        if (payload.isEmpty()) continue;
+
+        const auto idx = statsIndex(cat);
+        const bool changed = payload != g_statsPayload[idx];
+        const uint32_t last = g_statsLastSent[idx];
+        const bool heartbeat = (now - last) >= STATS_HEARTBEAT_MS;
+
+        if (force || changed || heartbeat) {
+            sendStatsPayload(cat, payload, now, client);
+        }
+    }
 }
 
 String readLogChunk(MemoryLogger *mem, size_t start, size_t len) {
@@ -207,23 +297,6 @@ void broadcastLogDelta() {
     g_lastLogCursor.store(total, std::memory_order_relaxed);
 }
 
-void sendStatsToClients(const uint32_t now) {
-    const String payload = buildStatsPayload();
-    if (payload.isEmpty()) {
-        return;
-    }
-
-    const bool changed = payload != g_lastStatsJson;
-    const uint32_t sinceLastSend = now - g_lastStatsAt.load(std::memory_order_relaxed);
-    if (!changed && sinceLastSend < STATS_HEARTBEAT_MS) {
-        return;
-    }
-
-    g_lastStatsJson = payload;
-    g_lastStatsAt.store(now, std::memory_order_relaxed);
-    g_events.send(payload.c_str(), "stats", nextEventId());
-}
-
 } // namespace
 
 void MBXServerHandlers::setPortal(NetworkPortal *portal) {
@@ -248,10 +321,7 @@ void MBXServerHandlers::initEventStream(AsyncWebServer *server, const Logger *lo
         client->send("ready", "ping", nextEventId(), EVENT_RETRY_MS);
 
         // Warm-up snapshot for new client
-        const String statsPayload = buildStatsPayload();
-        if (!statsPayload.isEmpty()) {
-            client->send(statsPayload.c_str(), "stats", nextEventId());
-        }
+        emitStats(true, client);
         sendInitialLogsToClient(client);
     });
 
@@ -267,7 +337,7 @@ void MBXServerHandlers::pumpEventStream() {
     static uint32_t lastStatsPoll = 0;
     if (now - lastStatsPoll >= STATS_PUSH_INTERVAL_MS) {
         lastStatsPoll = now;
-        sendStatsToClients(now);
+        emitStats(false, nullptr);
     }
 
     if (now - g_lastLogCheckAt.load(std::memory_order_relaxed) >= LOGS_CHECK_INTERVAL_MS) {

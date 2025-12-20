@@ -24,6 +24,7 @@ const fmtMs = (ms) => {
 
 let eventSource = null;
 let logsBuffer = "";
+let statsState = {};
 const MAX_LOG_CHARS = 16000;
 
 window.initIndex = async function initIndex() {
@@ -33,19 +34,25 @@ window.initIndex = async function initIndex() {
 
     // Light fallback so the page renders even before the stream delivers the first event
     const sys = await safeGet(API.SYSTEM_STATS);
-    if (!sys.__error) renderStats(sys);
+    if (!sys.__error) updateStats(sys);
+    else renderStats(sys);
 };
 
 function startEventStream() {
     if (eventSource) eventSource.close();
     eventSource = new EventSource(API.EVENTS);
 
-    eventSource.addEventListener("stats", (ev) => {
-        try {
-            renderStats(JSON.parse(ev.data || "{}"));
-        } catch (err) {
-            console.error("Failed to parse stats event", err);
-        }
+    const statEvents = [
+        "stats-system",
+        "stats-network",
+        "stats-mqtt",
+        "stats-modbus",
+        "stats-storage",
+        "stats-health",
+        "stats", // fallback if server sends aggregated payload
+    ];
+    statEvents.forEach((name) => {
+        eventSource.addEventListener(name, (ev) => handleStatsEvent(ev));
     });
     eventSource.addEventListener("logs", (ev) => handleLogEvent(ev, true));
     eventSource.addEventListener("log", (ev) => handleLogEvent(ev, false));
@@ -67,6 +74,21 @@ function handleLogEvent(ev, replace) {
     } catch (err) {
         console.error("Failed to parse log event", err);
     }
+}
+
+function handleStatsEvent(ev) {
+    try {
+        const payload = JSON.parse(ev.data || "{}");
+        updateStats(payload);
+    } catch (err) {
+        console.error("Failed to parse stats event", err);
+    }
+}
+
+function updateStats(partial) {
+    if (!partial || typeof partial !== "object") return;
+    statsState = { ...statsState, ...partial };
+    renderStats(statsState);
 }
 
 function applyLogs(text, { replace = false, truncated = false } = {}) {

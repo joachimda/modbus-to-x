@@ -2,9 +2,9 @@
 #define MODBUS_TO_MQTT_MBXSERVERHANDLERS_H
 
 #include "ESPAsyncWebServer.h"
+#include "logging/MemoryLogger.h"
 #include "network/NetworkPortal.h"
 #include "network/wifi/WifiConnectionController.h"
-#include "MemoryLogger.h"
 #include "mqtt/MqttManager.h"
 
 class Logger;

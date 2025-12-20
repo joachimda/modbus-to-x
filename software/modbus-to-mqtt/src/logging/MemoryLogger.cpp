@@ -1,7 +1,9 @@
-#include "MemoryLogger.h"
+#include "logging/MemoryLogger.h"
+
 #include <Print.h>
 #include <algorithm>
 #include <cstring>
+#include "services/TimeService.h"
 
 namespace {
 class MutexLock {
@@ -86,6 +88,11 @@ void MemoryLogger::logWarning(const char *message) { append("[WARN]", message); 
 void MemoryLogger::logDebug(const char *message) { append("[DEBUG]", message); }
 
 String MemoryLogger::ts() {
+    if (TimeService::hasValidTime()) {
+        const String iso = TimeService::nowIso();
+        if (!iso.isEmpty()) return iso;
+    }
+
     const uint32_t ms = millis();
     const uint32_t s = ms / 1000u;
     const uint32_t hh = (s / 3600u) % 24u;

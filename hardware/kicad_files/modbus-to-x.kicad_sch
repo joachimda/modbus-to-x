@@ -5596,7 +5596,7 @@
 	)
 	(text "Power LED Indicator"
 		(exclude_from_sim no)
-		(at 49.53 172.72 0)
+		(at 48.514 172.72 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -7472,7 +7472,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://www.we-online.com/components/products/datasheet/615006138421.pdf"
 			(at 138.43 143.51 0)
 			(effects
 				(font
@@ -7481,8 +7481,17 @@
 				(hide yes)
 			)
 		)
-		(property "Description" ""
+		(property "Description" "Jack Modular Connector 6p6c (RJ11, RJ12, RJ14, RJ25) 90° Angle (Right) Unshielded Cat5"
 			(at 138.43 143.51 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "Conn. #75"
+			(at 138.43 143.51 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7667,6 +7676,15 @@
 				(hide yes)
 			)
 		)
+		(property "InternalId" "DIO. #5"
+			(at 147.32 154.94 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "2fcc9f2f-43af-4667-b39b-bf412e4484b4")
 		)
@@ -7737,8 +7755,8 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" "Rt"
-			(at 63.246 108.458 0)
+		(property "PartNo" "RND 1550805S8F6200T5E"
+			(at 60.96 109.22 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7746,7 +7764,7 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "RND 1550805S8F6200T5E"
+		(property "InternalId" "R #13"
 			(at 60.96 109.22 0)
 			(effects
 				(font
@@ -7992,8 +8010,8 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" "Rt"
-			(at 63.246 93.218 0)
+		(property "PartNo" "RND 1550805S8F6200T5E"
+			(at 60.96 93.98 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8001,7 +8019,7 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "RND 1550805S8F6200T5E"
+		(property "InternalId" "R #13"
 			(at 60.96 93.98 0)
 			(effects
 				(font
@@ -8148,7 +8166,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_1206_3216Metric_Pad1.33x1.80mm_HandSolder"
+		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
 			(at 33.02 89.8652 0)
 			(effects
 				(font
@@ -8157,7 +8175,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://content.kemet.com/datasheets/KEM_C1002_X7R_SMD.pdf"
+		(property "Datasheet" "https://search.murata.co.jp/Ceramy/image/img/A01X/G101/ENG/GCJ188R71H104KA12-02B.pdf"
 			(at 36.83 88.9 0)
 			(effects
 				(font
@@ -8166,7 +8184,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "SMD MLC Capacitor 100nF 50V 10% X7R 1206"
+		(property "Description" "0.1 µF ±10% 50V Ceramic Capacitor X7R 0805 (2012 Metric)"
 			(at 36.83 88.9 0)
 			(effects
 				(font
@@ -8175,7 +8193,7 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "C1206C104K5RACTU"
+		(property "PartNo" "GCD21BR71H104KA01L"
 			(at 36.83 88.9 0)
 			(effects
 				(font
@@ -8185,6 +8203,15 @@
 			)
 		)
 		(property "Voltage" "50V"
+			(at 36.83 88.9 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "C #39"
 			(at 36.83 88.9 90)
 			(effects
 				(font
@@ -8272,6 +8299,15 @@
 			)
 		)
 		(property "PartNo" "CC0402FRNP09BN120"
+			(at 110.49 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "C #8"
 			(at 110.49 156.21 0)
 			(effects
 				(font
@@ -8633,77 +8669,16 @@
 				(hide yes)
 			)
 		)
-		(property "Height" "3.2"
-			(at 266.7 421.59 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(property "Manufacturer_Name" "Espressif Systems"
-			(at 266.7 521.59 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(property "Manufacturer_Part_Number" "ESP32-WROOM-32D(M113DH2800PH3Q0)"
-			(at 266.7 621.59 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(property "Mouser Part Number" "356-ES32WROOM32D16MB"
-			(at 266.7 721.59 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(property "Mouser Price/Stock" "https://www.mouser.co.uk/ProductDetail/Espressif-Systems/ESP32-WROOM-32DM113DH2800PH3Q0?qs=W%2FMpXkg%252BdQ75%2Fda1rSxxJw%3D%3D"
-			(at 266.7 821.59 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(property "Arrow Part Number" ""
-			(at 266.7 921.59 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(property "Arrow Price/Stock" ""
-			(at 266.7 1021.59 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
 		(property "PartNo" "M113DH2800PH3Q0"
+			(at 232.41 26.67 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "IC #48"
 			(at 232.41 26.67 0)
 			(effects
 				(font
@@ -9057,6 +9032,15 @@
 				(hide yes)
 			)
 		)
+		(property "InternalId" "IC #36"
+			(at 41.91 106.68 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "5"
 			(uuid "cc900836-5749-4822-8963-e1430f30ac54")
 		)
@@ -9276,6 +9260,15 @@
 			)
 		)
 		(property "PartNo" "ABS05-32.768KHZ-T"
+			(at 110.49 147.32 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "Other #1"
 			(at 110.49 147.32 90)
 			(effects
 				(font
@@ -9518,7 +9511,7 @@
 				(hide yes)
 			)
 		)
-		(property "Id" "C #20"
+		(property "InternalId" "C #20"
 			(at 74.93 41.91 90)
 			(effects
 				(font
@@ -10554,43 +10547,12 @@
 				(hide yes)
 			)
 		)
-		(property "PARTREV" ""
+		(property "InternalId" "Conn. #28"
 			(at 214.63 151.13 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify bottom)
-				(hide yes)
-			)
-		)
-		(property "MANUFACTURER" "HARWIN"
-			(at 214.63 151.13 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-				(hide yes)
-			)
-		)
-		(property "MAXIMUM_PACKAGE_HEIGHT" ""
-			(at 214.63 151.13 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
-				(hide yes)
-			)
-		)
-		(property "STANDARD" "Manufacturer Recommendations"
-			(at 214.63 151.13 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify bottom)
 				(hide yes)
 			)
 		)
@@ -11266,6 +11228,15 @@
 				(hide yes)
 			)
 		)
+		(property "InternalId" "C #8"
+			(at 118.11 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "f22b7c44-b969-47da-87d3-f7ff64497a2c")
 		)
@@ -11401,6 +11372,15 @@
 				(hide yes)
 			)
 		)
+		(property "InternalId" "IC #43"
+			(at 44.45 38.1 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "1"
 			(uuid "a06ef16f-78a1-45c5-a74b-1401f2f1c156")
 		)
@@ -11481,57 +11461,16 @@
 				(hide yes)
 			)
 		)
-		(property "Height" "1.1"
-			(at 54.61 -245.06 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(property "Mouser Part Number" "621-DSS4160U-7"
-			(at 54.61 -345.06 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(property "Mouser Price/Stock" "https://www.mouser.co.uk/ProductDetail/Diodes-Incorporated/DSS4160U-7?qs=oUsD4qhOtFxSZXssM%2FBZDA%3D%3D"
-			(at 54.61 -445.06 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(property "Manufacturer_Name" "Diodes Incorporated"
-			(at 54.61 -545.06 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(property "Manufacturer_Part_Number" "DSS4160U-7"
-			(at 54.61 -645.06 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
 		(property "PartNo" "DSS4160U-7"
+			(at 68.58 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "TRANS #7"
 			(at 68.58 156.21 0)
 			(effects
 				(font
@@ -11753,7 +11692,7 @@
 				(hide yes)
 			)
 		)
-		(property "Id" "C #20"
+		(property "InternalId" "C #20"
 			(at 83.82 41.91 90)
 			(effects
 				(font
@@ -12289,8 +12228,8 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" "Cin_MAX3485"
-			(at 36.83 83.82 0)
+		(property "InternalId" "C #35"
+			(at 36.83 83.82 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12435,57 +12374,16 @@
 				(hide yes)
 			)
 		)
-		(property "Height" "1.1"
-			(at 83.82 547.32 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(property "Mouser Part Number" "621-DSS4160U-7"
-			(at 83.82 647.32 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(property "Mouser Price/Stock" "https://www.mouser.co.uk/ProductDetail/Diodes-Incorporated/DSS4160U-7?qs=oUsD4qhOtFxSZXssM%2FBZDA%3D%3D"
-			(at 83.82 747.32 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(property "Manufacturer_Name" "Diodes Incorporated"
-			(at 83.82 847.32 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
-		(property "Manufacturer_Part_Number" "DSS4160U-7"
-			(at 83.82 947.32 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-				(hide yes)
-			)
-		)
 		(property "PartNo" "DSS4160U-7"
+			(at 69.85 146.05 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "TRANS #7"
 			(at 69.85 146.05 0)
 			(effects
 				(font

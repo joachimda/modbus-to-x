@@ -114,10 +114,7 @@ function uiToSchema(uiModel) {
                     dataType: String(p.type || "uint16"),
                     scale: Number(p.scale ?? 1) || 1,
                     unit: p.unit || "",
-                    ...(Number.isFinite(Number(p.poll_secs)) && Number(p.poll_secs) > 0 ? { poll_interval: Number(p.poll_secs) } : {}),
-                    ...(p.precision != null ? {
-                        precision: Number(p.precision)
-                    } : {})
+                    ...(Number.isFinite(Number(p.poll_secs)) && Number(p.poll_secs) > 0 ? { poll_interval: Number(p.poll_secs) } : {})
                 };
                 if (slice !== "full") {
                     dp.registerSlice = slice;

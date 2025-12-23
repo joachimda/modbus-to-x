@@ -5,5 +5,6 @@
 struct Bus {
     int baud;
     String serialFormat;
+    bool enabled{false};
 };
 #endif

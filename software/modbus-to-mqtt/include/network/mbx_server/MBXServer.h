@@ -36,8 +36,8 @@ private:
 
     auto tryConnectWithStoredCreds() const -> bool;
 
-    static void serveSPIFFSFile(AsyncWebServerRequest *reqPtr, const char *path, const std::function<void()> &onServed,
-                                const char *contentType, const Logger *logger);
+    static void serveFsFile(AsyncWebServerRequest *reqPtr, FS &fs, const char *path,
+                            const std::function<void()> &onServed, const char *contentType, const Logger *logger);
 
     void logRequest(const AsyncWebServerRequest *request) const;
 };

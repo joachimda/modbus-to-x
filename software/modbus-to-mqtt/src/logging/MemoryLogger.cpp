@@ -8,7 +8,7 @@
 namespace {
 class MutexLock {
 public:
-    explicit MutexLock(SemaphoreHandle_t handle) : _handle(handle), _locked(false) {
+    explicit MutexLock(const SemaphoreHandle_t handle) : _handle(handle), _locked(false) {
         if (_handle) {
             _locked = xSemaphoreTake(_handle, portMAX_DELAY) == pdTRUE;
         }

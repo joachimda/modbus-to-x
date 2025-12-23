@@ -92,6 +92,10 @@
 #define DEFAULT_AP_PASS "you-shall-not-pass"
 #endif
 
+#ifndef DEFAULT_HOSTNAME
+#define DEFAULT_HOSTNAME "modbus-to-x"
+#endif
+
 /****************************************************
  * System
  ****************************************************/

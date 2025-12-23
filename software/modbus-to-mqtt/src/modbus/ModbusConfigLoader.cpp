@@ -1,4 +1,4 @@
-#include <SPIFFS.h>
+#include "storage/ConfigFs.h"
 #include "ArduinoJson.h"
 
 #include "modbus/ModbusConfigLoader.h"
@@ -7,10 +7,13 @@
 #include "utils/StringUtils.h"
 
 bool ModbusConfigLoader::loadConfiguration(Logger *logger, const char *path, ConfigurationRoot &outConfig) {
-    if (!path || !*path) path = "/conf/config.json";
+    if (!path || !*path) path = ConfigFs::kModbusConfigFile;
 
-    if (!SPIFFS.exists(path)) {
-        if (logger) logger->logDebug("Configuration file not found '/conf/config.json'");
+    if (!ConfigFS.exists(path)) {
+        if (logger) {
+            logger->logDebug(
+                (String("Configuration file not found '") + String(ConfigFs::kBasePath) + path + "'").c_str());
+        }
         // fallback to defaults
         outConfig.bus.baud = DEFAULT_MODBUS_BAUD_RATE;
         outConfig.bus.serialFormat = DEFAULT_MODBUS_MODE;
@@ -18,11 +21,17 @@ bool ModbusConfigLoader::loadConfiguration(Logger *logger, const char *path, Con
         return false;
     }
 
-    if (logger) logger->logDebug("Found configuration file '/conf/config.json'");
+    if (logger) {
+        logger->logDebug((String("Found configuration file '") + String(ConfigFs::kBasePath) + path + "'").c_str());
+    }
 
-    File f = SPIFFS.open(path, FILE_READ);
+    File f = ConfigFS.open(path, FILE_READ);
     if (!f) {
-        if (logger) logger->logError("ModbusConfigLoader::loadConfiguration - Failed to open /conf/config.json");
+        if (logger) {
+            logger->logError(
+                (String("ModbusConfigLoader::loadConfiguration - Failed to open ") +
+                 String(ConfigFs::kBasePath) + path).c_str());
+        }
         return false;
     }
     String json = f.readString();
@@ -98,9 +107,11 @@ bool ModbusConfigLoader::loadConfiguration(Logger *logger, const char *path, Con
         if (logger) logger->logWarning("ModbusConfigLoader::loadConfiguration - missing 'bus' object; using defaults");
         outConfig.bus.baud = DEFAULT_MODBUS_BAUD_RATE;
         outConfig.bus.serialFormat = DEFAULT_MODBUS_MODE;
+        outConfig.bus.enabled = false;
     } else {
         outConfig.bus.baud = bus["baud"] | DEFAULT_MODBUS_BAUD_RATE;
         outConfig.bus.serialFormat = String(bus["serialFormat"] | DEFAULT_MODBUS_MODE);
+        outConfig.bus.enabled = bus["enabled"] | false;
     }
 
     // devices

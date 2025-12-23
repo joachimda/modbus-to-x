@@ -82,14 +82,12 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
                 # MQTT
                 "broker": "mqtt://localhost:1883",
                 "clientId": "esp32-dev",
-                "lastPublishIso": now_iso,
                 "errorCount": 0,
                 # Modbus
                 "buses": 1,
                 "devices": 1,
                 "datapoints": 3,
                 "pollIntervalMs": 1000,
-                "lastPollIso": now_iso,
             }
             self._send_json(payload)
             return True;
@@ -165,7 +163,6 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
                 "mqttConnected": True,
                 "broker": "mqtt://localhost:1883",
                 "clientId": "esp32-dev",
-                "lastPublishIso": now_iso,
                 "mqttErrorCount": 0,
             })
             send_event("stats-modbus", {
@@ -173,7 +170,6 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
                 "buses": 1,
                 "devices": 1,
                 "datapoints": 3,
-                "lastPollIso": now_iso,
                 "modbusErrorCount": 0,
             })
             send_event("stats-storage", {

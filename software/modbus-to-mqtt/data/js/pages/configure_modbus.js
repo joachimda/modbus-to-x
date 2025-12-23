@@ -1,6 +1,6 @@
 import {API, safeJson, STATIC_FILES} from "app";
 
-window.initConfigure = async function initConfigure() {
+window.initConfigureModbus = async function initConfigureModbus() {
     await load().catch(err);
 }
 
@@ -38,6 +38,7 @@ function schemaToUi(json) {
     const bus = {
         id: 1,
         name: "RS485 Bus",
+        enabled: Boolean(json?.bus?.enabled),
         baud: Number(json?.bus?.baud) || 9600,
         parity: parts.parity,
         stop_bits: parts.stop_bits,
@@ -82,6 +83,7 @@ function uiToSchema(uiModel) {
     return {
         version: 1,
         bus: {
+            enabled: Boolean(b.enabled),
             baud: Number(b.baud) || 9600,
             serialFormat: toSerialFormat(b.data_bits, b.parity, b.stop_bits)
         },
@@ -137,6 +139,9 @@ function validateSchemaConfig(cfg) {
         errors.push("Missing bus");
     }
     if (cfg.bus) {
+        if (cfg.bus.enabled != null && typeof cfg.bus.enabled !== "boolean") {
+            errors.push("Bus enabled must be boolean");
+        }
         if (!Number.isInteger(cfg.bus.baud) || cfg.bus.baud <= 0) {
             errors.push("Bus baud must be a positive integer");
         }
@@ -402,6 +407,10 @@ function showBusEditor() {
     $("#bus-serial-parity").value = b.parity || "N";
     $("#bus-serial-stop-bits").value = b.stop_bits || 1;
     $("#bus-data-bits").value = b.data_bits || 8;
+    const enabledToggle = $("#bus-enabled");
+    if (enabledToggle) {
+        enabledToggle.checked = Boolean(b.enabled);
+    }
     // No explicit Save button anymore; values are auto-saved via handlers below.
 
     // Auto-save on change
@@ -421,6 +430,12 @@ function showBusEditor() {
         b.stop_bits = Number($("#bus-serial-stop-bits").value) || 1;
         refreshTree();
     };
+    if (enabledToggle) {
+        enabledToggle.onchange = () => {
+            b.enabled = Boolean(enabledToggle.checked);
+            refreshTree();
+        };
+    }
 }
 
 function showDeviceEditor() {

@@ -2,7 +2,6 @@ import {API, STATIC_FILES, safeJson} from "app";
 
 window.initConfigureMqtt = async function initConfigureMqtt() {
     await load();
-    document.querySelector('#btn-reload').onclick = load;
     document.querySelector('#btn-save').onclick = saveWithStatus;
     document.querySelector('#btn-test').onclick = testConnectionWithStatus;
 }
@@ -10,6 +9,7 @@ window.initConfigureMqtt = async function initConfigureMqtt() {
 async function load() {
     try {
         const j = await safeJson(STATIC_FILES.MQTT_CONFIG_JSON);
+        document.querySelector('#mqtt-enabled').checked = Boolean(j.enabled);
         document.querySelector('#broker-ip').value = j.broker_ip || '';
         document.querySelector('#broker-url').value = j.broker_url || '';
         document.querySelector('#broker-port').value = j.broker_port || '1883';
@@ -101,6 +101,7 @@ function readForm() {
     const url = (document.querySelector('#broker-url').value || '').trim();
     const port = String((document.querySelector('#broker-port').value || '').trim() || '1883');
     const user = (document.querySelector('#broker-user').value || '').trim();
+    const enabled = Boolean(document.querySelector('#mqtt-enabled').checked);
     let root_topic = (document.querySelector('#root-topic').value || '').trim();
     // Normalize and validate root topic
     // - trim leading/trailing slashes
@@ -118,6 +119,7 @@ function readForm() {
         throw new Error('Broker port must be 1-65535');
     }
     return {
+        enabled,
         broker_ip: ip,
         broker_url: url,
         broker_port: port,

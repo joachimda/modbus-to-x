@@ -7,6 +7,7 @@
 #include <SPIFFS.h>
 #include <WiFi.h>
 #include "Config.h"
+#include "storage/ConfigFs.h"
 #include "network/NetworkPortal.h"
 #include "network/mbx_server/MBXServerHandlers.h"
 #include "services/IndicatorService.h"
@@ -41,10 +42,9 @@ void MBXServer::begin() const {
         server->begin();
         IndicatorService::instance().setPortalMode(false);
         IndicatorService::instance().setWifiConnected(true);
-        MqttManager::setMQTTEnabled(true);
         ArduinoOtaManager::begin(_logger);
     } else {
-        g_wifi.begin("modbus-to-x");
+        g_wifi.begin(DEFAULT_HOSTNAME);
 
         NetworkPortal portal(_logger, _dnsServer);
         MBXServerHandlers::setPortal(&portal);
@@ -68,7 +68,11 @@ void MBXServer::loop() {
 void MBXServer::configureRoutes() const {
     server->serveStatic("/", SPIFFS, Routes::ROOT)
             .setDefaultFile("index.html")
-            .setCacheControl("no-store");
+            .setCacheControl("no-store")
+            .setFilter([](AsyncWebServerRequest *req) {
+                const String &url = req->url();
+                return url != Routes::GET_MODBUS_CONFIG && url != Routes::GET_MQTT_CONFIG;
+            });
 
     MBXServerHandlers::initEventStream(server, _logger);
 
@@ -85,7 +89,7 @@ void MBXServer::configureRoutes() const {
 
     server->on(Routes::GET_MODBUS_CONFIG, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
-        serveSPIFFSFile(req, "/conf/config.json", nullptr, HttpMediaTypes::JSON, _logger);
+        serveFsFile(req, ConfigFS, ConfigFs::kModbusConfigFile, nullptr, HttpMediaTypes::JSON, _logger);
     });
 
     server->on(Routes::PUT_MQTT_CONFIG, HTTP_PUT, [this](const AsyncWebServerRequest *req) {
@@ -102,7 +106,7 @@ void MBXServer::configureRoutes() const {
 
     server->on(Routes::GET_MQTT_CONFIG, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
-        serveSPIFFSFile(req, "/conf/mqtt.json", nullptr, HttpMediaTypes::JSON, _logger);
+        serveFsFile(req, ConfigFS, ConfigFs::kMqttConfigFile, nullptr, HttpMediaTypes::JSON, _logger);
     });
 
     server->on(Routes::LOGS, HTTP_GET, [this](AsyncWebServerRequest *req) {
@@ -112,7 +116,7 @@ void MBXServer::configureRoutes() const {
 
     server->on(Routes::RESET_NETWORK, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
-        serveSPIFFSFile(req, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML,
+        serveFsFile(req, SPIFFS, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML,
                         _logger);
     });
 
@@ -168,11 +172,15 @@ void MBXServer::configureRoutes() const {
 
 void MBXServer::configureAccessPointRoutes() const {
     server->serveStatic("/", SPIFFS, "/")
-            .setDefaultFile("/pages/configure_network.html")
-            .setCacheControl("no-store");
+            .setDefaultFile("/pages/mbx_captive_portal.html")
+            .setCacheControl("no-store")
+            .setFilter([](AsyncWebServerRequest *req) {
+                const String &url = req->url();
+                return url != Routes::GET_MODBUS_CONFIG && url != Routes::GET_MQTT_CONFIG;
+            });
 
     server->on(Routes::ROOT, HTTP_GET, [this](AsyncWebServerRequest *req) {
-        serveSPIFFSFile(req, "/pages/configure_network.html", nullptr, HttpMediaTypes::HTML, _logger);
+        serveFsFile(req, SPIFFS, "/pages/mbx_captive_portal.html", nullptr, HttpMediaTypes::HTML, _logger);
     });
 
     server->on(Routes::GET_SSID_LIST, HTTP_GET, [](AsyncWebServerRequest *req) {
@@ -191,7 +199,7 @@ void MBXServer::configureAccessPointRoutes() const {
 
     server->on(Routes::RESET_NETWORK, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
-        serveSPIFFSFile(req, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML,
+        serveFsFile(req, SPIFFS, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML,
                         _logger);
     }).setFilter(accessPointFilter);
 
@@ -244,6 +252,8 @@ auto MBXServer::tryConnectWithStoredCreds() const -> bool {
         delay(300);
     }
 
+    WiFi.persistent(false);
+    WiFiClass::setHostname(DEFAULT_HOSTNAME);
     WiFi.begin();
 
     const unsigned long start = millis();
@@ -260,11 +270,11 @@ auto MBXServer::tryConnectWithStoredCreds() const -> bool {
     return false;
 }
 
-void MBXServer::serveSPIFFSFile(AsyncWebServerRequest *reqPtr, const char *path, const std::function<void()> &onServed,
-                                const char *contentType, const Logger *logger) {
-    if (SPIFFS.exists(path)) {
+void MBXServer::serveFsFile(AsyncWebServerRequest *reqPtr, FS &fs, const char *path,
+                            const std::function<void()> &onServed, const char *contentType, const Logger *logger) {
+    if (fs.exists(path)) {
         logger->logDebug(("Serving file: " + String(path)).c_str());
-        reqPtr->send(SPIFFS, path, contentType);
+        reqPtr->send(fs, path, contentType);
         if (onServed) {
             reqPtr->onDisconnect([onServed] {
                 onServed();
@@ -283,10 +293,10 @@ void MBXServer::logRequest(const AsyncWebServerRequest *request) const {
 }
 
 void MBXServer::ensureConfigFile() const {
-    if (!SPIFFS.exists("/conf/config.json")) {
+    if (!ConfigFS.exists(ConfigFs::kModbusConfigFile)) {
         _logger->logWarning("MBXServer::ensureConfigFile - Config file not found. Creating new one");
 
-        File file = SPIFFS.open("/conf/config.json", FILE_WRITE);
+        File file = ConfigFS.open(ConfigFs::kModbusConfigFile, FILE_WRITE);
         if (!file) {
             return;
         }
@@ -295,11 +305,11 @@ void MBXServer::ensureConfigFile() const {
         file.close();
     }
 
-    if (!SPIFFS.exists("/conf/mqtt.json")) {
+    if (!ConfigFS.exists(ConfigFs::kMqttConfigFile)) {
         _logger->logWarning("MBXServer::ensureConfigFile - MQTT config file not found. Creating new one");
-        File file = SPIFFS.open("/conf/mqtt.json", FILE_WRITE);
+        File file = ConfigFS.open(ConfigFs::kMqttConfigFile, FILE_WRITE);
         if (file) {
-            file.print(R"({"broker_ip":"0.0.0.0","broker_url":"","broker_port":"1883","user":"","root_topic":"mbx_root"})");
+            file.print(R"({"enabled":false,"broker_ip":"0.0.0.0","broker_url":"","broker_port":"1883","user":"","root_topic":"mbx_root"})");
             file.close();
         }
     }
@@ -324,12 +334,12 @@ auto MBXServer::safeWriteFile(FS &fs, const char *path, const String &content) -
 }
 
 auto MBXServer::readConfig() const -> String {
-    if (!SPIFFS.exists("/config.json")) {
+    if (!ConfigFS.exists(ConfigFs::kModbusConfigFile)) {
         _logger->logError("MBXServer::readConfig - File System error");
         return "{}";
     }
 
-    File file = SPIFFS.open("/config.json", FILE_READ);
+    File file = ConfigFS.open(ConfigFs::kModbusConfigFile, FILE_READ);
     String json = file.readString();
     file.close();
     return json;

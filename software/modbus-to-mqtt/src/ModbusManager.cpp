@@ -1,9 +1,9 @@
 #include "Config.h"
 #include "modbus/ModbusManager.h"
+#include "storage/ConfigFs.h"
 
 #include <cmath>
 #include <vector>
-#include <SPIFFS.h>
 
 #include "mqtt/MqttManager.h"
 #include "services/IndicatorService.h"
@@ -19,9 +19,11 @@ ModbusManager::ModbusManager(Logger *logger)
 bool ModbusManager::begin() {
     if (loadConfiguration()) {
         _bus.begin(_modbusRoot.bus);
-        _bus.setActive(true);
-        _logger->logInformation("ModbusManager::begin - RS485 bus is ACTIVE");
-        return true;
+        _bus.setActive(_modbusRoot.bus.enabled);
+        _logger->logInformation(_modbusRoot.bus.enabled
+            ? "ModbusManager::begin - RS485 bus is ACTIVE"
+            : "ModbusManager::begin - RS485 bus is INACTIVE");
+        return _modbusRoot.bus.enabled;
     }
     _bus.setActive(false);
     _logger->logInformation("ModbusManager::begin - RS485 bus is INACTIVE");
@@ -29,7 +31,7 @@ bool ModbusManager::begin() {
 }
 
 bool ModbusManager::loadConfiguration() {
-    const bool ok = ModbusConfigLoader::loadConfiguration(_logger, "/conf/config.json", _modbusRoot);
+    const bool ok = ModbusConfigLoader::loadConfiguration(_logger, ConfigFs::kModbusConfigFile, _modbusRoot);
     if (!ok) {
         return false;
     }
@@ -179,8 +181,10 @@ bool ModbusManager::reconfigureFromFile() {
     const bool ok = loadConfiguration();
     if (ok) {
         _bus.begin(_modbusRoot.bus);
-        _bus.setActive(true);
-        _logger->logInformation("ModbusManager::reconfigureFromFile - applied and active");
+        _bus.setActive(_modbusRoot.bus.enabled);
+        _logger->logInformation(_modbusRoot.bus.enabled
+            ? "ModbusManager::reconfigureFromFile - applied and active"
+            : "ModbusManager::reconfigureFromFile - applied and inactive");
     } else {
         _bus.setActive(false);
         _logger->logError("ModbusManager::reconfigureFromFile - failed to load config; bus inactive");

@@ -17,115 +17,25 @@
 <body data-page="configure_network">
 <header style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
     <div>
-        <h1>Configure Wi-Fi</h1>
-        <div class="muted">Scan for networks and connect.</div>
+        <h1>Network Settings</h1>
     </div>
     <nav class="toolbar">
-        <button class="circleButton rebootButton" id="btn-reboot">
-            <svg class="rebootSvgIcon" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <path d="m 8 0 c -0.550781 0 -1 0.449219 -1 1 v 5 c 0 0.550781 0.449219 1 1 1 s 1 -0.449219 1 -1 v -5 c 0 -0.550781 -0.449219 -1 -1 -1 z m -7 1 l 2.050781 2.050781 c -2.117187 2.117188 -2.652343 5.355469 -1.332031 8.039063 c 1.324219 2.683594 4.214844 4.238281 7.179688 3.851562 c 2.96875 -0.386718 5.367187 -2.625 5.960937 -5.554687 c 0.59375 -2.933594 -0.75 -5.929688 -3.335937 -7.433594 c -0.476563 -0.28125 -1.089844 -0.117187 -1.367188 0.359375 s -0.117188 1.089844 0.359375 1.367188 c 1.851563 1.078124 2.808594 3.207031 2.382813 5.3125 c -0.421876 2.101562 -2.128907 3.691406 -4.253907 3.96875 c -2.128906 0.273437 -4.183593 -0.828126 -5.128906 -2.753907 s -0.566406 -4.226562 0.949219 -5.742187 l 1.535156 1.535156 v -4.003906 c 0 -0.519532 -0.449219 -0.996094 -1 -0.996094 z m 0 0" fill="currentColor"/>
+        <button class="gearButton rebootButton" id="btn-reboot" aria-label="Reboot device" title="Reboot device">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <polyline points="1 20 1 14 7 14"></polyline>
+                <path d="M3.51 9A9 9 0 0 1 17 5.34L23 10"></path>
+                <path d="M20.49 15A9 9 0 0 1 7 18.66L1 14"></path>
             </svg>
-            <span class="tooltip">Reboot</span>
         </button>
     </nav>
 </header>
-<main class="row">
-    <section class="card">
-        <h2>Available Networks</h2>
-        <div class="toolbar">
-            <label for="filter"></label>
-            <input id="filter" type="text" placeholder="Filter SSIDs…" />
-            <button id="refresh" class="btn">Refresh</button>
-            <span id="scanState" class="muted"></span>
-        </div>
-        <div id="list" class="list" role="list"></div>
-        <div class="hint" id="scanHint">
-            Tip: If your network is hidden, use <strong>Add hidden network</strong> below.
-        </div>
+<main>
 
-        <div class="adv" style="margin-top:16px">
-            <details id="hiddenDetails">
-                <summary>Add hidden network</summary>
-                <div class="grid-2" style="margin-top:10px">
-                    <div>
-                        <label>SSID<br/><input id="hiddenSsid" type="text" placeholder="Hidden SSID"></label>
-                    </div>
-                    <div>
-                        <label>Password<br/><input id="hiddenPass" type="password" placeholder="(leave empty if open)"></label>
-                    </div>
-                </div>
-                <div style="margin-top:8px; display:flex; gap:8px; align-items:center">
-                    <button id="selectHidden" class="btn secondary">Use this SSID</button>
-                    <label><input type="checkbox" id="showHiddenPw"> Show password</label>
-                </div>
-            </details>
-        </div>
-    </section>
-
-    <!-- Right: credentials + advanced + connect -->
-    <section class="card">
-        <h2>Network Details</h2>
-        <div class="grid-2">
-            <div>
-                <label>Selected SSID<br/>
-                    <input id="ssid" type="text" placeholder="Select from list or enter manually" />
-                </label>
-            </div>
-            <div>
-                <label>Password<br/>
-                    <input id="password" type="password" placeholder="(open networks leave empty)" />
-                </label>
-                <label class="hint"><input type="checkbox" id="showPw"> Show password</label>
-            </div>
-        </div>
-
-        <div class="adv">
-            <details>
-                <summary>Advanced options</summary>
-                <div class="grid-2" style="margin-top:10px">
-                    <div>
-                        <label>BSSID (lock to AP)<br/>
-                            <input id="bssid" type="text" placeholder="AA:BB:CC:DD:EE:FF" />
-                        </label>
-                        <div class="hint">Optional. Useful if multiple APs share the SSID.</div>
-                    </div>
-                    <div>
-                        <label>Save credentials<br/>
-                            <select id="save">
-                                <option value="true" selected>Persist (recommended)</option>
-                                <option value="false">Temporary (one-time)</option>
-                            </select>
-                        </label>
-                    </div>
-                </div>
-
-                <details style="margin-top:10px">
-                    <summary>Static IP (optional)</summary>
-                    <div class="grid-2" style="margin-top:10px">
-                        <div><label>IP<br/><input id="ip" type="text" placeholder="192.168.1.123"></label></div>
-                        <div><label>Gateway<br/><input id="gw" type="text" placeholder="192.168.1.1"></label></div>
-                        <div><label>Subnet mask<br/><input id="mask" type="text" placeholder="255.255.255.0"></label></div>
-                        <div><label>DNS 1<br/><input id="dns1" type="text" placeholder="1.1.1.1"></label></div>
-                        <div><label>DNS 2<br/><input id="dns2" type="text" placeholder="8.8.8.8"></label></div>
-                    </div>
-                    <div class="hint">Leave all fields blank to use DHCP.</div>
-                </details>
-            </details>
-        </div>
-
-        <div style="display:flex; gap:8px; align-items:center; margin-top:12px">
-            <button id="connect" class="btn">Connect</button>
-            <button id="cancel" class="btn ghost" disabled>Cancel</button>
-            <span id="quickStatus" class="muted"></span>
-        </div>
-
-        <div id="statusLog" class="status" style="display:none"></div>
-        <div id="finalBadge" class="right" style="margin-top:10px"></div>
-    </section>
 </main>
 <script type="module">
     import 'app';
-    import 'configure_network';
+    import 'data/pages/configure_network';
 </script>
 </body>
 </html>

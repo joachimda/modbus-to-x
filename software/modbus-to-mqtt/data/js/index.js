@@ -194,7 +194,6 @@ function renderStats(sys = {}) {
         kv("Status", mqttDot),
         kv("Broker", sys.broker || "—"),
         kv("Client ID", sys.clientId || "—"),
-        kv("Last publish", sys.lastPublishIso || "—"),
         kv("Errors", sys.mqttErrorCount ?? "—"),
     ].join("");
 
@@ -208,7 +207,6 @@ function renderStats(sys = {}) {
         kv("Buses", sys.buses ?? "—"),
         kv("Devices", sys.devices ?? "—"),
         kv("Datapoints", sys.datapoints ?? "—"),
-        kv("Last poll", sys.lastPollIso || "—"),
         kv("Errors", sys.modbusErrorCount ?? "—"),
     ].join("");
 

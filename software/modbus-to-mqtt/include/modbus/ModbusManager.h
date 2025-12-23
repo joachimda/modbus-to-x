@@ -48,7 +48,7 @@ public:
 
     static String registersToAscii(const uint16_t *buf, uint16_t count);
 
-    // Reload /conf/config.json at runtime and reinitialize wiring.
+    // Reload config file at runtime and reinitialize wiring.
     // Returns true if the new config is loaded and the bus stays active.
     bool reconfigureFromFile();
 

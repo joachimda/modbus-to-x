@@ -23,8 +23,8 @@ export const STATIC_FILES = {
 document.addEventListener('DOMContentLoaded', async () => {
     const page = document.body?.dataset?.page;
     if (page === 'index' && typeof window.initIndex === 'function') await window.initIndex();
-    if (page === 'configure_v2' && typeof window.initConfigure === 'function') await window.initConfigure();
-    if (page === 'configure_network' && typeof window.initConfigureNetwork === 'function') await window.initConfigureNetwork();
+    if (page === 'configure_modbus' && typeof window.initConfigureModbus === 'function') await window.initConfigureModbus();
+    if (page === 'mbx_captive_portal' && typeof window.initCaptivePortal === 'function') await window.initCaptivePortal();
     if (page === 'configure_mqtt' && typeof window.initConfigureMqtt === 'function') await window.initConfigureMqtt();
 });
 export async function reboot() {

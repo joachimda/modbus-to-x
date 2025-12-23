@@ -1,6 +1,7 @@
 #ifndef MODBUS_TO_MQTT_CONNECTIONCONTROLLER_H
 #define MODBUS_TO_MQTT_CONNECTIONCONTROLLER_H
 #pragma once
+#include "Config.h"
 #include <WiFi.h>
 #include <Arduino.h>
 #include <esp_wifi.h>
@@ -8,7 +9,7 @@
 
 class WifiConnectionController {
 public:
-    void begin(const String &hostname = "modbus-to-x");
+    void begin(const String &hostname = DEFAULT_HOSTNAME);
 
     void reset();
 

@@ -6,7 +6,7 @@
 #include <atomic>
 #include <utility>
 #include "services/IndicatorService.h"
-#include <SPIFFS.h>
+#include "storage/ConfigFs.h"
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
@@ -49,20 +49,22 @@ auto MqttManager::begin() -> bool {
 
     // Do NOT attempt connection here; Wi‑Fi/LWIP may not be initialized yet.
     // The background task will handle connecting once Wi‑Fi is up.
-    setMQTTEnabled(false);
+    setMQTTEnabled(_mqttEnabledConfigured);
     return startMqttTask();
 }
 
 void MqttManager::loadMQTTConfig() {
     String server = default_mqtt_broker;
     String user, port, rootTopic = "";
-    if (SPIFFS.exists("/conf/mqtt.json")) {
-        File config_file = SPIFFS.open("/conf/mqtt.json", FILE_READ);
+    _mqttEnabledConfigured = false;
+    if (ConfigFS.exists(ConfigFs::kMqttConfigFile)) {
+        File config_file = ConfigFS.open(ConfigFs::kMqttConfigFile, FILE_READ);
         if (config_file) {
             String text = config_file.readString();
             config_file.close();
             JsonDocument doc;
             if (!deserializeJson(doc, text)) {
+                _mqttEnabledConfigured = doc["enabled"] | false;
                 String ip_from_file = doc["broker_ip"] | "";
                 String url_from_file = doc["broker_url"] | "";
                 String port_from_file = doc["broker_port"] | default_mqtt_port;
@@ -118,6 +120,7 @@ void MqttManager::loadMQTTConfig() {
     _logger->logDebug(("[MQTT] Loaded configuration; User: "
         + String(_mqttUser) + ", Broker: " + String(_mqttBroker)
         + ", Port: " + String(_mqttPort) + ", Root Topic: " + String(_mqttRootTopic)  ).c_str());
+    // _mqttEnabledConfigured now holds the persisted user setting.
 
     preferences.begin(MQTT_PREFS_NAMESPACE, false);
     if (preferences.isKey("pass")) {
@@ -353,11 +356,11 @@ void MqttManager::reconfigureFromFile() {
     _subscriptionHandler->clear();
     addSystemSubscriptionHandlers(_mqttRootTopic);
 
-    // Resume MQTT processing
-    setMQTTEnabled(true);
+    // Resume MQTT processing based on user preference
+    setMQTTEnabled(_mqttEnabledConfigured);
 
-    // If Wi-Fi is up, try to connect and resubscribe immediately
-    if (WiFiClass::status() == WL_CONNECTED) {
+    // If Wi-Fi is up and MQTT is enabled, try to connect and resubscribe immediately
+    if (isMQTTEnabled() && WiFiClass::status() == WL_CONNECTED) {
         bool connected = false;
         connected = ensureMQTTConnection();
         if (!connected) {

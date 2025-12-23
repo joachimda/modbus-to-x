@@ -75,6 +75,7 @@ private:
     String _willMessage;
     uint8_t _willQos{0};
     bool _willRetain{false};
+    bool _mqttEnabledConfigured{false};
 };
 
 #endif

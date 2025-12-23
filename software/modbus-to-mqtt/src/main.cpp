@@ -1,5 +1,6 @@
 ﻿#include <Arduino.h>
 #include <SPIFFS.h>
+#include "storage/ConfigFs.h"
 #include "SerialLogger.h"
 #include "modbus/ModbusManager.h"
 #include "network/mbx_server/MBXServer.h"
@@ -30,11 +31,16 @@ void setupEnvironment() {
 }
 
 void setupFs(const Logger * l ) {
-    if (!SPIFFS.begin(true)) {
+    if (!SPIFFS.begin(true, "/spiffs", 10, "spiffs")) {
         l->logError("setupFs() - An error occurred while mounting SPIFFS");
         return;
     }
     l->logDebug("setupFs() - SPIFFS mounted");
+    if (!ConfigFS.begin(true, ConfigFs::kBasePath, 10, ConfigFs::kPartitionLabel)) {
+        l->logError("setupFs() - An error occurred while mounting config FS");
+        return;
+    }
+    l->logDebug("setupFs() - Config FS mounted");
 }
 
 void setup() {
@@ -86,4 +92,3 @@ void loop() {
     modbus_manager.loop();
     delay(500);
 }
-

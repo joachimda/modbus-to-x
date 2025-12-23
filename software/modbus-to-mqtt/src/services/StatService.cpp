@@ -79,7 +79,6 @@ JsonDocument StatService::appendMQTTStats(JsonDocument &document) {
     document["mqttConnected"] = connected;
     document["broker"] = link ? String(link->getMqttBroker()) : "N/A";
     document["clientId"] = link ? link->getClientId() : "N/A";
-    document["lastPublishIso"] = "N/A";
     document["mqttErrorCount"] = 0;
     return document;
 }
@@ -104,7 +103,6 @@ JsonDocument StatService::appendModbusStats(JsonDocument &document) {
 
     document["mbusEnabled"] = enabled;
     document["datapoints"] = totalDatapoints;
-    document["lastPollIso"] = "";
     document["modbusErrorCount"] = ModbusManager::getBusErrorCount();
     return document;
 }

@@ -2,7 +2,7 @@
 #include <atomic>
 #include <array>
 #include <memory>
-#include <SPIFFS.h>
+#include "storage/ConfigFs.h"
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <ArduinoJson.h>
@@ -491,7 +491,7 @@ void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, co
                                                   const size_t total) {
     static File bodyFile;
     if (index == 0U) {
-        bodyFile = SPIFFS.open("/conf/config.json", FILE_WRITE);
+        bodyFile = ConfigFS.open(ConfigFs::kModbusConfigFile, FILE_WRITE);
     }
     if (bodyFile) {
         bodyFile.write(data, len);
@@ -520,8 +520,8 @@ void MBXServerHandlers::handlePutMqttConfigBody(AsyncWebServerRequest *req, cons
     body.concat(reinterpret_cast<const char *>(data), len);
     if (index + len < total) return;
 
-    // Write non-sensitive config to SPIFFS
-    File f = SPIFFS.open("/conf/mqtt.json", FILE_WRITE);
+    // Write non-sensitive config to config FS
+    File f = ConfigFS.open(ConfigFs::kMqttConfigFile, FILE_WRITE);
     if (!f) {
         req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
         return;
@@ -619,8 +619,10 @@ void MBXServerHandlers::handleWifiApOff(AsyncWebServerRequest *req) {
         delay(800);
         WiFiClass::mode(WIFI_MODE_STA);
         IndicatorService::instance().setPortalMode(false);
-        // Re-enable MQTT now that portal is off, and STA is active
-        MqttManager::setMQTTEnabled(true);
+        // Re-evaluate MQTT preference now that portal is off, and STA is active
+        if (auto *link = getMqttManager()) {
+            link->reconfigureFromFile();
+        }
         vTaskDelete(nullptr);
     }, "apOff", 2048, nullptr, 1, nullptr, APP_CPU_NUM);
 }

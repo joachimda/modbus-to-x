@@ -14,13 +14,16 @@ jobs:
       PIO_ENV: prod-board-v0-1-alpha
       DEVICE: modbus-to-x
       KID: "bd774d27-badf-48a3-b927-a51fb08629f7"
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
       - name: Install PlatformIO
         run: pip install -U platformio
+
       - name: Set version from tag
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
@@ -39,18 +42,17 @@ jobs:
 
       - name: Load signing key
         run: |
-          echo "${{ secrets.OTA_SIGNING_KEY_PEM }}" > ota_signing.key
+          printf "%s" "${{ secrets.OTA_SIGNING_KEY_PEM }}" > ota_signing.key
           chmod 600 ota_signing.key
 
       - name: Create manifest and signature
         run: |
-          URL="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/${DEVICE}.bin"
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${DEVICE}.bin"
+
           PAYLOAD="${DEVICE}|${VERSION}|${SHA256}|${URL}|${KID}"
           printf "%s" "$PAYLOAD" > payload.txt
-
           openssl dgst -sha256 -sign ota_signing.key -out sig.bin payload.txt
           SIG_B64="$(base64 -w0 sig.bin)"
-
           cat > "${DEVICE}.manifest.json" <<EOF
           {
             "device": "${DEVICE}",
@@ -61,13 +63,18 @@ jobs:
             "sig": "${SIG_B64}"
           }
           EOF
-
       - name: Create GitHub Release + upload assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          PRERELEASE=""
+          if [[ "${VERSION}" == *"-"* ]]; then
+            PRERELEASE="--prerelease"
+          fi
+
           gh release create "v${VERSION}" \
             --title "v${VERSION}" \
             --generate-notes \
+            $PRERELEASE \
             "${DEVICE}.bin" \
             "${DEVICE}.manifest.json"

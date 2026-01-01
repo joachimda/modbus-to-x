@@ -26,6 +26,7 @@ void ArduinoOtaManager::begin(Logger *logger) {
         });
 
     ArduinoOTA.setPassword(DEV_OTA_ARDUINO_PASS);
+    ArduinoOTA.setPartitionLabel("spiffs");
     ArduinoOTA.begin();
     if (g_logger) g_logger->logInformation("Dev-OTA: Ready");
 }

@@ -212,8 +212,7 @@ function renderStats(sys = {}) {
 
     // Storage card
     $("#storage-kvs").innerHTML = sys.__error ? kv("Error", sys.__error) : [
-        kv("Flash size", prettyBytes(sys.flashSize)),
-        kv("SPIFFS used", `${prettyBytes(sys.spiffsUsed)} / ${prettyBytes(sys.spiffsTotal)}`),
-        kv("SPIFFS usage", sys.spiffsTotal ? fmtPct(100 * (sys.spiffsUsed / sys.spiffsTotal)) : "—"),
+        kv("Device Flash size", prettyBytes(sys.flashSize)),
+        kv("Free Space", `${prettyBytes(sys.configUsed)}/${prettyBytes(sys.configTotal)} (${fmtPct(100 * (sys.configUsed / sys.configTotal))})`),
     ].join("");
 }

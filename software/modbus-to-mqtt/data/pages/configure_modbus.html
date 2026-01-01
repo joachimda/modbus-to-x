@@ -150,9 +150,15 @@
                     <div>Notes</div>
                     <label for="dev-notes"></label><input id="dev-notes" class="full" placeholder="Optional" />
                     <div>Enable MQTT Publish</div>
-                    <label for="dev-mqtt"></label><input id="dev-mqtt" type="checkbox" />
+                    <label class="switch" for="dev-mqtt">
+                        <input id="dev-mqtt" type="checkbox" />
+                        <span class="slider"></span>
+                    </label>
                     <div>Enable Home Assistant Discovery</div>
-                    <label for="dev-ha-discovery"></label><input id="dev-ha-discovery" type="checkbox" />
+                    <label class="switch" for="dev-ha-discovery">
+                        <input id="dev-ha-discovery" type="checkbox" />
+                        <span class="slider"></span>
+                    </label>
                     <div class="hint" style="grid-column:1 / span 2;">When enabled, datapoints from this device publish to MQTT. Empty datapoint topics fall back to &lt;root-topic&gt;/&lt;deviceId&gt;/&lt;datapointId&gt;. Enable Home Assistant discovery to publish retained configs for read and write datapoints.</div>
                 </div>
                 <div class="divider"></div>

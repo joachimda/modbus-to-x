@@ -21,7 +21,8 @@ An ESP32-based hardware and firmware stack that bridges RS-485/Modbus field devi
 - [Acknowledgements](#acknowledgements)
 
 ## Overview
-Modbus-to-X combines a custom ESP32 carrier board with firmware that polls Modbus RTU devices over RS-485, persists telemetry locally, and republishes structured payloads to MQTT brokers. The firmware exposes an onboard web interface for Wi-Fi provisioning, Modbus configuration, live device statistics, and log retrieval so field technicians can deploy the gateway without recompiling binaries.
+Modbus-to-X combines a custom ESP32 carrier board with firmware that polls Modbus RTU devices over RS-485, persists telemetry locally, and republishes structured payloads to MQTT brokers. 
+The firmware exposes an onboard web interface for Wi-Fi provisioning, Modbus configuration, live device statistics, and log retrieval so field technicians can deploy the gateway without recompiling binaries.
 
 ## Architecture
 The project is split between dedicated hardware design files and a PlatformIO firmware project. Hardware-specific documentation lives in [`hardware/`](hardware/); firmware, tooling, and UI assets live in [`software/`](software/).
@@ -35,14 +36,15 @@ The project is split between dedicated hardware design files and a PlatformIO fi
 ### Firmware
 - PlatformIO-based ESP32 application primarily built with the Arduino framework.
 - Library dependencies: ModbusMaster, PubSubClient, ArduinoJson, and ESPAsyncWebServer for protocol handling and a dynamic UI backend.
-- Boot sequence mounts SPIFFS, starts the async web server ("MBX Server"), initializes the Modbus scheduler, and spins up the MQTT manager with log mirroring for diagnostics.
+- A custom partition table separates user configurations from UI components, leaving user configurations untouched on filesystem uploads.
+- Boot sequence mounts filesystem partitions, starts the async web server ("MBX Server"), initializes the Modbus scheduler, and spins up the MQTT manager.
 - Configuration data for the Modbus bus, devices, and MQTT settings is stored in `/conf/*.json` on SPIFFS and hot-reloaded without reflashing.
-- Default wiring, watchdog behaviour, RS-485 guard times, Wi-Fi AP credentials, and OTA parameters are centralized in [`Config.h`](software/modbus-to-mqtt/include/Config.h).
+- Default wiring, watchdog behavior, RS-485 guard times, Wi-Fi AP Portal credentials, and OTA parameters are centralized in [`Config.h`](software/modbus-to-mqtt/include/Config.h).
 
 ## Getting Started
 
 ### Prerequisites
-- Modbus-to-X hardware (v0.1 alpha or later) and Modbus RTU devices wired to the RS-485 terminals.
+- Modbus-to-X hardware (v0.2 alpha or later) and Modbus RTU devices wired to the RS-485 terminals.
 - 4.5–40 VDC field power (buck input validated in the current design) and a USB-to-UART adapter if not using OTA uploads.
 - Development host with Python 3, [PlatformIO Core](https://platformio.org/install/cli), and a working `git` toolchain. Required Python build dependencies are installed automatically by `scripts/install_build_deps.py` when PlatformIO runs.【F:software/modbus-to-mqtt/scripts/install_build_deps.py†L1-L32】
 
@@ -84,7 +86,7 @@ It injects correct MIME types, disables caching, and emulates the `/api/stats/sy
 
 ### First Boot and Network Setup
 1. Power the gateway; it will advertise a Wi-Fi AP using the defaults defined in `Config.h` (`MODBUS-MQTT-BRIDGE` / `you-shall-not-pass`).
-2. Connect to the AP. The ESP will try getting 192.168.4.1 from DHCP. If supported on your OS, you will be prompted to open the Captive Portal. If these fail, check your router for the device's IP address, and use your browser to open the configuration page `http://192.168.4.1/`. 
+2. Connect to the AP. The ESP will try getting 192.168.4.1 from DHCP. If supported on your OS, you will be prompted to open the Captive Portal and redirected automatically. If these fail, check your router for the device's IP address, and use your browser to open the configuration page `http://192.168.4.1/`. 
 3. Follow the on-screen guidance to scan, join, or provision hidden networks, optionally specifying static IP parameters before saving.
 4. After a successful network connection is established, reboot the device.
 

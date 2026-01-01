@@ -2,6 +2,7 @@
 
 #include <SPIFFS.h>
 #include <WiFi.h>
+#include "storage/ConfigFs.h"
 
 #include "modbus/ModbusManager.h"
 #include "network/mbx_server/MBXServerHandlers.h"
@@ -60,6 +61,8 @@ JsonDocument StatService::appendStorageStats(JsonDocument &document) {
     document["flashSize"] = ESP.getFlashChipSize();
     document["spiffsTotal"] = SPIFFS.totalBytes();
     document["spiffsUsed"] = SPIFFS.usedBytes();
+    document["configTotal"] = ConfigFS.totalBytes();
+    document["configUsed"] = ConfigFS.usedBytes();
     return document;
 }
 

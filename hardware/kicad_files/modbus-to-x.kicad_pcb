@@ -2820,6 +2820,17 @@
 			)
 		)
 		(embedded_fonts no)
+		(model "${KIPRJMOD}/lib/3dmodels/T495D337K006ATE100.step"
+			(offset
+				(xyz -3.75 -2.3 0)
+			)
+			(scale
+				(xyz 1 1 1)
+			)
+			(rotate
+				(xyz -90 -0 -0)
+			)
+		)
 	)
 	(footprint ""
 		(layer "F.Cu")
@@ -9449,6 +9460,17 @@
 			)
 		)
 		(embedded_fonts no)
+		(model "${KIPRJMOD}/lib/3dmodels/T495D337K006ATE100.step"
+			(offset
+				(xyz -3.75 -2.3 0)
+			)
+			(scale
+				(xyz 1 1 1)
+			)
+			(rotate
+				(xyz -90 -0 -0)
+			)
+		)
 	)
 	(footprint "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
 		(layer "F.Cu")

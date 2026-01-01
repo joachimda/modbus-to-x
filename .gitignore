@@ -84,6 +84,8 @@ fp-info-cache
 # Exported BOM files
 *.xml
 *.csv
+## Exception on partition table
+!mbx_partitions.csv
 
 # For VS Code
 .vscode/

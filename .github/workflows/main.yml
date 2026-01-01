@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: write
-
 jobs:
   build_sign_release:
     runs-on: ubuntu-latest
@@ -31,7 +30,7 @@ jobs:
           echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Build firmware
-        run: pio run -e "${PIO_ENV}"
+        run: pio run --project-dir software/modbus-to-mqtt -e "${PIO_ENV}"
 
       - name: Prepare assets + sha256
         run: |

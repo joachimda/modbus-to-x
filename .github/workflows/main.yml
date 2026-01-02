@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PROJECT_DIR: software/modbus-to-mqtt
-      PIO_ENV: prod-board-v0-1-alpha
+      PIO_ENV: mbx-custom-board
       DEVICE: modbus-to-x
       KID: "bd774d27-badf-48a3-b927-a51fb08629f7"
 

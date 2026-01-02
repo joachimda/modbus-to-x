@@ -65,7 +65,7 @@ jobs:
         run: |
           APP_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${DEVICE}.bin"
           FS_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${DEVICE}.fs.bin"
-          FS_LABEL="spiffs"   # <- your UI partition label
+          FS_LABEL="spiffs"
 
           PAYLOAD="${DEVICE}|${VERSION}|${APP_SHA256}|${APP_URL}|${FS_LABEL}|${FS_SHA256}|${FS_URL}|${KID}"
           printf "%s" "$PAYLOAD" > payload.txt

@@ -32,14 +32,30 @@ jobs:
 
       - name: Build firmware
         run: pio run --project-dir "${PROJECT_DIR}" -e "${PIO_ENV}"
-
+      - name: Build filesystem image (buildfs)
+        run: pio run --project-dir "${PROJECT_DIR}" -e "${PIO_ENV}" -t buildfs
       - name: Prepare assets + sha256
         run: |
-          BIN="${PROJECT_DIR}/.pio/build/${PIO_ENV}/firmware.bin"
-          cp "$BIN" "${DEVICE}.bin"
-          SHA256="$(sha256sum "${DEVICE}.bin" | awk '{print $1}')"
-          echo "SHA256=$SHA256" >> $GITHUB_ENV
+          APP_BIN="${PROJECT_DIR}/.pio/build/${PIO_ENV}/firmware.bin"
+          cp "$APP_BIN" "${DEVICE}.bin"
+          APP_SHA256="$(sha256sum "${DEVICE}.bin" | awk '{print $1}')"
+          echo "APP_SHA256=$APP_SHA256" >> $GITHUB_ENV
 
+          FS_BIN_SPIFFS="${PROJECT_DIR}/.pio/build/${PIO_ENV}/spiffs.bin"
+          FS_BIN_LITTLEFS="${PROJECT_DIR}/.pio/build/${PIO_ENV}/littlefs.bin"
+
+          if [ -f "$FS_BIN_SPIFFS" ]; then
+            cp "$FS_BIN_SPIFFS" "${DEVICE}.fs.bin"
+          elif [ -f "$FS_BIN_LITTLEFS" ]; then
+            cp "$FS_BIN_LITTLEFS" "${DEVICE}.fs.bin"
+          else
+            echo "No filesystem image found (spiffs.bin/littlefs.bin). Did buildfs run?" >&2
+            ls -la "${PROJECT_DIR}/.pio/build/${PIO_ENV}" || true
+            exit 1
+          fi
+
+          FS_SHA256="$(sha256sum "${DEVICE}.fs.bin" | awk '{print $1}')"
+          echo "FS_SHA256=$FS_SHA256" >> $GITHUB_ENV
       - name: Load signing key
         run: |
           printf "%s" "${{ secrets.OTA_SIGNING_KEY_PEM }}" > ota_signing.key
@@ -47,19 +63,23 @@ jobs:
 
       - name: Create manifest and signature
         run: |
-          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${DEVICE}.bin"
+          APP_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${DEVICE}.bin"
+          FS_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${DEVICE}.fs.bin"
+          FS_LABEL="spiffs"   # <- your UI partition label
 
-          PAYLOAD="${DEVICE}|${VERSION}|${SHA256}|${URL}|${KID}"
+          PAYLOAD="${DEVICE}|${VERSION}|${APP_SHA256}|${APP_URL}|${FS_LABEL}|${FS_SHA256}|${FS_URL}|${KID}"
           printf "%s" "$PAYLOAD" > payload.txt
+
           openssl dgst -sha256 -sign ota_signing.key -out sig.bin payload.txt
           SIG_B64="$(base64 -w0 sig.bin)"
+
           cat > "${DEVICE}.manifest.json" <<EOF
           {
             "device": "${DEVICE}",
             "version": "${VERSION}",
-            "url": "${URL}",
-            "sha256": "${SHA256}",
             "kid": "${KID}",
+            "app": { "url": "${APP_URL}", "sha256": "${APP_SHA256}" },
+            "fs":  { "label": "${FS_LABEL}", "url": "${FS_URL}", "sha256": "${FS_SHA256}" },
             "sig": "${SIG_B64}"
           }
           EOF
@@ -75,6 +95,6 @@ jobs:
           gh release create "v${VERSION}" \
             --title "v${VERSION}" \
             --generate-notes \
-            $PRERELEASE \
             "${DEVICE}.bin" \
+            "${DEVICE}.fs.bin" \
             "${DEVICE}.manifest.json"

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_DIR: software/modbus-to-mqtt
+      PIO_ENV: mbx-custom-board
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: pip install -U platformio
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ${{ env.PROJECT_DIR }}/.pio
+          key: ${{ runner.os }}-pio-${{ hashFiles(format('{0}/platformio.ini', env.PROJECT_DIR), format('{0}/platformio.lock', env.PROJECT_DIR)) }}
+          restore-keys: |
+            ${{ runner.os }}-pio-
+
+      - name: Build firmware
+        run: pio run --project-dir "${PROJECT_DIR}" -e "${PIO_ENV}"
+
+      - name: Build filesystem
+        run: pio run --project-dir "${PROJECT_DIR}" -e "${PIO_ENV}" -t buildfs

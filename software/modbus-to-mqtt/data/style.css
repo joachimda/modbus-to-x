@@ -92,6 +92,12 @@ body.configure main {
     flex: 1 1 auto;
     margin: 0;
 }
+.card-actions {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    flex-wrap: wrap;
+}
 .iconButton,
 .gearButton {
     width: 38px;

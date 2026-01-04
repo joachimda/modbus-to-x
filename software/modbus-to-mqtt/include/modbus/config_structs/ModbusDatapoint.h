@@ -24,9 +24,7 @@ struct ModbusDatapoint {
     String unit;
     String topic;
     RegisterSlice registerSlice{RegisterSlice::Full};
-    // Optional poll interval in milliseconds (0 = every loop)
     uint32_t pollIntervalMs{0};
-    // Runtime scheduling: next time this datapoint is due (millis())
     uint32_t nextDueAtMs{0};
 };
 #endif

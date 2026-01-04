@@ -77,7 +77,14 @@
         </article>
 
         <article class="card" id="card-system">
-            <h3>System</h3>
+            <div class="card-title">
+                <h3>System</h3>
+                <div class="card-actions">
+                    <button class="btn small secondary" id="btn-ota-check">Check update</button>
+                    <button class="btn small primary" id="btn-ota-apply" disabled>Apply update</button>
+                </div>
+            </div>
+            <div class="muted" id="ota-status">Updates are checked manually.</div>
             <div class="kvs" id="system-kvs"></div>
         </article>
 

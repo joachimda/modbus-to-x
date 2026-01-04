@@ -53,7 +53,7 @@
 #define MODBUS_SLAVE_ID 1
 
 /****************************************************
- * EEPROM & PREFERENCE STORAGE
+ * PREFERENCE STORAGE
  ****************************************************/
 
 #define MQTT_PREFS_NAMESPACE "mqtt"
@@ -75,6 +75,22 @@
 #endif
 #ifndef OTA_HTTP_PASS
 #define OTA_HTTP_PASS "admin"
+#endif
+
+#ifndef OTA_HTTP_ENABLED
+#define OTA_HTTP_ENABLED 1
+#endif
+#ifndef OTA_HTTP_MANIFEST_URL
+#define OTA_HTTP_MANIFEST_URL "https://github.com/joachimda/modbus-to-x/releases/latest/download/modbus-to-x.manifest.json"
+#endif
+#ifndef OTA_HTTP_DEVICE
+#define OTA_HTTP_DEVICE "modbus-to-x"
+#endif
+#ifndef OTA_HTTP_INTERVAL_MS
+#define OTA_HTTP_INTERVAL_MS (6UL * 60UL * 60UL * 1000UL)
+#endif
+#ifndef OTA_HTTP_CA_CERT_PEM
+#define OTA_HTTP_CA_CERT_PEM nullptr
 #endif
 
 #ifndef DEV_OTA_ARDUINO_PASS

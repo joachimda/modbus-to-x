@@ -17,6 +17,7 @@
 #include "network/NetworkPortal.h"
 #include "services/StatService.h"
 #include "services/OtaService.h"
+#include "services/ota/HttpOtaService.h"
 #include "services/IndicatorService.h"
 #include "modbus/ModbusManager.h"
 
@@ -42,6 +43,7 @@ static std::atomic<uint32_t> g_lastPingAt{0};
 static std::atomic<size_t> g_lastLogCursor{0};
 static std::atomic<uint32_t> g_lastLogCheckAt{0};
 static std::atomic<uint32_t> g_eventSeq{0};
+static std::atomic<bool> g_otaHttpApplying{false};
 
 constexpr uint32_t STATS_PUSH_INTERVAL_MS = 5000;
 constexpr uint32_t STATS_HEARTBEAT_MS = 30000;
@@ -873,4 +875,78 @@ void MBXServerHandlers::handleOtaFilesystemUpload(AsyncWebServerRequest *r, cons
             }
         }
     }
+}
+
+void MBXServerHandlers::handleOtaHttpCheck(AsyncWebServerRequest *req, const Logger *logger) {
+    (void)logger;
+#if OTA_HTTP_ENABLED
+    String error;
+    bool available = false;
+    String version;
+    const bool ok = HttpOtaService::checkForUpdate(error, available, version);
+
+    JsonDocument doc;
+    doc["ok"] = ok;
+    doc["available"] = available;
+    if (available && version.length()) doc["version"] = version;
+    if (!ok && error.length()) doc["error"] = error;
+    sendJson(req, doc);
+#else
+    JsonDocument doc;
+    doc["ok"] = false;
+    doc["error"] = "ota_http_disabled";
+    sendJson(req, doc);
+#endif
+}
+
+void MBXServerHandlers::handleOtaHttpApply(AsyncWebServerRequest *req, const Logger *logger) {
+    (void)logger;
+#if OTA_HTTP_ENABLED
+    JsonDocument doc;
+    String version;
+    if (!HttpOtaService::hasPendingUpdate(version)) {
+        doc["ok"] = false;
+        doc["error"] = "no_update";
+        sendJson(req, doc);
+        return;
+    }
+
+    if (g_otaHttpApplying.exchange(true)) {
+        doc["ok"] = false;
+        doc["error"] = "ota_in_progress";
+        sendJson(req, doc);
+        return;
+    }
+
+    doc["ok"] = true;
+    doc["started"] = true;
+    if (version.length()) doc["version"] = version;
+    sendJson(req, doc);
+
+    auto *loggerPtr = const_cast<Logger *>(logger);
+    xTaskCreatePinnedToCore([](void *param) {
+        auto *log = static_cast<Logger *>(param);
+        if (log) log->logInformation("HTTP-OTA: Apply started");
+        String error;
+        const bool ok = HttpOtaService::applyPendingUpdate(error);
+        if (!ok) {
+            const String msg = "HTTP-OTA: Apply failed: " + error;
+            if (log) log->logError(msg.c_str());
+            Serial.println(msg);
+            g_otaHttpApplying.store(false, std::memory_order_release);
+            vTaskDelete(nullptr);
+            return;
+        }
+        if (log) log->logInformation("HTTP-OTA: Apply complete, rebooting");
+        Serial.println("HTTP-OTA: Apply complete, rebooting");
+        g_otaHttpApplying.store(false, std::memory_order_release);
+        delay(500);
+        ESP.restart();
+    }, "otaHttpApply", 8192, loggerPtr, 1, nullptr, APP_CPU_NUM);
+#else
+    JsonDocument doc;
+    doc["ok"] = false;
+    doc["error"] = "ota_http_disabled";
+    sendJson(req, doc);
+#endif
 }

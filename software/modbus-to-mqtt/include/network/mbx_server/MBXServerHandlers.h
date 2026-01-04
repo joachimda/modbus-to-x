@@ -69,6 +69,10 @@ public:
     static void handleOtaFilesystemUpload(AsyncWebServerRequest *r, const String &fn, size_t index,
                                           uint8_t *data, size_t len, bool final, const Logger *logger);
 
+    static void handleOtaHttpCheck(AsyncWebServerRequest *req, const Logger *logger);
+
+    static void handleOtaHttpApply(AsyncWebServerRequest *req, const Logger *logger);
+
     static void initEventStream(AsyncWebServer *server, const Logger *logger);
     static void pumpEventStream();
 };

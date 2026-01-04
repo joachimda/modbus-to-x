@@ -26,9 +26,11 @@ let eventSource = null;
 let logsBuffer = "";
 let statsState = {};
 const MAX_LOG_CHARS = 16000;
+const otaState = { available: false, version: "" };
 
 window.initIndex = async function initIndex() {
     $("#btn-reboot").addEventListener("click", reboot);
+    setupOtaControls();
     setupLogs();
     startEventStream();
 
@@ -148,6 +150,125 @@ async function fetchLogsSnapshot(forceScroll = false) {
         renderLogs({ forceScroll });
     } catch (e) {
         el.textContent = `Error loading logs: ${e.message}`;
+    }
+}
+
+function setupOtaControls() {
+    const checkBtn = $("#btn-ota-check");
+    const applyBtn = $("#btn-ota-apply");
+    if (checkBtn) checkBtn.addEventListener("click", onOtaCheck);
+    if (applyBtn) applyBtn.addEventListener("click", onOtaApply);
+    setOtaButtons({ checking: false, applying: false });
+}
+
+function setOtaButtons({ checking, applying }) {
+    const checkBtn = $("#btn-ota-check");
+    const applyBtn = $("#btn-ota-apply");
+    if (checkBtn) checkBtn.disabled = checking || applying;
+    if (applyBtn) applyBtn.disabled = checking || applying || !otaState.available;
+}
+
+function setOtaStatus(text, spinning = false) {
+    const status = $("#ota-status");
+    if (!status) return;
+    if (spinning) {
+        status.innerHTML = `<span class="spinner"></span> ${text}`;
+    } else {
+        status.textContent = text;
+    }
+}
+
+function getOtaAuthHeader() {
+    const token = sessionStorage.getItem("otaAuth");
+    if (!token) return null;
+    return `Basic ${token}`;
+}
+
+async function requestOtaAuth() {
+    const user = prompt("OTA username:");
+    if (!user) return null;
+    const pass = prompt("OTA password:");
+    if (pass == null) return null;
+    const token = btoa(`${user}:${pass}`);
+    sessionStorage.setItem("otaAuth", token);
+    return `Basic ${token}`;
+}
+
+async function otaFetchJson(url, init) {
+    const headers = new Headers(init?.headers || {});
+    const auth = getOtaAuthHeader();
+    if (auth) headers.set("Authorization", auth);
+
+    const first = await fetch(url, { cache: "no-store", ...init, headers });
+    if (first.status === 401) {
+        sessionStorage.removeItem("otaAuth");
+        const retryAuth = await requestOtaAuth();
+        if (!retryAuth) {
+            throw new Error("auth_required");
+        }
+        headers.set("Authorization", retryAuth);
+        const second = await fetch(url, { cache: "no-store", ...init, headers });
+        if (!second.ok) throw new Error(`${second.status} ${second.statusText}`);
+        return await second.json();
+    }
+    if (!first.ok) throw new Error(`${first.status} ${first.statusText}`);
+    return await first.json();
+}
+
+async function onOtaCheck() {
+    setOtaButtons({ checking: true, applying: false });
+    setOtaStatus("Checking for updates...", true);
+    try {
+        const res = await otaFetchJson(API.OTA_HTTP_CHECK, { method: "POST" });
+        if (!res.ok) {
+            otaState.available = false;
+            otaState.version = "";
+            setOtaStatus(`Check failed: ${res.error || "unknown"}`);
+        } else if (res.available) {
+            otaState.available = true;
+            otaState.version = res.version || "";
+            setOtaStatus(`Update available${otaState.version ? `: ${otaState.version}` : ""}`);
+        } else {
+            otaState.available = false;
+            otaState.version = "";
+            setOtaStatus("No updates available");
+        }
+    } catch (err) {
+        otaState.available = false;
+        otaState.version = "";
+        const msg = err?.message === "auth_required" ? "Authentication required." : (err?.message || err);
+        setOtaStatus(`Check failed: ${msg}`);
+    }
+    setOtaButtons({ checking: false, applying: false });
+}
+
+async function onOtaApply() {
+    if (!otaState.available) {
+        setOtaStatus("No pending update to apply.");
+        return;
+    }
+    const label = otaState.version ? `version ${otaState.version}` : "the available update";
+    if (!confirm(`Apply ${label}? The device will reboot.`)) return;
+    setOtaButtons({ checking: false, applying: true });
+    setOtaStatus("Applying update...", true);
+    try {
+        const res = await otaFetchJson(API.OTA_HTTP_APPLY, { method: "POST" });
+        if (!res.ok) {
+            setOtaStatus(`Apply failed: ${res.error || "unknown"}`);
+            setOtaButtons({ checking: false, applying: false });
+            return;
+        }
+        if (res.started) {
+            setOtaStatus("Update started. Device will reboot when done.");
+        } else {
+            setOtaStatus("Update applied. Rebooting...");
+        }
+        otaState.available = false;
+        otaState.version = "";
+    } catch (err) {
+        const msg = err?.message === "auth_required" ? "Authentication required." : (err?.message || err);
+        setOtaStatus(`Apply failed: ${msg}`);
+        setOtaButtons({ checking: false, applying: false });
     }
 }
 

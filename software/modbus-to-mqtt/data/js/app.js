@@ -12,6 +12,8 @@ export const API = {
     POST_MQTT_TEST: '/api/mqtt/test',
     POST_MODBUS_EXECUTE: '/api/modbus/execute',
     POST_SYSTEM_RESET: '/api/system/reboot',
+    OTA_HTTP_CHECK: '/api/system/ota/http/check',
+    OTA_HTTP_APPLY: '/api/system/ota/http/apply',
 };
 
 export const STATIC_FILES = {

@@ -159,6 +159,24 @@ void MBXServer::configureRoutes() const {
         MBXServerHandlers::handleOtaFilesystemUpload(req, fn, index, data, len, final, _logger);
     });
 
+    server->on(Routes::OTA_HTTP_CHECK, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) {
+            req->requestAuthentication();
+            return;
+        }
+        MBXServerHandlers::handleOtaHttpCheck(req, _logger);
+    });
+
+    server->on(Routes::OTA_HTTP_APPLY, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) {
+            req->requestAuthentication();
+            return;
+        }
+        MBXServerHandlers::handleOtaHttpApply(req, _logger);
+    });
+
     server->onNotFound([this](AsyncWebServerRequest *req) {
         logRequest(req);
         req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT, "I haz no file");
@@ -227,6 +245,24 @@ void MBXServer::configureAccessPointRoutes() const {
         if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); }
     }, [this](AsyncWebServerRequest *req, const String &fn, const size_t index, uint8_t *data, const size_t len, const bool final) {
         MBXServerHandlers::handleOtaFilesystemUpload(req, fn, index, data, len, final, _logger);
+    });
+
+    server->on(Routes::OTA_HTTP_CHECK, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) {
+            req->requestAuthentication();
+            return;
+        }
+        MBXServerHandlers::handleOtaHttpCheck(req, _logger);
+    });
+
+    server->on(Routes::OTA_HTTP_APPLY, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) {
+            req->requestAuthentication();
+            return;
+        }
+        MBXServerHandlers::handleOtaHttpApply(req, _logger);
     });
 
     for (const char *path : CAPTIVE_PORTAL_ENDPOINTS) {

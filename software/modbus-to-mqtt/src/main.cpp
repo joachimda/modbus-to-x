@@ -9,9 +9,14 @@
 
 #include "mqtt/MqttSubscriptionHandler.h"
 #include "services/IndicatorService.h"
+#include "services/ota/HttpOtaService.h"
 #include <esp_system.h>
 
 #include "logging/MemoryLogger.h"
+
+#ifndef FW_VERSION
+#define FW_VERSION "dev"
+#endif
 
 Logger logger;
 MemoryLogger memory_logger(300);
@@ -82,6 +87,15 @@ void setup() {
     MBXServerHandlers::setModbusManager(&modbus_manager);
     mbx_server.begin();
 
+#if OTA_HTTP_ENABLED
+    if (OTA_HTTP_MANIFEST_URL[0] != '\0') {
+        HttpOtaService::begin(&logger, OTA_HTTP_MANIFEST_URL, OTA_HTTP_DEVICE, FW_VERSION, OTA_HTTP_CA_CERT_PEM);
+        HttpOtaService::setIntervalMs(OTA_HTTP_INTERVAL_MS);
+    } else {
+        logger.logWarning("HTTP-OTA: OTA_HTTP_MANIFEST_URL not set");
+    }
+#endif
+
     logger.logDebug("setup() - Starting modbus manager");
     modbus_manager.begin();
     logger.logDebug("setup() - complete");
@@ -90,5 +104,8 @@ void setup() {
 void loop() {
     MBXServer::loop();
     modbus_manager.loop();
+#if OTA_HTTP_ENABLED
+    HttpOtaService::loop();
+#endif
     delay(500);
 }

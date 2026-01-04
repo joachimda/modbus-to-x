@@ -6,29 +6,30 @@
 #include "services/TimeService.h"
 
 namespace {
-class MutexLock {
-public:
-    explicit MutexLock(const SemaphoreHandle_t handle) : _handle(handle), _locked(false) {
-        if (_handle) {
-            _locked = xSemaphoreTake(_handle, portMAX_DELAY) == pdTRUE;
+    class MutexLock {
+    public:
+        explicit MutexLock(const SemaphoreHandle_t handle) : _handle(handle), _locked(false) {
+            if (_handle) {
+                _locked = xSemaphoreTake(_handle, portMAX_DELAY) == pdTRUE;
+            }
         }
-    }
 
-    ~MutexLock() {
-        if (_locked) {
-            xSemaphoreGive(_handle);
+        ~MutexLock() {
+            if (_locked) {
+                xSemaphoreGive(_handle);
+            }
         }
-    }
 
-    MutexLock(const MutexLock &) = delete;
-    MutexLock &operator=(const MutexLock &) = delete;
+        MutexLock(const MutexLock &) = delete;
 
-    bool locked() const { return _locked; }
+        MutexLock &operator=(const MutexLock &) = delete;
 
-private:
-    SemaphoreHandle_t _handle;
-    bool _locked;
-};
+        bool locked() const { return _locked; }
+
+    private:
+        SemaphoreHandle_t _handle;
+        bool _locked;
+    };
 }
 
 MemoryLogger::MemoryLogger(const size_t maxLines) : _maxLines(maxLines) {
@@ -132,7 +133,7 @@ void MemoryLogger::streamTo(Print &out) const {
         return;
     }
 
-    for (const auto &line : _lines) {
+    for (const auto &line: _lines) {
         out.print(line);
         out.print('\n');
     }
@@ -180,12 +181,10 @@ size_t MemoryLogger::copyAsText(size_t offset, uint8_t *dest, size_t maxLen) con
                 written += toCopy;
             }
         }
-
         cursor += lineLen;
         if (written >= maxLen) {
             break;
         }
-
         const bool hasNewline = (i + 1 < count);
         if (hasNewline && written < maxLen) {
             if (offset <= cursor && offset < cursor + 1) {
@@ -194,6 +193,5 @@ size_t MemoryLogger::copyAsText(size_t offset, uint8_t *dest, size_t maxLen) con
             cursor += 1;
         }
     }
-
     return written;
 }

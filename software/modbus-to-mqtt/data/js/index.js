@@ -27,6 +27,8 @@ let logsBuffer = "";
 let statsState = {};
 const MAX_LOG_CHARS = 16000;
 const otaState = { available: false, version: "" };
+let otaCheckTimer = null;
+let otaNotesTimer = null;
 
 window.initIndex = async function initIndex() {
     $("#btn-reboot").addEventListener("click", reboot);
@@ -158,6 +160,12 @@ function setupOtaControls() {
     const applyBtn = $("#btn-ota-apply");
     if (checkBtn) checkBtn.addEventListener("click", onOtaCheck);
     if (applyBtn) applyBtn.addEventListener("click", onOtaApply);
+    const modalClose = $("#btn-ota-close");
+    const modalCancel = $("#btn-ota-cancel");
+    const modalConfirm = $("#btn-ota-confirm");
+    if (modalClose) modalClose.addEventListener("click", closeOtaModal);
+    if (modalCancel) modalCancel.addEventListener("click", closeOtaModal);
+    if (modalConfirm) modalConfirm.addEventListener("click", confirmOtaApply);
     setOtaButtons({ checking: false, applying: false });
 }
 
@@ -175,6 +183,52 @@ function setOtaStatus(text, spinning = false) {
         status.innerHTML = `<span class="spinner"></span> ${text}`;
     } else {
         status.textContent = text;
+    }
+}
+
+function setOtaNotesStatus(text, spinning = false) {
+    const status = $("#ota-notes-status");
+    if (!status) return;
+    if (spinning) {
+        status.innerHTML = `<span class="spinner"></span> ${text}`;
+    } else {
+        status.textContent = text;
+    }
+}
+
+function setOtaModalButtons({ applying }) {
+    const confirm = $("#btn-ota-confirm");
+    if (confirm) confirm.disabled = applying;
+}
+
+function openOtaModal() {
+    const modal = $("#modal-ota");
+    if (!modal) return;
+    if (otaNotesTimer) {
+        clearTimeout(otaNotesTimer);
+        otaNotesTimer = null;
+    }
+    modal.style.display = "flex";
+    const versionLabel = $("#ota-modal-version");
+    if (versionLabel) {
+        versionLabel.textContent = otaState.version ? `New version: ${otaState.version}` : "New version available";
+    }
+    const notes = $("#ota-notes");
+    if (notes) {
+        notes.textContent = "";
+        notes.style.display = "none";
+    }
+    setOtaNotesStatus("Loading release notes...", true);
+    setOtaModalButtons({ applying: false });
+    pollOtaNotes(true);
+}
+
+function closeOtaModal() {
+    const modal = $("#modal-ota");
+    if (modal) modal.style.display = "none";
+    if (otaNotesTimer) {
+        clearTimeout(otaNotesTimer);
+        otaNotesTimer = null;
     }
 }
 
@@ -216,10 +270,25 @@ async function otaFetchJson(url, init) {
 }
 
 async function onOtaCheck() {
+    if (otaCheckTimer) {
+        clearTimeout(otaCheckTimer);
+        otaCheckTimer = null;
+    }
     setOtaButtons({ checking: true, applying: false });
     setOtaStatus("Checking for updates...", true);
+    await pollOtaCheck(true);
+}
+
+async function pollOtaCheck(refresh) {
     try {
-        const res = await otaFetchJson(API.OTA_HTTP_CHECK, { method: "POST" });
+        const res = await otaFetchJson(`${API.OTA_HTTP_CHECK}?refresh=${refresh ? 1 : 0}`, { method: "POST" });
+        if (res.pending) {
+            setOtaStatus("Checking for updates...", true);
+            otaCheckTimer = setTimeout(() => {
+                pollOtaCheck(false);
+            }, 1000);
+            return;
+        }
         if (!res.ok) {
             otaState.available = false;
             otaState.version = "";
@@ -240,6 +309,7 @@ async function onOtaCheck() {
         setOtaStatus(`Check failed: ${msg}`);
     }
     setOtaButtons({ checking: false, applying: false });
+    otaCheckTimer = null;
 }
 
 async function onOtaApply() {
@@ -247,29 +317,69 @@ async function onOtaApply() {
         setOtaStatus("No pending update to apply.");
         return;
     }
-    const label = otaState.version ? `version ${otaState.version}` : "the available update";
-    if (!confirm(`Apply ${label}? The device will reboot.`)) return;
+    openOtaModal();
+}
+
+async function confirmOtaApply() {
+    if (otaNotesTimer) {
+        clearTimeout(otaNotesTimer);
+        otaNotesTimer = null;
+    }
     setOtaButtons({ checking: false, applying: true });
-    setOtaStatus("Applying update...", true);
+    setOtaModalButtons({ applying: true });
+    setOtaNotesStatus("Applying update...", true);
     try {
         const res = await otaFetchJson(API.OTA_HTTP_APPLY, { method: "POST" });
         if (!res.ok) {
-            setOtaStatus(`Apply failed: ${res.error || "unknown"}`);
+            setOtaNotesStatus(`Apply failed: ${res.error || "unknown"}`);
             setOtaButtons({ checking: false, applying: false });
+            setOtaModalButtons({ applying: false });
             return;
         }
         if (res.started) {
-            setOtaStatus("Update started. Device will reboot when done.");
+            setOtaNotesStatus("Update started. Device will reboot when done.");
         } else {
-            setOtaStatus("Update applied. Rebooting...");
+            setOtaNotesStatus("Update applied. Rebooting...");
         }
         otaState.available = false;
         otaState.version = "";
     } catch (err) {
         const msg = err?.message === "auth_required" ? "Authentication required." : (err?.message || err);
-        setOtaStatus(`Apply failed: ${msg}`);
+        setOtaNotesStatus(`Apply failed: ${msg}`);
         setOtaButtons({ checking: false, applying: false });
+        setOtaModalButtons({ applying: false });
     }
+}
+
+async function pollOtaNotes(refresh) {
+    try {
+        const res = await otaFetchJson(`${API.OTA_HTTP_NOTES}?refresh=${refresh ? 1 : 0}`, { method: "POST" });
+        if (res.pending) {
+            setOtaNotesStatus("Loading release notes...", true);
+            otaNotesTimer = setTimeout(() => {
+                pollOtaNotes(false);
+            }, 1000);
+            return;
+        }
+        const notesEl = $("#ota-notes");
+        if (!res.ok) {
+            setOtaNotesStatus(`Release notes unavailable: ${res.error || "unknown"}`);
+            if (notesEl) {
+                notesEl.textContent = "";
+                notesEl.style.display = "none";
+            }
+        } else {
+            setOtaNotesStatus("Release notes");
+            if (notesEl) {
+                notesEl.textContent = res.notes || "(no notes)";
+                notesEl.style.display = "block";
+            }
+        }
+    } catch (err) {
+        const msg = err?.message === "auth_required" ? "Authentication required." : (err?.message || err);
+        setOtaNotesStatus(`Release notes unavailable: ${msg}`);
+    }
+    otaNotesTimer = null;
 }
 
 function renderStats(sys = {}) {

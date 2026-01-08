@@ -119,6 +119,20 @@
     </div>
 </div>
 
+<!-- OTA confirmation modal -->
+<div id="modal-ota" class="modal-backdrop" style="display:none">
+    <div class="modal card">
+        <h3 class="with-actions">Apply Update <span class="spacer"></span><button class="btn ghost" id="btn-ota-close">✕</button></h3>
+        <p class="muted" id="ota-modal-version">New version: —</p>
+        <p class="muted" id="ota-notes-status">Loading release notes…</p>
+        <pre id="ota-notes" class="code" style="max-height:320px; overflow:auto; display:none;"></pre>
+        <div class="actions" style="justify-content:flex-end">
+            <button class="btn ghost" id="btn-ota-cancel">Cancel</button>
+            <button class="btn primary" id="btn-ota-confirm">Apply Update</button>
+        </div>
+    </div>
+</div>
+
 <script type="module">
     import 'app';
     import 'index';

@@ -168,6 +168,15 @@ void MBXServer::configureRoutes() const {
         MBXServerHandlers::handleOtaHttpCheck(req, _logger);
     });
 
+    server->on(Routes::OTA_HTTP_NOTES, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) {
+            req->requestAuthentication();
+            return;
+        }
+        MBXServerHandlers::handleOtaHttpNotes(req, _logger);
+    });
+
     server->on(Routes::OTA_HTTP_APPLY, HTTP_POST, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) {
@@ -254,6 +263,15 @@ void MBXServer::configureAccessPointRoutes() const {
             return;
         }
         MBXServerHandlers::handleOtaHttpCheck(req, _logger);
+    });
+
+    server->on(Routes::OTA_HTTP_NOTES, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) {
+            req->requestAuthentication();
+            return;
+        }
+        MBXServerHandlers::handleOtaHttpNotes(req, _logger);
     });
 
     server->on(Routes::OTA_HTTP_APPLY, HTTP_POST, [this](AsyncWebServerRequest *req) {

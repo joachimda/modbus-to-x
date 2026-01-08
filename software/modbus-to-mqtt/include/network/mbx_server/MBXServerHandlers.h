@@ -71,6 +71,8 @@ public:
 
     static void handleOtaHttpCheck(AsyncWebServerRequest *req, const Logger *logger);
 
+    static void handleOtaHttpNotes(AsyncWebServerRequest *req, const Logger *logger);
+
     static void handleOtaHttpApply(AsyncWebServerRequest *req, const Logger *logger);
 
     static void initEventStream(AsyncWebServer *server, const Logger *logger);

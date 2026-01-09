@@ -29,6 +29,8 @@ const MAX_LOG_CHARS = 16000;
 const otaState = { available: false, version: "" };
 let otaCheckTimer = null;
 let otaNotesTimer = null;
+let otaRebootTimer = null;
+let otaRebootState = null;
 
 window.initIndex = async function initIndex() {
     $("#btn-reboot").addEventListener("click", reboot);
@@ -300,7 +302,7 @@ async function pollOtaCheck(refresh) {
         } else {
             otaState.available = false;
             otaState.version = "";
-            setOtaStatus("No updates available");
+            setOtaStatus("Device is up to date");
         }
     } catch (err) {
         otaState.available = false;
@@ -337,18 +339,92 @@ async function confirmOtaApply() {
             return;
         }
         if (res.started) {
-            setOtaNotesStatus("Update started. Device will reboot when done.");
+            setOtaNotesStatus("Update started. Waiting for device to reboot...", true);
+            setOtaStatus("Update in progress. Waiting for reboot...", true);
         } else {
-            setOtaNotesStatus("Update applied. Rebooting...");
+            setOtaNotesStatus("Update applied. Rebooting...", true);
+            setOtaStatus("Update applied. Rebooting...", true);
         }
         otaState.available = false;
         otaState.version = "";
+        startOtaRebootMonitor();
     } catch (err) {
         const msg = err?.message === "auth_required" ? "Authentication required." : (err?.message || err);
         setOtaNotesStatus(`Apply failed: ${msg}`);
         setOtaButtons({ checking: false, applying: false });
         setOtaModalButtons({ applying: false });
     }
+}
+
+function startOtaRebootMonitor() {
+    stopOtaRebootMonitor();
+    const startUptime = typeof statsState?.uptimeMs === "number" ? statsState.uptimeMs : null;
+    otaRebootState = {
+        startedAt: Date.now(),
+        attempts: 0,
+        sawOffline: false,
+        startUptime,
+    };
+    otaRebootTimer = setTimeout(pollOtaReboot, 1000);
+}
+
+function stopOtaRebootMonitor() {
+    if (otaRebootTimer) {
+        clearTimeout(otaRebootTimer);
+        otaRebootTimer = null;
+    }
+    otaRebootState = null;
+}
+
+function finishOtaReboot() {
+    stopOtaRebootMonitor();
+    setOtaNotesStatus("Device back online. Reloading...", true);
+    setOtaStatus("Device back online. Reloading...", true);
+    setOtaButtons({ checking: false, applying: false });
+    setOtaModalButtons({ applying: false });
+    closeOtaModal();
+    setTimeout(() => location.reload(), 800);
+}
+
+async function pollOtaReboot() {
+    if (!otaRebootState) return;
+    const elapsed = Date.now() - otaRebootState.startedAt;
+    if (elapsed > 180000) {
+        setOtaNotesStatus("Reboot taking longer than expected. You can close this window.");
+        stopOtaRebootMonitor();
+        return;
+    }
+
+    let online = false;
+    let uptime = null;
+    try {
+        const r = await fetch(API.SYSTEM_STATS, { cache: "no-store" });
+        if (r.ok) {
+            const sys = await r.json();
+            online = true;
+            uptime = typeof sys?.uptimeMs === "number" ? sys.uptimeMs : null;
+            updateStats(sys);
+        }
+    } catch (err) {
+        online = false;
+    }
+
+    if (!online) {
+        if (!otaRebootState.sawOffline) {
+            otaRebootState.sawOffline = true;
+            setOtaNotesStatus("Device offline, waiting to reconnect...", true);
+        }
+    } else if (
+        otaRebootState.sawOffline ||
+        (uptime != null && otaRebootState.startUptime != null && uptime + 2000 < otaRebootState.startUptime)
+    ) {
+        finishOtaReboot();
+        return;
+    }
+
+    const delay = Math.min(8000, 1000 + otaRebootState.attempts * 500);
+    otaRebootState.attempts += 1;
+    otaRebootTimer = setTimeout(pollOtaReboot, delay);
 }
 
 async function pollOtaNotes(refresh) {

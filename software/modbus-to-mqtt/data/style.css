@@ -106,6 +106,17 @@ body.configure main {
     gap: .4rem;
     flex-wrap: wrap;
 }
+.firmware-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .5rem;
+    margin-top: .75rem;
+}
+@media (max-width: 520px) {
+    .firmware-actions {
+        grid-template-columns: 1fr;
+    }
+}
 .iconButton,
 .gearButton {
     width: 38px;

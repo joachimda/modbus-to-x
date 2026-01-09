@@ -7419,6 +7419,15 @@
 				(hide yes)
 			)
 		)
+		(property "InternalId" "R #15"
+			(at 44.45 186.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "64b2868c-e63c-493c-8afd-711538639978")
 		)
@@ -7553,7 +7562,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_1206_3216Metric_Pad1.33x1.80mm_HandSolder"
+		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
 			(at 74.93 186.3852 0)
 			(effects
 				(font
@@ -7562,7 +7571,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://content.kemet.com/datasheets/KEM_C1002_X7R_SMD.pdf"
+		(property "Datasheet" "https://search.murata.co.jp/Ceramy/image/img/A01X/G101/ENG/GCJ188R71H104KA12-02B.pdf"
 			(at 78.74 185.42 0)
 			(effects
 				(font
@@ -7571,7 +7580,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "0.1 µF ±10% 50V Ceramic Capacitor X7R 1206 (3216 Metric)"
+		(property "Description" "0.1 µF ±10% 50V Ceramic Capacitor X7R 0805 (2012 Metric)"
 			(at 78.74 185.42 0)
 			(effects
 				(font
@@ -7580,7 +7589,7 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "C1206C104K5RACTU"
+		(property "PartNo" "GCD21BR71H104KA01L"
 			(at 78.74 185.42 0)
 			(effects
 				(font
@@ -7590,6 +7599,15 @@
 			)
 		)
 		(property "Voltage" "50V"
+			(at 78.74 185.42 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "C #39"
 			(at 78.74 185.42 90)
 			(effects
 				(font
@@ -7826,7 +7844,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "~"
+		(property "Datasheet" "https://www.mouser.dk/datasheet/2/588/asset_pdf_5057771-3418946.pdf"
 			(at 20.32 156.21 0)
 			(effects
 				(font
@@ -7855,6 +7873,15 @@
 		)
 		(property "Sim.Pins" "1=K 2=A"
 			(at 20.32 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "REEL"
+			(at 20.32 156.21 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -7933,6 +7960,15 @@
 		)
 		(property "PartNo" "RND 155TC0325B2001T5H"
 			(at 25.4 148.59 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "R #15"
+			(at 25.4 148.59 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8044,6 +8080,93 @@
 		)
 	)
 	(symbol
+		(lib_id "Device:R")
+		(at 72.39 156.21 90)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "256ba8ae-0d38-46e0-882e-22fbfb7f444c")
+		(property "Reference" "R5"
+			(at 74.549 153.543 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "10K"
+			(at 73.914 156.21 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 72.39 157.988 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "https://www.yageo.com/upload/media/product/app/datasheet/rchip/pyu-rt_1-to-0.01_rohs_l.pdf"
+			(at 72.39 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "10 kOhms ±0.5% 0.1W, 1/10W Chip Resistor"
+			(at 72.39 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "PartNo" "RT0603DRE0710KL"
+			(at 72.39 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "R #35"
+			(at 72.39 156.21 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "0bc6d810-00f6-4711-9c02-ecf0f2620bc6")
+		)
+		(pin "1"
+			(uuid "a5848036-d02b-4de2-8828-16046b5d1217")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "R5")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:C_Polarized")
 		(at 20.32 40.64 0)
 		(unit 1)
@@ -8115,7 +8238,7 @@
 				(hide yes)
 			)
 		)
-		(property "FriendlyName" ""
+		(property "InternalId" "C #44"
 			(at 20.32 40.64 0)
 			(effects
 				(font
@@ -8332,84 +8455,6 @@
 		)
 	)
 	(symbol
-		(lib_id "Device:R")
-		(at 72.39 156.21 270)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "3d814fbd-6676-433f-9d87-ed39ce15fedd")
-		(property "Reference" "R20"
-			(at 70.612 158.75 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "10K"
-			(at 70.866 156.21 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
-			(at 72.39 154.432 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "https://media.distrelec.com/Web/Downloads/_t/ds/RND_155T_Thin_Film_Resistors_eng_tds.pdf"
-			(at 72.39 156.21 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor Thin film   10 KOhm     ±0.1%   SMD 0805 1/4W"
-			(at 72.39 156.21 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "PartNo" "RND 155TC0525B1002T5J"
-			(at 72.39 156.21 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "2"
-			(uuid "722997b2-c3ac-4488-81be-6e61f036d8bb")
-		)
-		(pin "1"
-			(uuid "bb23b2a3-205f-4dce-9b5c-72ec2ba5ea63")
-		)
-		(instances
-			(project "modbus-to-x"
-				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
-					(reference "R20")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
 		(lib_id "power:VDD")
 		(at 198.12 63.5 0)
 		(unit 1)
@@ -8592,6 +8637,15 @@
 			)
 		)
 		(property "PartNo" "7447709330"
+			(at 67.31 40.64 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "IND. #25"
 			(at 67.31 40.64 90)
 			(effects
 				(font
@@ -9386,7 +9440,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_1206_3216Metric_Pad1.33x1.80mm_HandSolder"
+		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
 			(at 225.7552 27.94 0)
 			(effects
 				(font
@@ -9395,7 +9449,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://content.kemet.com/datasheets/KEM_C1002_X7R_SMD.pdf"
+		(property "Datasheet" "https://search.murata.co.jp/Ceramy/image/img/A01X/G101/ENG/GCJ188R71H104KA12-02B.pdf"
 			(at 224.79 24.13 0)
 			(effects
 				(font
@@ -9404,7 +9458,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "0.1 µF ±10% 50V Ceramic Capacitor X7R 1206 (3216 Metric)"
+		(property "Description" "0.1 µF ±10% 50V Ceramic Capacitor X7R 0805 (2012 Metric)"
 			(at 224.79 24.13 0)
 			(effects
 				(font
@@ -9413,7 +9467,7 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "C1206C104K5RACTU"
+		(property "PartNo" "GCD21BR71H104KA01L"
 			(at 224.79 24.13 0)
 			(effects
 				(font
@@ -9423,6 +9477,15 @@
 			)
 		)
 		(property "Voltage" "50V"
+			(at 224.79 24.13 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "C #39"
 			(at 224.79 24.13 0)
 			(effects
 				(font
@@ -9562,7 +9625,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 64.77 147.828 90)
 			(effects
 				(font
@@ -9571,7 +9634,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://media.distrelec.com/Web/Downloads/_t/ds/RND_155T_Thin_Film_Resistors_eng_tds.pdf"
+		(property "Datasheet" "https://www.yageo.com/upload/media/product/app/datasheet/rchip/pyu-rt_1-to-0.01_rohs_l.pdf"
 			(at 64.77 146.05 0)
 			(effects
 				(font
@@ -9580,7 +9643,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Resistor Thin film   10 KOhm     ±0.1%   SMD 0805 1/4W"
+		(property "Description" "10 kOhms ±0.5% 0.1W, 1/10W Chip Resistor"
 			(at 64.77 146.05 0)
 			(effects
 				(font
@@ -9589,8 +9652,17 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "RND 155TC0525B1002T5J"
+		(property "PartNo" "RT0603DRE0710KL"
 			(at 64.77 146.05 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "R #35"
+			(at 64.77 146.05 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9668,6 +9740,15 @@
 			)
 		)
 		(property "PartNo" "LW QH8G-Q2OO-3K5L-1"
+			(at 48.26 190.5 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "Reel"
 			(at 48.26 190.5 90)
 			(effects
 				(font
@@ -9924,7 +10005,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "~"
+		(property "Datasheet" "https://www.mouser.dk/datasheet/2/588/asset_pdf_5057771-3418946.pdf"
 			(at 25.4 156.21 0)
 			(effects
 				(font
@@ -9953,6 +10034,15 @@
 		)
 		(property "Sim.Pins" "1=K 2=A"
 			(at 25.4 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "REEL"
+			(at 25.4 156.21 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10158,6 +10248,15 @@
 				(hide yes)
 			)
 		)
+		(property "InternalId" "Conn. #23"
+			(at 114.3 185.42 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "3"
 			(uuid "2bf86bfe-b927-4545-a1b3-8343028e0488")
 		)
@@ -10344,7 +10443,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://content.kemet.com/datasheets/KEM_C1002_X7R_SMD.pdf"
+		(property "Datasheet" "https://search.murata.co.jp/Ceramy/image/img/A01X/G101/ENG/GCJ188R71H104KA12-02B.pdf"
 			(at 198.12 74.93 0)
 			(effects
 				(font
@@ -10353,7 +10452,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "0.1 µF ±10% 50V Ceramic Capacitor X7R 1206 (3216 Metric)"
+		(property "Description" "0.1 µF ±10% 50V Ceramic Capacitor X7R 0805 (2012 Metric)"
 			(at 198.12 74.93 0)
 			(effects
 				(font
@@ -10362,7 +10461,7 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "C1206C104K5RACTU"
+		(property "PartNo" "GCD21BR71H104KA01L"
 			(at 198.12 74.93 0)
 			(effects
 				(font
@@ -10372,6 +10471,15 @@
 			)
 		)
 		(property "Voltage" "50V"
+			(at 198.12 74.93 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "C #39"
 			(at 198.12 74.93 90)
 			(effects
 				(font
@@ -10433,7 +10541,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "~"
+		(property "Datasheet" "https://www.mouser.dk/datasheet/2/588/asset_pdf_5057771-3418946.pdf"
 			(at 30.48 156.21 0)
 			(effects
 				(font
@@ -10462,6 +10570,15 @@
 		)
 		(property "Sim.Pins" "1=K 2=A"
 			(at 30.48 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "REEL"
+			(at 30.48 156.21 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10538,7 +10655,7 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "M50-3140645R"
+		(property "PartNo" "M50-3140545R"
 			(at 214.63 151.13 0)
 			(effects
 				(font
@@ -10643,6 +10760,15 @@
 				(hide yes)
 			)
 		)
+		(property "InternalId" "R #15"
+			(at 20.32 148.59 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "b49a545d-b326-47f3-a255-cf9ad7e8b65d")
 		)
@@ -10685,7 +10811,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
 			(at 196.342 67.31 90)
 			(effects
 				(font
@@ -10694,7 +10820,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://media.distrelec.com/Web/Downloads/_t/ds/RND_155T_Thin_Film_Resistors_eng_tds.pdf"
+		(property "Datasheet" "https://www.yageo.com/upload/media/product/app/datasheet/rchip/pyu-rt_1-to-0.01_rohs_l.pdf"
 			(at 198.12 67.31 0)
 			(effects
 				(font
@@ -10703,7 +10829,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Resistor Thin film   10 KOhm     ±0.1%   SMD 0805 1/4W"
+		(property "Description" "10 kOhms ±0.5% 0.1W, 1/10W Chip Resistor"
 			(at 198.12 67.31 0)
 			(effects
 				(font
@@ -10712,7 +10838,16 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "RND 155TC0525B1002T5J"
+		(property "PartNo" "RT0603DRE0710KL"
+			(at 198.12 67.31 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "R #35"
 			(at 198.12 67.31 0)
 			(effects
 				(font
@@ -10857,6 +10992,15 @@
 			)
 		)
 		(property "PartNo" "B340LA-13-F"
+			(at 59.69 45.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" " Dio. #10"
 			(at 59.69 45.72 0)
 			(effects
 				(font
@@ -11067,6 +11211,15 @@
 			)
 		)
 		(property "PartNo" "RND 1550805S8F4702T5E"
+			(at 30.48 185.42 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "R #24"
 			(at 30.48 185.42 0)
 			(effects
 				(font
@@ -11975,6 +12128,15 @@
 				(hide yes)
 			)
 		)
+		(property "InternalId" "R #15"
+			(at 30.48 148.59 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "2"
 			(uuid "a7ebfbd1-a6b9-48ea-8f12-f1ddf174ab22")
 		)
@@ -12045,7 +12207,16 @@
 				(hide yes)
 			)
 		)
-		(property "PartNo" "Adafruit_3983"
+		(property "PartNo" "Adafruit-3983"
+			(at 71.12 180.34 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" " Conn. #27"
 			(at 71.12 180.34 0)
 			(effects
 				(font
@@ -12133,6 +12304,15 @@
 			)
 		)
 		(property "Voltage" "16V"
+			(at 229.87 24.13 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "C #17"
 			(at 229.87 24.13 0)
 			(effects
 				(font
@@ -12465,6 +12645,15 @@
 			)
 		)
 		(property "PartNo" "RC1206FR-13120RL"
+			(at 55.88 101.6 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "InternalId" "R #32"
 			(at 55.88 101.6 90)
 			(effects
 				(font

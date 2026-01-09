@@ -402,6 +402,14 @@ function renderStats(sys = {}) {
         kv("Reset reason", sys.resetReason || "—"),
     ].join("");
 
+    const firmwareKvs = $("#firmware-kvs");
+    if (firmwareKvs) {
+        firmwareKvs.innerHTML = sys.__error ? kv("Error", sys.__error) : [
+            kv("MBX Version", sys.fwVersion || "—"),
+            kv("Build date", sys.buildDate || "—"),
+        ].join("");
+    }
+
     // Wi-Fi card
     const wifiConnected = (sys.wifiConnected !== undefined) ? sys.wifiConnected : sys.connected;
     const wifiApMode = (sys.wifiApMode !== undefined) ? sys.wifiApMode : sys.apMode;

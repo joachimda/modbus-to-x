@@ -7,7 +7,7 @@ namespace {
 constexpr time_t TIME_VALID_THRESHOLD = 1600000000; // ~2020-09-13
 constexpr uint32_t TIME_SYNC_TIMEOUT_MS = 20000;
 constexpr uint32_t TIME_SYNC_POLL_MS = 500;
-constexpr auto DEFAULT_TZ = "CET-1CEST,M3.5.0/2,M10.5.0/3"; // Europe/Copenhagen
+constexpr auto DEFAULT_TZ = "CET-1CEST,M3.5.0/2,M10.5.0/3"; // EU/Copenhagen
 
 std::atomic<bool> g_timeValid{false};
 bool g_syncInFlight = false;

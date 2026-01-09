@@ -31,6 +31,28 @@ let otaCheckTimer = null;
 let otaNotesTimer = null;
 let otaRebootTimer = null;
 let otaRebootState = null;
+let otaApplying = false;
+const OTA_STAGE_LABELS = {
+    start: "Preparing update...",
+    fs_download: "Downloading filesystem",
+    fs_install: "Installing filesystem",
+    fs_skip: "Filesystem already up to date",
+    fw_download: "Downloading firmware",
+    fw_install: "Installing firmware",
+    fw_skip: "Firmware already up to date",
+    complete: "Update applied. Rebooting...",
+    rebooting: "Rebooting...",
+    error: "Update failed",
+};
+const OTA_SPINNER_STAGES = new Set([
+    "start",
+    "fs_download",
+    "fs_install",
+    "fw_download",
+    "fw_install",
+    "complete",
+    "rebooting",
+]);
 
 window.initIndex = async function initIndex() {
     $("#btn-reboot").addEventListener("click", reboot);
@@ -62,6 +84,7 @@ function startEventStream() {
     });
     eventSource.addEventListener("logs", (ev) => handleLogEvent(ev, true));
     eventSource.addEventListener("log", (ev) => handleLogEvent(ev, false));
+    eventSource.addEventListener("ota-status", (ev) => handleOtaStatusEvent(ev));
     eventSource.addEventListener("error", () => {
         const subtitle = $("#device-subtitle");
         if (subtitle && !subtitle.dataset.streamWarned) {
@@ -88,6 +111,59 @@ function handleStatsEvent(ev) {
         updateStats(payload);
     } catch (err) {
         console.error("Failed to parse stats event", err);
+    }
+}
+
+function formatOtaStageMessage(stage, payload) {
+    let label = OTA_STAGE_LABELS[stage] || payload?.detail || "Update status";
+    if (stage === "error") {
+        if (payload?.detail) {
+            label = `${OTA_STAGE_LABELS.error}: ${payload.detail}`;
+        }
+        return label;
+    }
+    if (stage.endsWith("_download")) {
+        const received = Number(payload?.received);
+        const total = Number(payload?.total);
+        if (Number.isFinite(received) && Number.isFinite(total) && total > 0) {
+            const pct = Math.min(100, Math.floor((received / total) * 100));
+            label = `${label} (${pct}%)`;
+        } else if (Number.isFinite(received) && received > 0) {
+            label = `${label} (${prettyBytes(received)})`;
+        }
+    }
+    return label;
+}
+
+function handleOtaStatusEvent(ev) {
+    let payload = {};
+    try {
+        payload = JSON.parse(ev.data || "{}");
+    } catch (err) {
+        console.error("Failed to parse OTA status event", err);
+        return;
+    }
+    const stage = payload?.stage;
+    if (!stage) return;
+
+    const msg = formatOtaStageMessage(stage, payload);
+    const spinning = OTA_SPINNER_STAGES.has(stage);
+    setOtaNotesStatus(msg, spinning);
+    setOtaStatus(msg, spinning);
+
+    if (stage === "error") {
+        otaApplying = false;
+        setOtaButtons({ checking: false, applying: false });
+        setOtaModalButtons({ applying: false });
+        return;
+    }
+
+    otaApplying = true;
+    setOtaButtons({ checking: false, applying: true });
+    setOtaModalButtons({ applying: true });
+
+    if (stage === "rebooting" || stage === "complete") {
+        startOtaRebootMonitor();
     }
 }
 
@@ -336,8 +412,10 @@ async function confirmOtaApply() {
             setOtaNotesStatus(`Apply failed: ${res.error || "unknown"}`);
             setOtaButtons({ checking: false, applying: false });
             setOtaModalButtons({ applying: false });
+            otaApplying = false;
             return;
         }
+        otaApplying = true;
         if (res.started) {
             setOtaNotesStatus("Update started. Waiting for device to reboot...", true);
             setOtaStatus("Update in progress. Waiting for reboot...", true);
@@ -347,12 +425,12 @@ async function confirmOtaApply() {
         }
         otaState.available = false;
         otaState.version = "";
-        startOtaRebootMonitor();
     } catch (err) {
         const msg = err?.message === "auth_required" ? "Authentication required." : (err?.message || err);
         setOtaNotesStatus(`Apply failed: ${msg}`);
         setOtaButtons({ checking: false, applying: false });
         setOtaModalButtons({ applying: false });
+        otaApplying = false;
     }
 }
 
@@ -378,6 +456,7 @@ function stopOtaRebootMonitor() {
 
 function finishOtaReboot() {
     stopOtaRebootMonitor();
+    otaApplying = false;
     setOtaNotesStatus("Device back online. Reloading...", true);
     setOtaStatus("Device back online. Reloading...", true);
     setOtaButtons({ checking: false, applying: false });
@@ -428,6 +507,10 @@ async function pollOtaReboot() {
 }
 
 async function pollOtaNotes(refresh) {
+    if (otaApplying) {
+        otaNotesTimer = null;
+        return;
+    }
     try {
         const res = await otaFetchJson(`${API.OTA_HTTP_NOTES}?refresh=${refresh ? 1 : 0}`, { method: "POST" });
         if (res.pending) {

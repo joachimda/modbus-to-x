@@ -22,6 +22,7 @@ const char* HttpOtaService::s_manifestUrl = nullptr;
 const char* HttpOtaService::s_device = nullptr;
 const char* HttpOtaService::s_currentVersion = nullptr;
 const char* HttpOtaService::s_caCertPem = nullptr;
+HttpOtaService::ProgressCallback HttpOtaService::s_progressCb = nullptr;
 
 uint32_t HttpOtaService::s_intervalMs = 6UL * 60UL * 60UL * 1000UL; // 6 hours
 uint32_t HttpOtaService::s_lastCheckMs = 0;
@@ -97,6 +98,18 @@ void HttpOtaService::begin(Logger* logger,
 
 void HttpOtaService::setIntervalMs(const uint32_t intervalMs) {
     s_intervalMs = intervalMs;
+}
+
+void HttpOtaService::setProgressCallback(ProgressCallback cb) {
+    s_progressCb = cb;
+}
+
+void HttpOtaService::emitProgress(const char *stage,
+                                  uint32_t received,
+                                  uint32_t total,
+                                  const char *detail) {
+    if (!s_progressCb || !stage) return;
+    s_progressCb(stage, received, total, detail);
 }
 
 void HttpOtaService::checkNow() {
@@ -240,20 +253,24 @@ bool HttpOtaService::applyPendingUpdate(String &errorOut) {
     if (!s_updateAvailable) {
         errorOut = "no_update";
         s_lastError = errorOut;
+        emitProgress("error", 0, 0, errorOut.c_str());
         return false;
     }
     if (!s_pendingUpdateApp && !s_pendingUpdateFs) {
         errorOut = "no_components";
         s_lastError = errorOut;
+        emitProgress("error", 0, 0, errorOut.c_str());
         return false;
     }
     if (WiFiClass::status() != WL_CONNECTED) {
         errorOut = "wifi_disconnected";
         s_lastError = errorOut;
+        emitProgress("error", 0, 0, errorOut.c_str());
         return false;
     }
 
     logInfo(s_logger, "HTTP-OTA: Applying pending update");
+    emitProgress("start", 0, 0, nullptr);
     IndicatorService::instance().setOtaActive(true);
     bool ok = true;
     if (s_pendingUpdateFs) {
@@ -264,6 +281,7 @@ bool HttpOtaService::applyPendingUpdate(String &errorOut) {
         }
     } else {
         logInfo(s_logger, "HTTP-OTA: Filesystem up to date, skipping");
+        emitProgress("fs_skip", 0, 0, nullptr);
     }
     if (ok) {
         if (s_pendingUpdateApp) {
@@ -274,6 +292,7 @@ bool HttpOtaService::applyPendingUpdate(String &errorOut) {
             }
         } else {
             logInfo(s_logger, "HTTP-OTA: Firmware up to date, skipping");
+            emitProgress("fw_skip", 0, 0, nullptr);
         }
     }
     IndicatorService::instance().setOtaActive(false);
@@ -281,10 +300,12 @@ bool HttpOtaService::applyPendingUpdate(String &errorOut) {
     if (!ok) {
         errorOut = "apply_failed";
         s_lastError = errorOut;
+        emitProgress("error", 0, 0, errorOut.c_str());
         return false;
     }
 
     clearPendingUpdate();
+    emitProgress("complete", 0, 0, nullptr);
     return true;
 }
 
@@ -545,6 +566,8 @@ bool HttpOtaService::downloadVerifyAndFlash(const String& url,
 
     const int totalLen = http.getSize();
     const size_t totalSize = totalLen > 0 ? static_cast<size_t>(totalLen) : 0;
+    const char *downloadStage = updateCommand == U_FLASH ? "fw_download" : "fs_download";
+    const char *installStage = updateCommand == U_FLASH ? "fw_install" : "fs_install";
     WiFiClient* stream = http.getStreamPtr();
     if (!stream) {
         logErr(s_logger, "HTTP-OTA: No HTTP stream available");
@@ -613,6 +636,8 @@ bool HttpOtaService::downloadVerifyAndFlash(const String& url,
         return false;
     }
 
+    emitProgress(downloadStage, 0, static_cast<uint32_t>(totalSize), nullptr);
+
     // Hash as we write
     mbedtls_sha256_context sha;
     mbedtls_sha256_init(&sha);
@@ -623,6 +648,9 @@ bool HttpOtaService::downloadVerifyAndFlash(const String& url,
     uint32_t lastDataMs = millis();
     uint32_t lastYieldMs = lastDataMs;
     uint32_t lastReportMs = lastDataMs;
+    uint32_t lastProgressMs = lastDataMs;
+    size_t lastProgressBytes = 0;
+    int lastProgressPct = -1;
     size_t received = 0;
 
     while (http.connected() && (totalSize == 0 || received < totalSize)) {
@@ -666,6 +694,23 @@ bool HttpOtaService::downloadVerifyAndFlash(const String& url,
             return false;
         }
         received += static_cast<size_t>(r);
+        if (lastDataMs - lastProgressMs > 1500) {
+            if (totalSize > 0) {
+                const int pct = static_cast<int>((received * 100) / totalSize);
+                if (pct != lastProgressPct) {
+                    emitProgress(downloadStage,
+                                 static_cast<uint32_t>(received),
+                                 static_cast<uint32_t>(totalSize),
+                                 nullptr);
+                    lastProgressPct = pct;
+                    lastProgressMs = lastDataMs;
+                }
+            } else if (received != lastProgressBytes) {
+                emitProgress(downloadStage, static_cast<uint32_t>(received), 0, nullptr);
+                lastProgressBytes = received;
+                lastProgressMs = lastDataMs;
+            }
+        }
         if (lastDataMs - lastReportMs > 5000) {
             char msg[160];
             if (totalLen > 0) {
@@ -686,6 +731,12 @@ bool HttpOtaService::downloadVerifyAndFlash(const String& url,
     unsigned char digest[32];
     mbedtls_sha256_finish_ret(&sha, digest);
     mbedtls_sha256_free(&sha);
+
+    emitProgress(downloadStage,
+                 static_cast<uint32_t>(received),
+                 static_cast<uint32_t>(totalSize),
+                 nullptr);
+    emitProgress(installStage, 0, 0, nullptr);
 
     // Convert to hex
     char hex[65];

@@ -92,11 +92,30 @@ body.configure main {
     flex: 1 1 auto;
     margin: 0;
 }
+.with-actions {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+.with-actions .spacer {
+    flex: 1 1 auto;
+}
 .card-actions {
     display: flex;
     align-items: center;
     gap: .4rem;
     flex-wrap: wrap;
+}
+.firmware-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .5rem;
+    margin-top: .75rem;
+}
+@media (max-width: 520px) {
+    .firmware-actions {
+        grid-template-columns: 1fr;
+    }
 }
 .iconButton,
 .gearButton {

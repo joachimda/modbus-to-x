@@ -29,6 +29,7 @@ public:
     constexpr static auto OTA_FIRMWARE = "/api/system/ota/firmware";
     constexpr static auto OTA_FILESYSTEM = "/api/system/ota/fs";
     constexpr static auto OTA_HTTP_CHECK = "/api/system/ota/http/check";
+    constexpr static auto OTA_HTTP_NOTES = "/api/system/ota/http/notes";
     constexpr static auto OTA_HTTP_APPLY = "/api/system/ota/http/apply";
     constexpr static auto DEVICE_RESET = "/api/system/reboot";
     constexpr static auto SYSTEM_STATS = "/api/stats/system";

@@ -79,13 +79,20 @@
         <article class="card" id="card-system">
             <div class="card-title">
                 <h3>System</h3>
-                <div class="card-actions">
-                    <button class="btn small secondary" id="btn-ota-check">Check update</button>
-                    <button class="btn small primary" id="btn-ota-apply" disabled>Apply update</button>
-                </div>
+            </div>
+            <div class="kvs" id="system-kvs"></div>
+        </article>
+
+        <article class="card" id="card-firmware">
+            <div class="card-title">
+                <h3>Firmware</h3>
             </div>
             <div class="muted" id="ota-status">Updates are checked manually.</div>
-            <div class="kvs" id="system-kvs"></div>
+            <div class="kvs" id="firmware-kvs"></div>
+            <div class="firmware-actions">
+                <button class="btn small primary" id="btn-ota-apply" disabled>Apply update</button>
+                <button class="btn small ghost" id="btn-ota-check">Check update</button>
+            </div>
         </article>
 
         <article class="card" id="card-storage">
@@ -116,6 +123,20 @@
 
     <div class="footer-logo">
         <img src="/mbx_graphics.svg" alt="MBX Graphics Logo">
+    </div>
+</div>
+
+<!-- OTA confirmation modal -->
+<div id="modal-ota" class="modal-backdrop" style="display:none">
+    <div class="modal card">
+        <h3 class="with-actions">Apply Update <span class="spacer"></span><button class="btn ghost" id="btn-ota-close">✕</button></h3>
+        <p class="muted" id="ota-modal-version">New version: —</p>
+        <p class="muted" id="ota-notes-status">Loading release notes…</p>
+        <pre id="ota-notes" class="code" style="max-height:320px; overflow:auto; display:none;"></pre>
+        <div class="actions" style="justify-content:flex-end">
+            <button class="btn ghost" id="btn-ota-cancel">Cancel</button>
+            <button class="btn primary" id="btn-ota-confirm">Apply Update</button>
+        </div>
     </div>
 </div>
 

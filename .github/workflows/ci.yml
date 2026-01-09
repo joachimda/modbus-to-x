@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PROJECT_DIR: software/modbus-to-mqtt
-      PIO_ENV: mbx-custom-board
+      PIO_ENV: mbx-custom-board-dev
 
     steps:
       - uses: actions/checkout@v4

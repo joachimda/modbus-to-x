@@ -13,6 +13,7 @@ export const API = {
     POST_MODBUS_EXECUTE: '/api/modbus/execute',
     POST_SYSTEM_RESET: '/api/system/reboot',
     OTA_HTTP_CHECK: '/api/system/ota/http/check',
+    OTA_HTTP_NOTES: '/api/system/ota/http/notes',
     OTA_HTTP_APPLY: '/api/system/ota/http/apply',
 };
 

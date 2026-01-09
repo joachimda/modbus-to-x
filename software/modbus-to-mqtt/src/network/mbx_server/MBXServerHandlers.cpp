@@ -880,16 +880,75 @@ void MBXServerHandlers::handleOtaFilesystemUpload(AsyncWebServerRequest *r, cons
 void MBXServerHandlers::handleOtaHttpCheck(AsyncWebServerRequest *req, const Logger *logger) {
     (void)logger;
 #if OTA_HTTP_ENABLED
-    String error;
+    bool refresh = true;
+    if (req->hasParam("refresh")) {
+        const String value = req->getParam("refresh")->value();
+        refresh = !(value == "0" || value.equalsIgnoreCase("false"));
+    }
+    if (refresh) {
+        HttpOtaService::checkNow();
+    }
+
+    bool ok = false;
     bool available = false;
     String version;
-    const bool ok = HttpOtaService::checkForUpdate(error, available, version);
+    String error;
+    HttpOtaService::getLastCheckStatus(ok, available, version, error);
+    const bool pending = HttpOtaService::isCheckPending();
 
     JsonDocument doc;
     doc["ok"] = ok;
     doc["available"] = available;
+    doc["pending"] = pending;
     if (available && version.length()) doc["version"] = version;
-    if (!ok && error.length()) doc["error"] = error;
+    if (!pending && !ok && error.length()) doc["error"] = error;
+    sendJson(req, doc);
+#else
+    JsonDocument doc;
+    doc["ok"] = false;
+    doc["error"] = "ota_http_disabled";
+    sendJson(req, doc);
+#endif
+}
+
+void MBXServerHandlers::handleOtaHttpNotes(AsyncWebServerRequest *req, const Logger *logger) {
+    (void)logger;
+#if OTA_HTTP_ENABLED
+    String version;
+    if (!HttpOtaService::hasPendingUpdate(version)) {
+        JsonDocument doc;
+        doc["ok"] = false;
+        doc["error"] = "no_update";
+        sendJson(req, doc);
+        return;
+    }
+
+    bool refresh = true;
+    if (req->hasParam("refresh")) {
+        const String value = req->getParam("refresh")->value();
+        refresh = !(value == "0" || value.equalsIgnoreCase("false"));
+    }
+    if (refresh) {
+        HttpOtaService::requestReleaseNotes();
+    }
+
+    bool ready = false;
+    bool pending = false;
+    String notes;
+    String error;
+    HttpOtaService::getNotesStatus(ready, pending, notes, error);
+
+    JsonDocument doc;
+    doc["ok"] = ready || pending;
+    doc["pending"] = pending;
+    doc["available"] = true;
+    if (version.length()) doc["version"] = version;
+    if (ready) {
+        doc["notes"] = notes;
+    } else if (!pending && error.length()) {
+        doc["ok"] = false;
+        doc["error"] = error;
+    }
     sendJson(req, doc);
 #else
     JsonDocument doc;

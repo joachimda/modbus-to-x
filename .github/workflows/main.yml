@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PROJECT_DIR: software/modbus-to-mqtt
-      PIO_ENV: mbx-custom-board
+      PIO_ENV: mbx-custom-board-release
       DEVICE: modbus-to-x
       KID: "bd774d27-badf-48a3-b927-a51fb08629f7"
 
@@ -56,6 +56,20 @@ jobs:
 
           FS_SHA256="$(sha256sum "${DEVICE}.fs.bin" | awk '{print $1}')"
           echo "FS_SHA256=$FS_SHA256" >> $GITHUB_ENV
+      - name: Generate release notes
+        run: |
+          NOTES_FILE="${DEVICE}.notes.txt"
+          PREV_TAG="$(git describe --tags --abbrev=0 --match "v*" "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          if [ -n "$PREV_TAG" ]; then
+            git log --pretty=format:'- %s (%h)' "${PREV_TAG}..HEAD" > "$NOTES_FILE"
+          else
+            git log --pretty=format:'- %s (%h)' -n 50 > "$NOTES_FILE"
+          fi
+          if [ ! -s "$NOTES_FILE" ]; then
+            echo "Initial release." > "$NOTES_FILE"
+          fi
+          NOTES_SHA256="$(sha256sum "$NOTES_FILE" | awk '{print $1}')"
+          echo "NOTES_SHA256=$NOTES_SHA256" >> $GITHUB_ENV
       - name: Load signing key
         run: |
           printf "%s" "${{ secrets.OTA_SIGNING_KEY_PEM }}" > ota_signing.key
@@ -66,8 +80,9 @@ jobs:
           APP_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${DEVICE}.bin"
           FS_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${DEVICE}.fs.bin"
           FS_LABEL="spiffs"
+          NOTES_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${DEVICE}.notes.txt"
 
-          PAYLOAD="${DEVICE}|${VERSION}|${APP_SHA256}|${APP_URL}|${FS_LABEL}|${FS_SHA256}|${FS_URL}|${KID}"
+          PAYLOAD="${DEVICE}|${VERSION}|${APP_SHA256}|${APP_URL}|${FS_LABEL}|${FS_SHA256}|${FS_URL}|${KID}|${NOTES_SHA256}|${NOTES_URL}"
           printf "%s" "$PAYLOAD" > payload.txt
 
           openssl dgst -sha256 -sign ota_signing.key -out sig.bin payload.txt
@@ -80,6 +95,7 @@ jobs:
             "kid": "${KID}",
             "app": { "url": "${APP_URL}", "sha256": "${APP_SHA256}" },
             "fs":  { "label": "${FS_LABEL}", "url": "${FS_URL}", "sha256": "${FS_SHA256}" },
+            "notes": { "url": "${NOTES_URL}", "sha256": "${NOTES_SHA256}" },
             "sig": "${SIG_B64}"
           }
           EOF
@@ -97,4 +113,5 @@ jobs:
             --generate-notes \
             "${DEVICE}.bin" \
             "${DEVICE}.fs.bin" \
+            "${DEVICE}.notes.txt" \
             "${DEVICE}.manifest.json"

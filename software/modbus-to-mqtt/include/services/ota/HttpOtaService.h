@@ -9,6 +9,11 @@ class Logger;
 
 class HttpOtaService {
 public:
+    using ProgressCallback = void (*)(const char *stage,
+                                      uint32_t received,
+                                      uint32_t total,
+                                      const char *detail);
+
     static void begin(Logger *logger,
                       const char *manifestUrl,
                       const char *device,
@@ -20,6 +25,8 @@ public:
     static void checkNow();
 
     static void setIntervalMs(uint32_t intervalMs);
+
+    static void setProgressCallback(ProgressCallback cb);
 
     static bool checkForUpdate(String &errorOut, bool &updateAvailable, String &versionOut);
 
@@ -36,6 +43,11 @@ public:
     static void getNotesStatus(bool &ready, bool &pending, String &notesOut, String &errorOut);
 
 private:
+    static void emitProgress(const char *stage,
+                             uint32_t received,
+                             uint32_t total,
+                             const char *detail);
+
     static bool fetchManifest(String &outJson);
 
     static bool processManifestAndMaybeUpdate(const String &json);
@@ -74,6 +86,8 @@ private:
     static const char *s_device;
     static const char *s_currentVersion;
     static const char *s_caCertPem;
+
+    static ProgressCallback s_progressCb;
 
     static uint32_t s_intervalMs;
     static uint32_t s_lastCheckMs;

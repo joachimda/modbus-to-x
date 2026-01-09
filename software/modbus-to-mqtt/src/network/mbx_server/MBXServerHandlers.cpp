@@ -237,6 +237,27 @@ void sendLogPayload(const String &text, const bool truncated, const char *eventN
     g_events.send(payload.c_str(), eventName, nextEventId());
 }
 
+void sendOtaStatus(const char *stage,
+                   const uint32_t received,
+                   const uint32_t total,
+                   const char *detail) {
+    if (!stage || !eventStreamHasClients()) {
+        return;
+    }
+    JsonDocument doc;
+    doc["stage"] = stage;
+    if (received || total) {
+        doc["received"] = received;
+        doc["total"] = total;
+    }
+    if (detail && detail[0] != '\0') {
+        doc["detail"] = detail;
+    }
+    String payload;
+    serializeJson(doc, payload);
+    g_events.send(payload.c_str(), "ota-status", nextEventId());
+}
+
 void sendInitialLogsToClient(AsyncEventSourceClient *client) {
     auto *mem = g_memlog.load(std::memory_order_acquire);
     if (!client || !mem) {
@@ -315,6 +336,8 @@ void MBXServerHandlers::initEventStream(AsyncWebServer *server, const Logger *lo
     if (!g_eventsAttached.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
         return;
     }
+
+    HttpOtaService::setProgressCallback(sendOtaStatus);
 
     g_events.onConnect([](AsyncEventSourceClient *client) {
         if (!client) {
@@ -998,6 +1021,7 @@ void MBXServerHandlers::handleOtaHttpApply(AsyncWebServerRequest *req, const Log
         }
         if (log) log->logInformation("HTTP-OTA: Apply complete, rebooting");
         Serial.println("HTTP-OTA: Apply complete, rebooting");
+        sendOtaStatus("rebooting", 0, 0, nullptr);
         g_otaHttpApplying.store(false, std::memory_order_release);
         delay(500);
         ESP.restart();

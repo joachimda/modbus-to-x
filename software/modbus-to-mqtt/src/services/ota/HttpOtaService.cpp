@@ -16,6 +16,7 @@
 #include "Logger.h"
 #include "esp_partition.h"
 #include <Preferences.h>
+#include "Config.h"
 
 Logger *HttpOtaService::s_logger = nullptr;
 const char* HttpOtaService::s_manifestUrl = nullptr;
@@ -430,9 +431,15 @@ bool HttpOtaService::processManifestAndMaybeUpdate(const String& json) {
         s_pendingUpdateFs = false;
     }
     if (!s_pendingUpdateApp && !s_pendingUpdateFs) {
-        logInfo(s_logger, "HTTP-OTA: Update available but no component changes");
-        clearPendingUpdate();
-        return true;
+        if (OTA_HTTP_FORCE_UPDATE_ON_NEW_VERSION) {
+            logInfo(s_logger, "HTTP-OTA: Forcing update despite identical component hashes");
+            s_pendingUpdateApp = true;
+            s_pendingUpdateFs = true;
+        } else {
+            logInfo(s_logger, "HTTP-OTA: Update available but no component changes");
+            clearPendingUpdate();
+            return true;
+        }
     }
 
     s_updateAvailable = true;

@@ -92,6 +92,9 @@
 #ifndef OTA_HTTP_CA_CERT_PEM
 #define OTA_HTTP_CA_CERT_PEM nullptr
 #endif
+#ifndef OTA_HTTP_FORCE_UPDATE_ON_NEW_VERSION
+#define OTA_HTTP_FORCE_UPDATE_ON_NEW_VERSION 1
+#endif
 
 #ifndef DEV_OTA_ARDUINO_PASS
 #define DEV_OTA_ARDUINO_PASS "admin"

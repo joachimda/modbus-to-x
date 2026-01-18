@@ -10,7 +10,6 @@ def _git(cmd):
     except Exception:
         return None
 
-# Gather Git metadata (robust fallbacks)
 describe = _git("git describe --tags --dirty --always")
 tag = _git("git describe --tags --abbrev=0")
 commit = _git("git rev-parse --short HEAD")

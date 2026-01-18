@@ -23,12 +23,9 @@ def ensure_package(module_name: str, pip_spec: str) -> None:
             print(f"[deps] Failed to install '{pip_spec}': {exc}")
             sys.exit(1)
 
-
 def main() -> None:
     print("[deps] Running build-time dependency check")
     for module_name, pip_spec in REQUIRED_PKGS.items():
         ensure_package(module_name, pip_spec)
 
-
-# IMPORTANT: Run on import so PlatformIO executes this when loading extra_scripts
 main()

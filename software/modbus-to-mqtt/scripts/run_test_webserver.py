@@ -111,7 +111,6 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
                 return f"{ts} [{lvl}] {msg}"
 
             lines = [line() for _ in range(20)]
-            # Return plain text for simplicity
             body = ("\n".join(lines)).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -195,7 +194,6 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
         return False
 
     def do_GET(self):
-        # Intercept simple API calls; otherwise serve static files
         if self.path.startswith("/api/"):
             if self._handle_api_get(self.path):
                 return

@@ -17,4 +17,5 @@
   (lib (name "EEV-FK1V681Q")(type "KiCad")(uri "${KIPRJMOD}/lib/symbols/EEV-FK1V681Q.kicad_sym")(options "")(descr ""))
   (lib (name "RJ12_615006138421")(type "KiCad")(uri "${KIPRJMOD}/lib/symbols/RJ12_615006138421.kicad_sym")(options "")(descr ""))
   (lib (name "Tantalum 330uF T495D337K006ATE100")(type "KiCad")(uri "${KIPRJMOD}/lib/symbols/T495D337K006ATE100.kicad_sym")(options "")(descr ""))
+  (lib (name "WL-SFTW_3528_PLCC4")(type "KiCad")(uri "${KIPRJMOD}/lib/symbols/WL-SFTW_3528_PLCC4.kicad_sym")(options "")(descr ""))
 )

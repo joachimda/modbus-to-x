@@ -8,7 +8,7 @@
 		(at 0 0 0)
 		(unlocked yes)
 		(layer "F.SilkS")
-		(uuid "393d7641-6f1c-42c0-926e-4466422da574")
+		(uuid "41859498-1986-492d-a22e-4426b9251025")
 		(effects
 			(font
 				(size 1 1)
@@ -20,7 +20,7 @@
 		(at 0 0 0)
 		(unlocked yes)
 		(layer "F.Fab")
-		(uuid "28ee4229-b96e-4278-bbbc-0cd2222c2a7b")
+		(uuid "810385ae-c6d0-4d8f-889b-bce50d1099af")
 		(effects
 			(font
 				(size 1 1)
@@ -32,7 +32,7 @@
 		(at 0 0 0)
 		(layer "F.Fab")
 		(hide yes)
-		(uuid "92a20b94-6983-46df-b89b-47550ff93859")
+		(uuid "f537af94-814a-4d24-b027-b8ce6e05243f")
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -44,7 +44,7 @@
 		(at 0 0 0)
 		(layer "F.Fab")
 		(hide yes)
-		(uuid "c30e1715-a53b-40ec-a3bc-5ac11275f72a")
+		(uuid "a5ea9153-d35d-4a87-a8d0-b0a047d496b3")
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -356,102 +356,6 @@
 		(size 3.302 1.2192)
 		(layers "F.Cu" "F.Mask" "F.Paste")
 		(uuid "6d4eee3b-ad07-404d-98c4-80100fc63103")
-	)
-	(zone
-		(net 0)
-		(net_name "")
-		(layer "F.Cu")
-		(uuid "801dedfe-aa3d-45e8-b9fc-d939f2468629")
-		(hatch full 0.508)
-		(connect_pads
-			(clearance 0)
-		)
-		(min_thickness 0.254)
-		(filled_areas_thickness no)
-		(keepout
-			(tracks not_allowed)
-			(vias not_allowed)
-			(pads allowed)
-			(copperpour not_allowed)
-			(footprints allowed)
-		)
-		(placement
-			(enabled no)
-			(sheetname "")
-		)
-		(fill
-			(thermal_gap 0.508)
-			(thermal_bridge_width 0.508)
-		)
-		(polygon
-			(pts
-				(xy -2 -4.2037) (xy 1.7037 -4.2037) (xy 1.7037 -0.6604) (xy -2 -0.6096)
-			)
-		)
-	)
-	(zone
-		(net 0)
-		(net_name "")
-		(layer "F.Cu")
-		(uuid "7ee188b7-8e49-4ed9-b5f8-cad55e1e8967")
-		(hatch full 0.508)
-		(connect_pads
-			(clearance 0)
-		)
-		(min_thickness 0.254)
-		(filled_areas_thickness no)
-		(keepout
-			(tracks not_allowed)
-			(vias not_allowed)
-			(pads allowed)
-			(copperpour not_allowed)
-			(footprints allowed)
-		)
-		(placement
-			(enabled no)
-			(sheetname "")
-		)
-		(fill
-			(thermal_gap 0.508)
-			(thermal_bridge_width 0.508)
-		)
-		(polygon
-			(pts
-				(xy -2 0.6096) (xy 1.7037 0.6604) (xy 1.7037 4.2037) (xy -2 4.2037)
-			)
-		)
-	)
-	(zone
-		(net 0)
-		(net_name "")
-		(layer "F.Cu")
-		(uuid "ab885aef-3b9e-44cf-abe2-23cfcd2f36f7")
-		(hatch full 0.508)
-		(connect_pads
-			(clearance 0)
-		)
-		(min_thickness 0.254)
-		(filled_areas_thickness no)
-		(keepout
-			(tracks not_allowed)
-			(vias not_allowed)
-			(pads allowed)
-			(copperpour not_allowed)
-			(footprints allowed)
-		)
-		(placement
-			(enabled no)
-			(sheetname "")
-		)
-		(fill
-			(thermal_gap 0.508)
-			(thermal_bridge_width 0.508)
-		)
-		(polygon
-			(pts
-				(xy -1.7526 -0.6604) (xy 1.7526 -0.6604) (xy 1.7526 0.6604) (xy -1.7526 0.6604)
-			)
-		)
 	)
 	(embedded_fonts no)
 )

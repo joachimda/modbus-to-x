@@ -13,6 +13,7 @@
 #include "services/IndicatorService.h"
 #include "services/ArduinoOtaManager.h"
 #include "services/TimeService.h"
+#include "network/mbx_server/OtaRecoveryPage.h"
 
 static constexpr auto WIFI_CONNECT_DELAY_MS = 100;
 static constexpr auto WIFI_CONNECT_TIMEOUT = 30000;
@@ -188,6 +189,10 @@ void MBXServer::configureRoutes() const {
 
     server->onNotFound([this](AsyncWebServerRequest *req) {
         logRequest(req);
+        if (!SPIFFS.exists("/index.html")) {
+            req->send_P(HttpResponseCodes::OK, HttpMediaTypes::HTML, OTA_RECOVERY_HTML);
+            return;
+        }
         req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT, "I haz no file");
     });
 

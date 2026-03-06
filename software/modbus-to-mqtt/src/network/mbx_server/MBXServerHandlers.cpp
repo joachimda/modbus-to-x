@@ -874,28 +874,26 @@ void MBXServerHandlers::handleOtaFilesystemUpload(AsyncWebServerRequest *r, cons
     if (index == 0U) {
         if (logger) logger->logInformation((String("OTA filesystem upload start: ") + fn).c_str());
         if (!OtaService::beginFilesystem(0, logger)) {
-            if (logger) {
-                logger->logError("OTA begin fs failed");
-                r->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, OTA_FS_UPLOAD_BEGIN_FAIL_RESP);
-                return;
-            }
+            if (logger) logger->logError("OTA begin fs failed");
+            r->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, OTA_FS_UPLOAD_BEGIN_FAIL_RESP);
+            return;
         }
-        if (len) {
-            if (!OtaService::write(data, len, logger)) {
-                if (logger) logger->logError("OTA fs write failed");
-            }
+    }
+    if (len) {
+        if (!OtaService::write(data, len, logger)) {
+            if (logger) logger->logError("OTA fs write failed");
         }
-        if (final) {
-            const bool ok = OtaService::end(true, logger);
-            if (!ok) {
-                r->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, OTA_END_FAIL_RESP);
-            } else {
-                r->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, OTA_END_FS_UPLOAD_OK);
-                xTaskCreatePinnedToCore([](void *) {
-                    delay(HttpResponseCodes::INTERNAL_SERVER_ERROR);
-                    ESP.restart();
-                }, "otaReboot", 2048, nullptr, 1, nullptr, APP_CPU_NUM);
-            }
+    }
+    if (final) {
+        const bool ok = OtaService::end(true, logger);
+        if (!ok) {
+            r->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, OTA_END_FAIL_RESP);
+        } else {
+            r->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, OTA_END_FS_UPLOAD_OK);
+            xTaskCreatePinnedToCore([](void *) {
+                delay(500);
+                ESP.restart();
+            }, "otaReboot", 2048, nullptr, 1, nullptr, APP_CPU_NUM);
         }
     }
 }

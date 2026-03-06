@@ -364,7 +364,7 @@ function buildTree() {
     });
 }
 
-function addDatapointToCurrentDevice() {
+function addDatapointToCurrentDevice(inherit = {}) {
     const d = getDevice(selection.deviceId);
     if (!d) return;
     const name = "datapoint";
@@ -372,18 +372,21 @@ function addDatapointToCurrentDevice() {
     let unique = baseId, i = 2;
     while (findDpById(unique)) unique = `${baseId}_${i++}`;
     d.datapoints = d.datapoints || [];
+    const addrFormat = inherit.addrFormat === "hex" ? "hex" : "dec";
+    const address = (Number.isInteger(inherit.address) && inherit.address >= 0) ? inherit.address : 0;
+    const poll_secs = Number.isFinite(inherit.poll_secs) ? inherit.poll_secs : 0;
     d.datapoints.push({
         id: unique, name,
         func: 3,
-        address: 0,
-        addrFormat: "dec",
+        address,
+        addrFormat,
         slice: "full",
         length: 1,
         type: "uint16",
         scale: 1,
         unit: "",
         topic: "",
-        poll_secs: 0
+        poll_secs
     });
     selection = {
         kind:"dp", deviceId:d.id, datapointId: unique
@@ -644,7 +647,14 @@ function showDatapointEditor() {
     const btnAddNext = $("#btn-dp-add-next");
     if (btnAddNext) {
         btnAddNext.onclick = () => {
-            addDatapointToCurrentDevice();
+            const nextAddress = (Number.isInteger(datapoint.address) && datapoint.address >= 0)
+                ? datapoint.address + 1
+                : 0;
+            addDatapointToCurrentDevice({
+                addrFormat: currentAddressFormat,
+                address: nextAddress,
+                poll_secs: datapoint.poll_secs
+            });
             // focus name field of the newly added datapoint editor
             setTimeout(() => { $("#dp-name")?.focus(); }, 0);
         };

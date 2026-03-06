@@ -273,27 +273,29 @@ bool HttpOtaService::applyPendingUpdate(String &errorOut) {
     logInfo(s_logger, "HTTP-OTA: Applying pending update");
     emitProgress("start", 0, 0, nullptr);
     IndicatorService::instance().setOtaActive(true);
+    // Flash firmware FIRST so that a failed FS flash leaves the old
+    // (working) UI in place rather than bricking the web interface.
     bool ok = true;
-    if (s_pendingUpdateFs) {
-        logInfo(s_logger, "HTTP-OTA: Updating filesystem");
-        ok = downloadVerifyAndFlash(s_pendingFsUrl, s_pendingFsSha256, U_SPIFFS, s_pendingFsLabel.c_str());
+    if (s_pendingUpdateApp) {
+        logInfo(s_logger, "HTTP-OTA: Updating firmware");
+        ok = downloadVerifyAndFlash(s_pendingAppUrl, s_pendingAppSha256, U_FLASH, nullptr);
         if (ok) {
-            storeAppliedFsHash(s_pendingFsSha256);
+            storeAppliedAppHash(s_pendingAppSha256);
         }
     } else {
-        logInfo(s_logger, "HTTP-OTA: Filesystem up to date, skipping");
-        emitProgress("fs_skip", 0, 0, nullptr);
+        logInfo(s_logger, "HTTP-OTA: Firmware up to date, skipping");
+        emitProgress("fw_skip", 0, 0, nullptr);
     }
     if (ok) {
-        if (s_pendingUpdateApp) {
-            logInfo(s_logger, "HTTP-OTA: Updating firmware");
-            ok = downloadVerifyAndFlash(s_pendingAppUrl, s_pendingAppSha256, U_FLASH, nullptr);
+        if (s_pendingUpdateFs) {
+            logInfo(s_logger, "HTTP-OTA: Updating filesystem");
+            ok = downloadVerifyAndFlash(s_pendingFsUrl, s_pendingFsSha256, U_SPIFFS, s_pendingFsLabel.c_str());
             if (ok) {
-                storeAppliedAppHash(s_pendingAppSha256);
+                storeAppliedFsHash(s_pendingFsSha256);
             }
         } else {
-            logInfo(s_logger, "HTTP-OTA: Firmware up to date, skipping");
-            emitProgress("fw_skip", 0, 0, nullptr);
+            logInfo(s_logger, "HTTP-OTA: Filesystem up to date, skipping");
+            emitProgress("fs_skip", 0, 0, nullptr);
         }
     }
     IndicatorService::instance().setOtaActive(false);

@@ -19,12 +19,9 @@
 
 <body class="configure" data-page="configure_modbus">
 <div class="page">
-    <header style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
+    <header style="display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;flex-wrap:wrap;">
         <div>
             <h1>Configure Modbus</h1>
-            <div class="muted">Configure the RS485 bus, Modbus devices, and their datapoints. Changes are saved and can be applied live.</div>
-        </div>
-        <nav class="toolbar">
             <button class="iconButton backButton" onclick="window.location.href='/'" aria-label="Back to dashboard" title="Back to dashboard">
                 <svg viewBox="0 0 309.143 309.143" xmlns="http://www.w3.org/2000/svg">
                     <path d="M112.855,154.571L240.481,26.946c2.929-2.929,2.929-7.678,0-10.606L226.339,2.197
@@ -34,6 +31,8 @@
                           fill="currentColor" />
                 </svg>
             </button>
+        </div>
+        <nav class="toolbar">
             <button class="iconButton downloadButton" id="btn-export" aria-label="Download configuration" title="Download configuration">
                 <svg viewBox="0 0 384 512" xmlns="http://www.w3.org/2000/svg">
                     <path
@@ -79,7 +78,7 @@
                 <label for="tree-search"></label>
                 <input id="tree-search" class="tree-search" placeholder="Search devices/datapoints…" />
                 <div id="tree-list" class="list"></div>
-                <div class="sidebar-footer">
+                <div class="sidebar-footer">rem
                     <button class="btn" id="btn-add-device">+ Add Device</button>
                 </div>
             </div>

@@ -329,9 +329,13 @@ void ModbusMqttBridge::publishHomeAssistantDiscovery(ModbusDevice &device) const
         const String friendlyName = ModbusTopicBuilder::friendlyName(device, dp);
         const String uniqueId = writeable ? baseUniqueId + "_cmd" : baseUniqueId;
 
+        const String component = readable ? "sensor"
+                                : (dp.function == WRITE_COIL) ? "switch"
+                                : "number";
+
         doc["name"] = friendlyName;
         doc["unique_id"] = uniqueId;
-        doc["object_id"] = uniqueId;
+        doc["default_entity_id"] = component + "." + uniqueId;
         doc["availability_topic"] = availabilityTopic;
         doc["payload_available"] = "online";
         doc["payload_not_available"] = "offline";

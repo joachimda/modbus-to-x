@@ -107,5 +107,5 @@ void loop() {
 #if OTA_HTTP_ENABLED
     HttpOtaService::loop();
 #endif
-    delay(500);
+    delay(10);
 }

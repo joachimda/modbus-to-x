@@ -23,7 +23,35 @@ export const STATIC_FILES = {
     CONFIG_SCHEMA_JSON: '/conf/schema.json',
 }
 
+/* ===========================
+   Theme (dark mode)
+   =========================== */
+export function initTheme() {
+    const saved = localStorage.getItem('mbx-theme');
+    if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    const btn = document.getElementById('btn-theme');
+    if (btn) btn.addEventListener('click', toggleTheme);
+}
+
+export function toggleTheme() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    if (isDark) {
+        document.documentElement.removeAttribute('data-theme');
+        localStorage.setItem('mbx-theme', 'light');
+    } else {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        localStorage.setItem('mbx-theme', 'dark');
+    }
+}
+
+// Apply theme immediately before DOMContentLoaded to avoid flash
+(function() {
+    const saved = localStorage.getItem('mbx-theme');
+    if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+})();
+
 document.addEventListener('DOMContentLoaded', async () => {
+    initTheme();
     const page = document.body?.dataset?.page;
     if (page === 'index' && typeof window.initIndex === 'function') await window.initIndex();
     if (page === 'configure_modbus' && typeof window.initConfigureModbus === 'function') await window.initConfigureModbus();

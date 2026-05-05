@@ -48,7 +48,7 @@ The project is split between dedicated hardware design files and a PlatformIO fi
 ### Prerequisites
 - Modbus-to-X hardware (v0.2 alpha or later) and Modbus RTU devices wired to the RS-485 terminals.
 - 4.5–40 VDC field power (buck input validated in the current design) and a USB-to-UART adapter if not using OTA uploads.
-- Development host with Python 3, [PlatformIO Core](https://platformio.org/install/cli), and a working `git` toolchain. Required Python build dependencies are installed automatically by `scripts/install_build_deps.py` when PlatformIO runs.【F:software/modbus-to-mqtt/scripts/install_build_deps.py†L1-L32】
+- Development host with Python 3, [PlatformIO Core](https://platformio.org/install/cli), and a working `git` toolchain. Required Python build dependencies are installed automatically by `scripts/install_build_deps.py` when PlatformIO runs.
 
 ### Build and Flash
 1. Clone the repository and enter the firmware workspace:
@@ -57,28 +57,32 @@ The project is split between dedicated hardware design files and a PlatformIO fi
    cd modbus-to-x/software/modbus-to-mqtt
    ```
 2. Choose an environment in `platformio.ini`:
-   - `prod-board-v0-1-alpha` targets the custom board with OTA uploads enabled by default.
+   - `mbx-custom-board-dev` — development build, serial upload (default).
+   - `mbx-custom-board-dev-ota` — development build, OTA upload (configure `upload_port` for your device).
+   - `mbx-custom-board-release` — release build (used by the GitHub Actions workflow).
+   - `mbx-custom-board-release-primer` — primes a dev device to receive HTTP OTA updates.
 3. Build the firmware (PlatformIO will fetch dependencies and embed git metadata):
    ```bash
    pio run
    ```
-4. Flash via USB/UART or OTA depending on the selected environment:
+4. Flash via USB/UART or OTA by selecting the matching environment:
    ```bash
-   # Serial upload (comment upload_protocol, upload_port and upload_flags)
-   pio run -e prod-board-v0-1-alpha -t upload
+   # Serial upload
+   pio run -e mbx-custom-board-dev -t upload
 
-   # OTA upload to a provisioned gateway (uncomment upload_protocol, upload_port and upload_flags)
-   pio run -e prod-board-v0-1-alpha -t upload
+   # OTA upload to a provisioned gateway
+   pio run -e mbx-custom-board-dev-ota -t upload
    ```
 5. Upload the web UI and config assets to SPIFFS when they change:
    ```bash
-   pio run -e prod-board-v0-1-alpha -t uploadfs
+   pio run -e mbx-custom-board-dev -t uploadfs
    ```
 
 ### Release Automation
 Pushing a `v*` tag triggers the GitHub Actions workflow in `.github/workflows/main.yml` to build firmware + filesystem images and create a GitHub Release with the assets:
 - `modbus-to-x.bin` (firmware)
 - `modbus-to-x.fs.bin` (filesystem)
+- `modbus-to-x.notes.txt` (release notes generated from the commit log since the previous tag)
 - `modbus-to-x.manifest.json` (includes SHA-256 hashes and a signature generated from `OTA_SIGNING_KEY_PEM` and `KID`).
 
 ### Local UI Development

@@ -13,6 +13,10 @@
           }
         }
     </script>
+    <style>
+        .danger-zone { border: 1px solid var(--danger, #c0392b); padding: 1rem; border-radius: 6px; }
+        .danger-zone h2 { margin-top: 0; }
+    </style>
 </head>
 <body data-page="configure_network">
 <header style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;">
@@ -35,11 +39,17 @@
     </nav>
 </header>
 <main>
-
+    <section class="card danger-zone">
+        <h2>Wipe Wi-Fi credentials</h2>
+        <p class="muted">
+            Erases the stored SSID and password and reboots the device into AP mode for re-provisioning.
+        </p>
+        <button id="btn-wipe-network" class="btn ghost">Wipe Wi-Fi credentials</button>
+    </section>
 </main>
 <script type="module">
     import 'app';
-    import 'data/pages/configure_network';
+    import 'configure_network';
 </script>
 </body>
 </html>

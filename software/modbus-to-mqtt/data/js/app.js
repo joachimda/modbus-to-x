@@ -12,6 +12,7 @@ export const API = {
     POST_MQTT_TEST: '/api/mqtt/test',
     POST_MODBUS_EXECUTE: '/api/modbus/execute',
     POST_SYSTEM_RESET: '/api/system/reboot',
+    RESET_NETWORK: '/reset',
     OTA_HTTP_CHECK: '/api/system/ota/http/check',
     OTA_HTTP_NOTES: '/api/system/ota/http/notes',
     OTA_HTTP_APPLY: '/api/system/ota/http/apply',
@@ -55,6 +56,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const page = document.body?.dataset?.page;
     if (page === 'index' && typeof window.initIndex === 'function') await window.initIndex();
     if (page === 'configure_modbus' && typeof window.initConfigureModbus === 'function') await window.initConfigureModbus();
+    if (page === 'configure_network' && typeof window.initConfigureNetwork === 'function') await window.initConfigureNetwork();
     if (page === 'mbx_captive_portal' && typeof window.initCaptivePortal === 'function') await window.initCaptivePortal();
     if (page === 'configure_mqtt' && typeof window.initConfigureMqtt === 'function') await window.initConfigureMqtt();
 });
@@ -71,6 +73,19 @@ export async function reboot() {
         }
     } catch (e) {
         alert("Reboot request failed: " + e.message);
+    }
+}
+export async function wipeNetwork() {
+    if (!confirm("Wipe Wi-Fi credentials and reboot? The device will return to AP mode.")) return;
+    try {
+        const r = await fetch(API.RESET_NETWORK, { method: "POST" });
+        if (r.ok) {
+            location.assign("/pages/reset_result.html");
+        } else {
+            alert(`Wipe request failed: ${r.status} ${r.statusText}`);
+        }
+    } catch (e) {
+        alert("Wipe request failed: " + e.message);
     }
 }
 export function rssiToBars(rssi) {

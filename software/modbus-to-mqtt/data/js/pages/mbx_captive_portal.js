@@ -1,7 +1,9 @@
-import {API, reboot, rssiBadge, rssiToBars} from 'app';
+import {API, reboot, rssiBadge, rssiToBars, wipeNetwork} from 'app';
 
 window.initCaptivePortal = async function initCaptivePortal() {
     document.querySelector('#btn-reboot').onclick = reboot;
+    const wipeBtn = document.querySelector('#btn-wipe-network');
+    if (wipeBtn) wipeBtn.onclick = wipeNetwork;
     await fetchSSIDs();
 }
 

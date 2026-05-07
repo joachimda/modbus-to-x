@@ -194,6 +194,13 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
         return False
 
     def do_GET(self):
+        if self.path == "/reset":
+            self.send_response(405)
+            self.send_header("Allow", "POST")
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"Use POST /reset")
+            return
         if self.path.startswith("/api/"):
             if self._handle_api_get(self.path):
                 return
@@ -202,6 +209,10 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/system/reboot":
             self._send_json({"ok": True})
+            return
+        if self.path == "/reset":
+            self.send_response(204)
+            self.end_headers()
             return
         return super().do_POST()
 

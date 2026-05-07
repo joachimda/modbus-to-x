@@ -115,10 +115,15 @@ void MBXServer::configureRoutes() const {
         MBXServerHandlers::getLogs(req);
     });
 
+    server->on(Routes::RESET_NETWORK, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        MBXServerHandlers::handleNetworkResetRequest(req);
+    });
     server->on(Routes::RESET_NETWORK, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
-        serveFsFile(req, SPIFFS, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML,
-                        _logger);
+        AsyncWebServerResponse *res = req->beginResponse(405, HttpMediaTypes::PLAIN_TEXT, "Use POST /reset");
+        res->addHeader("Allow", "POST");
+        req->send(res);
     });
 
     server->on(Routes::SYSTEM_STATS, HTTP_GET, [this](AsyncWebServerRequest *req) {
@@ -229,10 +234,15 @@ void MBXServer::configureAccessPointRoutes() const {
                }
     );
 
+    server->on(Routes::RESET_NETWORK, HTTP_POST, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        MBXServerHandlers::handleNetworkResetRequest(req);
+    }).setFilter(accessPointFilter);
     server->on(Routes::RESET_NETWORK, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
-        serveFsFile(req, SPIFFS, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML,
-                        _logger);
+        AsyncWebServerResponse *res = req->beginResponse(405, HttpMediaTypes::PLAIN_TEXT, "Use POST /reset");
+        res->addHeader("Allow", "POST");
+        req->send(res);
     }).setFilter(accessPointFilter);
 
     server->on(Routes::GET_WIFI_STATUS, HTTP_GET, [this](AsyncWebServerRequest *req) {

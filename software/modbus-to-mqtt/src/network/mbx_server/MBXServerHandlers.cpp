@@ -15,6 +15,7 @@
 #include "constants/HttpResponseCodes.h"
 #include "constants/Routes.h"
 #include "network/NetworkPortal.h"
+#include "network/mbx_server/OriginCheck.h"
 #include "services/StatService.h"
 #include "services/OtaService.h"
 #include "services/ota/HttpOtaService.h"
@@ -486,8 +487,8 @@ void MBXServerHandlers::getSsidListAsJson(AsyncWebServerRequest *req) {
     req->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, out);
 }
 
-void MBXServerHandlers::handleNetworkReset() {
-    Serial.println("MBXServerHandlers::handleNetworkReset called");
+static void runNetworkResetWorker() {
+    Serial.println("runNetworkResetWorker called");
     xTaskCreatePinnedToCore([](void *) {
         WiFi.persistent(true);
         WiFi.setAutoReconnect(false);
@@ -509,6 +510,23 @@ void MBXServerHandlers::handleNetworkReset() {
         vTaskDelay(pdMS_TO_TICKS(200)); // let flash writes finish
         ESP.restart();
     }, "netReset", 4096, nullptr, 1, nullptr, APP_CPU_NUM);
+}
+
+void MBXServerHandlers::handleNetworkResetRequest(AsyncWebServerRequest *req) {
+    String origin;
+    if (req->hasHeader("Origin")) origin = req->getHeader("Origin")->value();
+    String host;
+    if (req->hasHeader("Host")) host = req->getHeader("Host")->value();
+
+    if (!isOriginAllowed(origin, host)) {
+        Serial.printf("handleNetworkResetRequest: cross-origin rejected (Origin=%s, Host=%s)\n",
+                      origin.c_str(), host.c_str());
+        req->send(403, HttpMediaTypes::PLAIN_TEXT, "cross-origin denied");
+        return;
+    }
+
+    req->send(HttpResponseCodes::NO_CONTENT);
+    runNetworkResetWorker();
 }
 
 void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,

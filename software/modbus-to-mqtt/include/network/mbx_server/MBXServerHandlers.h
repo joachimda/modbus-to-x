@@ -27,7 +27,7 @@ public:
 
     static void handleModbusDisable(AsyncWebServerRequest * req, bool state);
 
-    static void handleNetworkReset();
+    static void handleNetworkResetRequest(AsyncWebServerRequest *req);
 
     static void handleWifiConnect(AsyncWebServerRequest *req, WifiConnectionController &wifi, const uint8_t *data,
                                   size_t len, size_t index, size_t total);

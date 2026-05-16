@@ -1,7 +1,9 @@
 #include "network/mbx_server/MBXServerHandlers.h"
 #include <atomic>
 #include <array>
+#include <cstdlib>
 #include <memory>
+#include "network/mbx_server/BodyAccumulator.h"
 #include "storage/ConfigFs.h"
 #include <WiFi.h>
 #include <esp_wifi.h>
@@ -511,18 +513,63 @@ void MBXServerHandlers::handleNetworkReset() {
     }, "netReset", 4096, nullptr, 1, nullptr, APP_CPU_NUM);
 }
 
+namespace {
+// Per-request body handlers must use ESPAsyncWebServer's request-scoped slots
+// (_tempFile, auto-closed; _tempObject, auto-freed) instead of function-local
+// statics — otherwise concurrent or aborted requests corrupt the next caller.
+// _tempObject is freed with free(), so it can hold malloc/calloc buffers or
+// simple POD flags, but not heap-allocated C++ objects with destructors.
+
+// Marks a body handler as failed mid-stream. Uses _tempObject as a single
+// error byte so the final-chunk branch can decide between success and 500.
+void markBodyError(AsyncWebServerRequest *req) {
+    if (req->_tempObject == nullptr) {
+        req->_tempObject = std::calloc(1U, 1U);
+    }
+    if (req->_tempObject != nullptr) {
+        *static_cast<uint8_t *>(req->_tempObject) = 1U;
+    }
+}
+
+bool bodyFailed(const AsyncWebServerRequest *req) {
+    return req->_tempObject != nullptr
+           && *static_cast<const uint8_t *>(req->_tempObject) != 0U;
+}
+
+// Routes a chunk-body handler error to the UI log terminal via MemoryLogger.
+// No-op if the memory logger has not been wired yet (early boot only).
+void logHandlerError(const char *msg) {
+    if (auto *mem = g_memlog.load(std::memory_order_acquire)) {
+        mem->logError(msg);
+    }
+}
+}  // namespace
+
 void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
                                                   const size_t index,
                                                   const size_t total) {
-    static File bodyFile;
     if (index == 0U) {
-        bodyFile = ConfigFS.open(ConfigFs::kModbusConfigFile, FILE_WRITE);
+        req->_tempFile = ConfigFS.open(ConfigFs::kModbusConfigFile, FILE_WRITE);
+        if (!req->_tempFile) {
+            logHandlerError("PUT /api/config/modbus: failed to open /conf/config.json for writing");
+            markBodyError(req);
+        }
     }
-    if (bodyFile) {
-        bodyFile.write(data, len);
+    if (req->_tempFile && len > 0U && !bodyFailed(req)) {
+        const size_t written = req->_tempFile.write(data, len);
+        if (written != len) {
+            logHandlerError("PUT /api/config/modbus: short write to /conf/config.json (config FS full?)");
+            req->_tempFile.close();
+            markBodyError(req);
+        }
     }
     if (index + len == total) {
-        if (bodyFile) bodyFile.close();
+        const bool failed = bodyFailed(req);
+        if (req->_tempFile) req->_tempFile.close();  // framework dtor also closes
+        if (failed) {
+            req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+            return;
+        }
         // Hot-reload Modbus configuration
         if (auto *mb = g_mb.load(std::memory_order_acquire)) {
             mb->reconfigureFromFile();
@@ -540,19 +587,29 @@ void MBXServerHandlers::handleModbusDisable(AsyncWebServerRequest *req, bool sta
 
 void MBXServerHandlers::handlePutMqttConfigBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
                                                 const size_t index, const size_t total) {
-    static String body;
-    if (index == 0U) body = "";
-    body.concat(reinterpret_cast<const char *>(data), len);
-    if (index + len < total) return;
+    char *body = BodyAccumulator::append(req->_tempObject, data, len, index, total);
+    if (body == nullptr) {
+        if (index + len == total) {
+            logHandlerError("PUT /api/config/mqtt: out of memory accumulating request body");
+            req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        }
+        return;
+    }
 
     // Write non-sensitive config to config FS
     File f = ConfigFS.open(ConfigFs::kMqttConfigFile, FILE_WRITE);
     if (!f) {
+        logHandlerError("PUT /api/config/mqtt: failed to open /conf/mqtt.json for writing");
         req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
         return;
     }
-    f.print(body);
+    const size_t written = f.write(reinterpret_cast<const uint8_t *>(body), total);
     f.close();
+    if (written != total) {
+        logHandlerError("PUT /api/config/mqtt: short write to /conf/mqtt.json (config FS full?)");
+        req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        return;
+    }
 
     // Hot-reload MQTT configuration
     if (auto *link = g_comm.load(std::memory_order_acquire)) {
@@ -564,13 +621,17 @@ void MBXServerHandlers::handlePutMqttConfigBody(AsyncWebServerRequest *req, cons
 
 void MBXServerHandlers::handlePutMqttSecretBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
                                                 const size_t index, const size_t total) {
-    static String body;
-    if (index == 0U) body = "";
-    body.concat(reinterpret_cast<const char *>(data), len);
-    if (index + len < total) return;
+    char *body = BodyAccumulator::append(req->_tempObject, data, len, index, total);
+    if (body == nullptr) {
+        if (index + len == total) {
+            logHandlerError("POST /api/config/mqtt/secret: out of memory accumulating request body");
+            req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        }
+        return;
+    }
 
     JsonDocument doc;
-    const DeserializationError derr = deserializeJson(doc, body);
+    const DeserializationError derr = deserializeJson(doc, body, total);
     if (derr) {
         req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
         return;
@@ -586,17 +647,21 @@ void MBXServerHandlers::handlePutMqttSecretBody(AsyncWebServerRequest *req, cons
 void MBXServerHandlers::handleWifiConnect(AsyncWebServerRequest *req, WifiConnectionController &wifi,
                                           const uint8_t *data, const size_t len,
                                           const size_t index, const size_t total) {
-    static String body;
-    if (index == 0) body = "";
-    body.concat(reinterpret_cast<const char *>(data), len);
-    if (index + len < total) return;
+    char *body = BodyAccumulator::append(req->_tempObject, data, len, index, total);
+    if (body == nullptr) {
+        if (index + len == total) {
+            logHandlerError("POST /api/wifi/connect: out of memory accumulating request body");
+            req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        }
+        return;
+    }
 
     String ssid, pass, bssid;
     uint8_t channel = 0;
     bool save = true;
     WifiStaticConfig st;
 
-    if (!parseConnectPayload((uint8_t *) body.c_str(), body.length(), ssid, pass, bssid, save, st, channel)
+    if (!parseConnectPayload(reinterpret_cast<uint8_t *>(body), total, ssid, pass, bssid, save, st, channel)
         || ssid.isEmpty()) {
         req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
         return;

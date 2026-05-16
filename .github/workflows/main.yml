@@ -16,10 +16,10 @@ jobs:
       KID: "bd774d27-badf-48a3-b927-a51fb08629f7"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -113,6 +113,7 @@ jobs:
           gh release create "v${VERSION}" \
             --title "v${VERSION}" \
             --generate-notes \
+            ${PRERELEASE} \
             "${DEVICE}.bin" \
             "${DEVICE}.fs.bin" \
             "${DEVICE}.notes.txt" \

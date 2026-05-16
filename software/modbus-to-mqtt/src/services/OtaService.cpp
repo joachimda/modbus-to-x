@@ -37,7 +37,10 @@ bool OtaService::end(const bool evenIfHasError, const Logger *logger) {
 
 bool OtaService::beginFilesystem(const size_t totalSize, const Logger *logger) {
     (void) totalSize;
-    if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS)) {
+    // The partition table contains two data/spiffs entries (cfg and spiffs);
+    // without an explicit label the Update library targets the first one (cfg),
+    // which is too small for the UI image. Force the spiffs partition.
+    if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS, -1, LOW, "spiffs")) {
         if (logger) logger->logError("OtaService::beginFilesystem - Update.begin failed");
         return false;
     }

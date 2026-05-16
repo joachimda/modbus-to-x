@@ -42,6 +42,10 @@ public:
 
     static void getNotesStatus(bool &ready, bool &pending, String &notesOut, String &errorOut);
 
+    static bool getIncludePrereleases();
+
+    static void setIncludePrereleases(bool include);
+
 private:
     static void emitProgress(const char *stage,
                              uint32_t received,
@@ -80,6 +84,8 @@ private:
     static void storeAppliedAppHash(const String &hash);
     static void storeAppliedFsHash(const String &hash);
     static bool fetchReleaseNotes(String &outText);
+    static bool resolveLatestReleaseTag(String &tagOut);
+    static String buildManifestUrlForTag(const String &tag);
 
     static Logger *s_logger;
     static const char *s_manifestUrl;
@@ -115,6 +121,7 @@ private:
     static String s_appliedAppSha;
     static String s_appliedFsSha;
     static String s_lastError;
+    static bool s_includePrereleases;
     static bool s_lastCheckOk;
     static bool s_lastCheckAvailable;
     static String s_lastCheckVersion;

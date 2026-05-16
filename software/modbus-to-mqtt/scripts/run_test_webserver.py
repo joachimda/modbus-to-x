@@ -123,6 +123,10 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"ok": True})
             return True
 
+        if path == "/api/system/ota/http/settings":
+            self._send_json({"includePrereleases": False})
+            return True
+
         if path == "/api/events":
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -202,6 +206,10 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/system/reboot":
             self._send_json({"ok": True})
+            return
+        if self.path == "/api/system/ota/http/settings":
+            self.send_response(204)
+            self.end_headers()
             return
         return super().do_POST()
 

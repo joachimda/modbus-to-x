@@ -1096,3 +1096,43 @@ void MBXServerHandlers::handleOtaHttpApply(AsyncWebServerRequest *req, const Log
     sendJson(req, doc);
 #endif
 }
+
+void MBXServerHandlers::handleGetOtaHttpSettings(AsyncWebServerRequest *req) {
+#if OTA_HTTP_ENABLED
+    JsonDocument doc;
+    doc["includePrereleases"] = HttpOtaService::getIncludePrereleases();
+    sendJson(req, doc);
+#else
+    JsonDocument doc;
+    doc["error"] = "ota_http_disabled";
+    sendJson(req, doc);
+#endif
+}
+
+void MBXServerHandlers::handlePutOtaHttpSettingsBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
+                                                    const size_t index, const size_t total) {
+#if OTA_HTTP_ENABLED
+    char *body = BodyAccumulator::append(req->_tempObject, data, len, index, total);
+    if (body == nullptr) {
+        if (index + len == total) {
+            logHandlerError("POST /api/system/ota/http/settings: out of memory accumulating request body");
+            req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        }
+        return;
+    }
+
+    JsonDocument doc;
+    const DeserializationError derr = deserializeJson(doc, body, total);
+    if (derr || !doc["includePrereleases"].is<bool>()) {
+        req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        return;
+    }
+    HttpOtaService::setIncludePrereleases(doc["includePrereleases"].as<bool>());
+    req->send(HttpResponseCodes::NO_CONTENT);
+#else
+    (void)data; (void)len; (void)index; (void)total;
+    JsonDocument doc;
+    doc["error"] = "ota_http_disabled";
+    sendJson(req, doc);
+#endif
+}

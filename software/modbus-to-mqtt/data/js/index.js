@@ -1,4 +1,4 @@
-import {API, safeGet, reboot} from "app";
+import {API, safeGet, safeJson, reboot} from "app";
 
 const $ = (sel) => document.querySelector(sel);
 const kv = (k, v) => `<div class="key">${k}</div><div>${v ?? "—"}</div>`;
@@ -245,6 +245,37 @@ function setupOtaControls() {
     if (modalCancel) modalCancel.addEventListener("click", closeOtaModal);
     if (modalConfirm) modalConfirm.addEventListener("click", confirmOtaApply);
     setOtaButtons({ checking: false, applying: false });
+    setupOtaPrereleaseToggle();
+}
+
+async function setupOtaPrereleaseToggle() {
+    const cb = $("#ota-include-prereleases");
+    if (!cb) return;
+    cb.disabled = true;
+    try {
+        const res = await safeJson(API.OTA_HTTP_SETTINGS, { method: "GET" });
+        cb.checked = !!res.includePrereleases;
+    } catch (err) {
+        // Leave unchecked on failure; user can still toggle.
+    } finally {
+        cb.disabled = false;
+    }
+    cb.addEventListener("change", async () => {
+        cb.disabled = true;
+        const desired = cb.checked;
+        try {
+            await safeJson(API.OTA_HTTP_SETTINGS, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ includePrereleases: desired }),
+            });
+        } catch (err) {
+            cb.checked = !desired;
+            setOtaStatus(`Failed to save setting: ${err?.message || err}`);
+        } finally {
+            cb.disabled = false;
+        }
+    });
 }
 
 function setOtaButtons({ checking, applying }) {

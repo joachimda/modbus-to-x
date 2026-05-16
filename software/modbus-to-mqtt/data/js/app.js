@@ -15,6 +15,7 @@ export const API = {
     OTA_HTTP_CHECK: '/api/system/ota/http/check',
     OTA_HTTP_NOTES: '/api/system/ota/http/notes',
     OTA_HTTP_APPLY: '/api/system/ota/http/apply',
+    OTA_HTTP_SETTINGS: '/api/system/ota/http/settings',
 };
 
 export const STATIC_FILES = {

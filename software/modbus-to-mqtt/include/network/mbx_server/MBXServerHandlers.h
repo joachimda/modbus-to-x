@@ -75,6 +75,11 @@ public:
 
     static void handleOtaHttpApply(AsyncWebServerRequest *req, const Logger *logger);
 
+    static void handleGetOtaHttpSettings(AsyncWebServerRequest *req);
+
+    static void handlePutOtaHttpSettingsBody(AsyncWebServerRequest *req, const uint8_t *data, size_t len, size_t index,
+                                             size_t total);
+
     static void initEventStream(AsyncWebServer *server, const Logger *logger);
     static void pumpEventStream();
 };

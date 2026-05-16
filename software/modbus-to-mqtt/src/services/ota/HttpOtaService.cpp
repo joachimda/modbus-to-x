@@ -54,6 +54,7 @@ bool HttpOtaService::s_lastCheckOk = false;
 bool HttpOtaService::s_lastCheckAvailable = false;
 String HttpOtaService::s_lastCheckVersion;
 String HttpOtaService::s_lastCheckError;
+bool HttpOtaService::s_includePrereleases = false;
 
 static void logInfo(const Logger *logger, const char* msg) {
     if (logger) logger->logInformation(msg);
@@ -92,9 +93,38 @@ void HttpOtaService::begin(Logger* logger,
     s_forceCheck = true;
     loadAppliedHashes();
 
+    {
+        Preferences prefs;
+        if (prefs.begin("ota", true)) {
+            s_includePrereleases = prefs.getBool("pre_rel", false);
+            prefs.end();
+        }
+    }
+
     if (s_logger) {
         s_logger->logInformation("HTTP-OTA: Ready");
     }
+}
+
+bool HttpOtaService::getIncludePrereleases() {
+    return s_includePrereleases;
+}
+
+void HttpOtaService::setIncludePrereleases(const bool include) {
+    if (include == s_includePrereleases) return;
+    s_includePrereleases = include;
+    Preferences prefs;
+    if (prefs.begin("ota", false)) {
+        prefs.putBool("pre_rel", include);
+        prefs.end();
+    }
+    // Invalidate any cached check result so the user sees the new channel on next check.
+    s_lastCheckOk = false;
+    s_lastCheckAvailable = false;
+    s_lastCheckVersion = "";
+    s_lastCheckError = "";
+    clearPendingUpdate();
+    s_forceCheck = true;
 }
 
 void HttpOtaService::setIntervalMs(const uint32_t intervalMs) {
@@ -320,6 +350,17 @@ bool HttpOtaService::hasPendingUpdate(String &versionOut) {
 }
 
 bool HttpOtaService::fetchManifest(String& outJson) {
+    String url;
+    if (s_includePrereleases) {
+        String tag;
+        if (!resolveLatestReleaseTag(tag)) {
+            return false;
+        }
+        url = buildManifestUrlForTag(tag);
+    } else {
+        url = String(s_manifestUrl);
+    }
+
     WiFiClientSecure client;
     if (s_caCertPem && s_caCertPem[0] != '\0') {
         client.setCACert(s_caCertPem);
@@ -329,9 +370,9 @@ bool HttpOtaService::fetchManifest(String& outJson) {
     }
 
     HTTPClient http;
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
 
-    if (!http.begin(client, s_manifestUrl)) {
+    if (!http.begin(client, url)) {
         logErr(s_logger, "HTTP-OTA: http.begin() failed");
         s_lastError = "http_begin_failed";
         return false;
@@ -349,6 +390,70 @@ bool HttpOtaService::fetchManifest(String& outJson) {
     outJson = http.getString();
     http.end();
     return true;
+}
+
+bool HttpOtaService::resolveLatestReleaseTag(String &tagOut) {
+    tagOut = "";
+
+    WiFiClientSecure client;
+    if (s_caCertPem && s_caCertPem[0] != '\0') {
+        client.setCACert(s_caCertPem);
+    } else {
+        client.setInsecure();
+    }
+
+    HTTPClient http;
+    http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+    // GitHub's API rejects requests without a User-Agent.
+    http.setUserAgent("modbus-to-x-ota");
+
+    if (!http.begin(client, OTA_HTTP_RELEASES_API_URL)) {
+        logErr(s_logger, "HTTP-OTA: releases API begin failed");
+        s_lastError = "releases_api_begin_failed";
+        return false;
+    }
+    http.addHeader("Accept", "application/vnd.github+json");
+
+    const int code = http.GET();
+    if (code != HTTP_CODE_OK) {
+        const String msg = "HTTP-OTA: Releases API GET failed: " + String(code);
+        logErr(s_logger, msg.c_str());
+        s_lastError = "releases_api_http_error";
+        http.end();
+        return false;
+    }
+
+    const String body = http.getString();
+    http.end();
+
+    JsonDocument filter;
+    filter[0]["tag_name"] = true;
+    JsonDocument doc;
+    const DeserializationError err = deserializeJson(doc, body, DeserializationOption::Filter(filter));
+    if (err) {
+        logErr(s_logger, "HTTP-OTA: Releases API JSON parse failed");
+        s_lastError = "releases_api_parse_failed";
+        return false;
+    }
+    if (!doc.is<JsonArray>() || doc.size() == 0) {
+        logErr(s_logger, "HTTP-OTA: Releases API returned no releases");
+        s_lastError = "releases_api_empty";
+        return false;
+    }
+    const String tag = doc[0]["tag_name"] | "";
+    if (tag.isEmpty()) {
+        logErr(s_logger, "HTTP-OTA: Releases API tag_name missing");
+        s_lastError = "releases_api_no_tag";
+        return false;
+    }
+    tagOut = tag;
+    return true;
+}
+
+String HttpOtaService::buildManifestUrlForTag(const String &tag) {
+    String url(s_manifestUrl);
+    url.replace("/releases/latest/download/", "/releases/download/" + tag + "/");
+    return url;
 }
 
 bool HttpOtaService::processManifestAndMaybeUpdate(const String& json) {
@@ -556,7 +661,7 @@ bool HttpOtaService::downloadVerifyAndFlash(const String& url,
     }
 
     HTTPClient http;
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
     http.setReuse(false);
     http.setTimeout(httpTimeoutMs);
 
@@ -790,7 +895,7 @@ bool HttpOtaService::fetchReleaseNotes(String &outText) {
     }
 
     HTTPClient http;
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
     http.setReuse(false);
     http.setTimeout(20000);
 

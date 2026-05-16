@@ -83,6 +83,9 @@
 #ifndef OTA_HTTP_MANIFEST_URL
 #define OTA_HTTP_MANIFEST_URL "https://github.com/joachimda/modbus-to-x/releases/latest/download/modbus-to-x.manifest.json"
 #endif
+#ifndef OTA_HTTP_RELEASES_API_URL
+#define OTA_HTTP_RELEASES_API_URL "https://api.github.com/repos/joachimda/modbus-to-x/releases?per_page=1"
+#endif
 #ifndef OTA_HTTP_DEVICE
 #define OTA_HTTP_DEVICE "modbus-to-x"
 #endif

@@ -187,6 +187,17 @@ void MBXServer::configureRoutes() const {
         MBXServerHandlers::handleOtaHttpApply(req, _logger);
     });
 
+    server->on(Routes::OTA_HTTP_SETTINGS, HTTP_GET, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        MBXServerHandlers::handleGetOtaHttpSettings(req);
+    });
+
+    server->on(Routes::OTA_HTTP_SETTINGS, HTTP_POST, [this](const AsyncWebServerRequest *req) {
+        logRequest(req);
+    }, nullptr, [](AsyncWebServerRequest *req, const uint8_t *data, const size_t len, const size_t index, const size_t total) {
+        MBXServerHandlers::handlePutOtaHttpSettingsBody(req, data, len, index, total);
+    });
+
     server->onNotFound([this](AsyncWebServerRequest *req) {
         logRequest(req);
         if (!SPIFFS.exists("/index.html")) {
@@ -286,6 +297,17 @@ void MBXServer::configureAccessPointRoutes() const {
             return;
         }
         MBXServerHandlers::handleOtaHttpApply(req, _logger);
+    });
+
+    server->on(Routes::OTA_HTTP_SETTINGS, HTTP_GET, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        MBXServerHandlers::handleGetOtaHttpSettings(req);
+    });
+
+    server->on(Routes::OTA_HTTP_SETTINGS, HTTP_POST, [this](const AsyncWebServerRequest *req) {
+        logRequest(req);
+    }, nullptr, [](AsyncWebServerRequest *req, const uint8_t *data, const size_t len, const size_t index, const size_t total) {
+        MBXServerHandlers::handlePutOtaHttpSettingsBody(req, data, len, index, total);
     });
 
     for (const char *path : CAPTIVE_PORTAL_ENDPOINTS) {

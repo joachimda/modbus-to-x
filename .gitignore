@@ -61,6 +61,7 @@ dkms.conf
 *.bak
 *.bck
 *.kicad_pcb-bak
+*.history
 *.kicad_sch-bak
 *-backups
 *.kicad_prl

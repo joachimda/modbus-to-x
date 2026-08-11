@@ -84,6 +84,7 @@
                 <h3>System</h3>
             </div>
             <div class="kvs" id="system-kvs"></div>
+            <button class="btn small ghost" id="btn-factory-reset" style="margin-top:.75rem;">Factory reset</button>
         </article>
 
         <article class="card" id="card-firmware">
@@ -91,6 +92,7 @@
                 <h3>Firmware</h3>
             </div>
             <div class="muted" id="ota-status">Updates are checked manually.</div>
+            <div class="muted" id="ota-protection-status" style="margin-top:.5rem;">Loading OTA protection state…</div>
             <div class="kvs" id="firmware-kvs"></div>
             <div class="firmware-actions">
                 <button class="btn small primary" id="btn-ota-apply" disabled>Apply update</button>
@@ -100,6 +102,29 @@
                 <input type="checkbox" id="ota-include-prereleases">
                 Include pre-release (beta) updates
             </label>
+            <details style="margin-top:1rem;">
+                <summary>OTA password and manual uploads</summary>
+                <p class="muted">An OTA password is recommended. This device uses plain HTTP, so the password is not hidden from observers on the local network.</p>
+                <label>New OTA password
+                    <input type="password" id="ota-new-password" minlength="8" maxlength="128" autocomplete="new-password">
+                </label>
+                <label>Confirm password
+                    <input type="password" id="ota-confirm-password" minlength="8" maxlength="128" autocomplete="new-password">
+                </label>
+                <div class="actions">
+                    <button class="btn small primary" id="btn-ota-password-save">Set password</button>
+                    <button class="btn small ghost" id="btn-ota-password-clear">Clear password</button>
+                </div>
+                <hr>
+                <label>Firmware image (.bin)
+                    <input type="file" id="ota-firmware-file" accept=".bin,application/octet-stream">
+                </label>
+                <button class="btn small primary" id="btn-ota-firmware-upload">Upload firmware</button>
+                <label style="margin-top:.75rem;">Filesystem image (.bin)
+                    <input type="file" id="ota-filesystem-file" accept=".bin,application/octet-stream">
+                </label>
+                <button class="btn small primary" id="btn-ota-filesystem-upload">Upload filesystem</button>
+            </details>
         </article>
 
         <article class="card" id="card-storage">

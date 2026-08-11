@@ -55,6 +55,12 @@ public:
 
     static void handleDeviceReset(const Logger *logger);
 
+    static bool isOtaRequestAuthorized(const AsyncWebServerRequest *req);
+
+    static bool cacheOtaUploadAuthorization(AsyncWebServerRequest *req);
+
+    static void sendOtaUnauthorized(AsyncWebServerRequest *req);
+
     static void handleMqttTestConnection(AsyncWebServerRequest *req);
 
     /**
@@ -79,6 +85,14 @@ public:
 
     static void handlePutOtaHttpSettingsBody(AsyncWebServerRequest *req, const uint8_t *data, size_t len, size_t index,
                                              size_t total);
+
+    static void handlePutOtaPasswordBody(AsyncWebServerRequest *req, const uint8_t *data, size_t len, size_t index,
+                                         size_t total);
+
+    static void handleDeleteOtaPassword(AsyncWebServerRequest *req);
+
+    static void handleFactoryResetBody(AsyncWebServerRequest *req, const uint8_t *data, size_t len, size_t index,
+                                       size_t total, const Logger *logger);
 
     static void initEventStream(AsyncWebServer *server, const Logger *logger);
     static void pumpEventStream();

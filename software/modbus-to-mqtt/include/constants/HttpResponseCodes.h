@@ -4,6 +4,8 @@
 class HttpResponseCodes {
 public:
     static constexpr int OK = 200;
+    static constexpr int BAD_REQUEST_HTTP = 400;
+    static constexpr int UNAUTHORIZED = 401;
     static constexpr int ACCEPTED = 202;
     static constexpr int NO_CONTENT = 204;
     static constexpr int REDIRECT = 302;

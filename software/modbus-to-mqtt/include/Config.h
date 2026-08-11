@@ -70,13 +70,6 @@
 /****************************************************
  * OTA
  ****************************************************/
-#ifndef OTA_HTTP_USER
-#define OTA_HTTP_USER "admin"
-#endif
-#ifndef OTA_HTTP_PASS
-#define OTA_HTTP_PASS "admin"
-#endif
-
 #ifndef OTA_HTTP_ENABLED
 #define OTA_HTTP_ENABLED 1
 #endif
@@ -100,7 +93,10 @@
 #endif
 
 #ifndef DEV_OTA_ARDUINO_PASS
-#define DEV_OTA_ARDUINO_PASS "admin"
+#define DEV_OTA_ARDUINO_PASS ""
+#endif
+#ifndef DEV_OTA_ENABLED
+#define DEV_OTA_ENABLED 0
 #endif
 
 /****************************************************

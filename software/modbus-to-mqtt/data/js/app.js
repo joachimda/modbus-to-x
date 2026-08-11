@@ -16,6 +16,10 @@ export const API = {
     OTA_HTTP_NOTES: '/api/system/ota/http/notes',
     OTA_HTTP_APPLY: '/api/system/ota/http/apply',
     OTA_HTTP_SETTINGS: '/api/system/ota/http/settings',
+    OTA_PASSWORD: '/api/system/ota/password',
+    OTA_FIRMWARE: '/api/system/ota/firmware',
+    OTA_FILESYSTEM: '/api/system/ota/fs',
+    FACTORY_RESET: '/api/system/factory-reset',
 };
 
 export const STATIC_FILES = {

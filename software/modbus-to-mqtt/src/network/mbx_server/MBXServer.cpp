@@ -10,6 +10,7 @@
 #include "storage/ConfigFs.h"
 #include "network/NetworkPortal.h"
 #include "network/mbx_server/MBXServerHandlers.h"
+#include "network/mbx_server/OtaRouteRegistration.h"
 #include "services/IndicatorService.h"
 #include "services/ArduinoOtaManager.h"
 #include "services/TimeService.h"
@@ -146,57 +147,7 @@ void MBXServer::configureRoutes() const {
         MBXServerHandlers::handleModbusDisable(req, true);
     });
 
-    server->on(Routes::OTA_FIRMWARE, HTTP_POST, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); }
-    }, [this](AsyncWebServerRequest *req, const String &fn, const size_t index, uint8_t *data, const size_t len, const bool final) {
-        MBXServerHandlers::handleOtaFirmwareUpload(req, fn, index, data, len, final, _logger);
-    });
-
-    server->on(Routes::OTA_FILESYSTEM, HTTP_POST, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); }
-    }, [this](AsyncWebServerRequest *req, const String &fn, const size_t index, uint8_t *data, const size_t len, const bool final) {
-        MBXServerHandlers::handleOtaFilesystemUpload(req, fn, index, data, len, final, _logger);
-    });
-
-    server->on(Routes::OTA_HTTP_CHECK, HTTP_POST, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) {
-            req->requestAuthentication();
-            return;
-        }
-        MBXServerHandlers::handleOtaHttpCheck(req, _logger);
-    });
-
-    server->on(Routes::OTA_HTTP_NOTES, HTTP_POST, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) {
-            req->requestAuthentication();
-            return;
-        }
-        MBXServerHandlers::handleOtaHttpNotes(req, _logger);
-    });
-
-    server->on(Routes::OTA_HTTP_APPLY, HTTP_POST, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) {
-            req->requestAuthentication();
-            return;
-        }
-        MBXServerHandlers::handleOtaHttpApply(req, _logger);
-    });
-
-    server->on(Routes::OTA_HTTP_SETTINGS, HTTP_GET, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        MBXServerHandlers::handleGetOtaHttpSettings(req);
-    });
-
-    server->on(Routes::OTA_HTTP_SETTINGS, HTTP_POST, [this](const AsyncWebServerRequest *req) {
-        logRequest(req);
-    }, nullptr, [](AsyncWebServerRequest *req, const uint8_t *data, const size_t len, const size_t index, const size_t total) {
-        MBXServerHandlers::handlePutOtaHttpSettingsBody(req, data, len, index, total);
-    });
+    configureOtaRoutes();
 
     server->onNotFound([this](AsyncWebServerRequest *req) {
         logRequest(req);
@@ -213,6 +164,78 @@ void MBXServer::configureRoutes() const {
     });
 }
 
+void MBXServer::configureOtaRoutes() const {
+    struct Callbacks {
+        const MBXServer *owner;
+
+        bool isAuthorized(const AsyncWebServerRequest *request) const {
+            return MBXServerHandlers::isOtaRequestAuthorized(request);
+        }
+
+        bool cacheUploadAuthorization(AsyncWebServerRequest *request) const {
+            return MBXServerHandlers::cacheOtaUploadAuthorization(request);
+        }
+
+        void sendUnauthorized(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::sendOtaUnauthorized(request);
+        }
+
+        void logRequest(const AsyncWebServerRequest *request) const {
+            owner->logRequest(request);
+        }
+
+        void handleFirmwareUpload(AsyncWebServerRequest *request, const String &filename, const size_t index,
+                                  uint8_t *data, const size_t length, const bool final) const {
+            MBXServerHandlers::handleOtaFirmwareUpload(
+                request, filename, index, data, length, final, owner->_logger);
+        }
+
+        void handleFilesystemUpload(AsyncWebServerRequest *request, const String &filename, const size_t index,
+                                    uint8_t *data, const size_t length, const bool final) const {
+            MBXServerHandlers::handleOtaFilesystemUpload(
+                request, filename, index, data, length, final, owner->_logger);
+        }
+
+        void handleHttpCheck(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::handleOtaHttpCheck(request, owner->_logger);
+        }
+
+        void handleHttpNotes(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::handleOtaHttpNotes(request, owner->_logger);
+        }
+
+        void handleHttpApply(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::handleOtaHttpApply(request, owner->_logger);
+        }
+
+        void handleGetHttpSettings(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::handleGetOtaHttpSettings(request);
+        }
+
+        void handlePutHttpSettingsBody(AsyncWebServerRequest *request, const uint8_t *data, const size_t length,
+                                       const size_t index, const size_t total) const {
+            MBXServerHandlers::handlePutOtaHttpSettingsBody(request, data, length, index, total);
+        }
+
+        void handlePutPasswordBody(AsyncWebServerRequest *request, const uint8_t *data, const size_t length,
+                                   const size_t index, const size_t total) const {
+            MBXServerHandlers::handlePutOtaPasswordBody(request, data, length, index, total);
+        }
+
+        void handleDeletePassword(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::handleDeleteOtaPassword(request);
+        }
+
+        void handleFactoryResetBody(AsyncWebServerRequest *request, const uint8_t *data, const size_t length,
+                                    const size_t index, const size_t total) const {
+            MBXServerHandlers::handleFactoryResetBody(request, data, length, index, total, owner->_logger);
+        }
+    };
+
+    OtaRouteRegistration::configure<AsyncWebServerRequest, String>(
+        server, Callbacks{this}, HTTP_GET, HTTP_POST, HTTP_PUT, HTTP_DELETE);
+}
+
 void MBXServer::configureAccessPointRoutes() const {
     server->serveStatic("/", SPIFFS, "/")
             .setDefaultFile("/pages/mbx_captive_portal.html")
@@ -223,6 +246,10 @@ void MBXServer::configureAccessPointRoutes() const {
             });
 
     server->on(Routes::ROOT, HTTP_GET, [this](AsyncWebServerRequest *req) {
+        if (!SPIFFS.exists("/pages/mbx_captive_portal.html")) {
+            req->send(HttpResponseCodes::OK, HttpMediaTypes::HTML, OTA_RECOVERY_HTML);
+            return;
+        }
         serveFsFile(req, SPIFFS, "/pages/mbx_captive_portal.html", nullptr, HttpMediaTypes::HTML, _logger);
     });
 
@@ -259,56 +286,7 @@ void MBXServer::configureAccessPointRoutes() const {
         MBXServerHandlers::handleWifiCancel(req, g_wifi);
     });
 
-    server->on(Routes::OTA_FIRMWARE, HTTP_POST, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); }
-    }, [this](AsyncWebServerRequest *req, const String &fn, const size_t index, uint8_t *data, const size_t len, const bool final) {
-        MBXServerHandlers::handleOtaFirmwareUpload(req, fn, index, data, len, final, _logger);
-    });
-    server->on(Routes::OTA_FILESYSTEM, HTTP_POST, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) { req->requestAuthentication(); }
-    }, [this](AsyncWebServerRequest *req, const String &fn, const size_t index, uint8_t *data, const size_t len, const bool final) {
-        MBXServerHandlers::handleOtaFilesystemUpload(req, fn, index, data, len, final, _logger);
-    });
-
-    server->on(Routes::OTA_HTTP_CHECK, HTTP_POST, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) {
-            req->requestAuthentication();
-            return;
-        }
-        MBXServerHandlers::handleOtaHttpCheck(req, _logger);
-    });
-
-    server->on(Routes::OTA_HTTP_NOTES, HTTP_POST, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) {
-            req->requestAuthentication();
-            return;
-        }
-        MBXServerHandlers::handleOtaHttpNotes(req, _logger);
-    });
-
-    server->on(Routes::OTA_HTTP_APPLY, HTTP_POST, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        if (!req->authenticate(OTA_HTTP_USER, OTA_HTTP_PASS)) {
-            req->requestAuthentication();
-            return;
-        }
-        MBXServerHandlers::handleOtaHttpApply(req, _logger);
-    });
-
-    server->on(Routes::OTA_HTTP_SETTINGS, HTTP_GET, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        MBXServerHandlers::handleGetOtaHttpSettings(req);
-    });
-
-    server->on(Routes::OTA_HTTP_SETTINGS, HTTP_POST, [this](const AsyncWebServerRequest *req) {
-        logRequest(req);
-    }, nullptr, [](AsyncWebServerRequest *req, const uint8_t *data, const size_t len, const size_t index, const size_t total) {
-        MBXServerHandlers::handlePutOtaHttpSettingsBody(req, data, len, index, total);
-    });
+    configureOtaRoutes();
 
     for (const char *path : CAPTIVE_PORTAL_ENDPOINTS) {
         server->on(path, HTTP_ANY, [](AsyncWebServerRequest *req) {
@@ -317,6 +295,10 @@ void MBXServer::configureAccessPointRoutes() const {
     }
 
     server->onNotFound([](AsyncWebServerRequest *req) {
+        if (!SPIFFS.exists("/pages/mbx_captive_portal.html")) {
+            req->send(HttpResponseCodes::OK, HttpMediaTypes::HTML, OTA_RECOVERY_HTML);
+            return;
+        }
         MBXServerHandlers::handleCaptivePortalRedirect(req);
     });
 }

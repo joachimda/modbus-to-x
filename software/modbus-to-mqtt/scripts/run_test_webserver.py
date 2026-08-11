@@ -9,6 +9,7 @@ Local static web server for ESP pages.
 """
 
 import argparse
+import base64
 import contextlib
 import http.server
 import json
@@ -34,6 +35,8 @@ mimetypes.add_type("text/html; charset=utf-8", ".html")
 
 
 class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
+    ota_password = None
+
     def end_headers(self):
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
         self.send_header("Pragma", "no-cache")
@@ -54,6 +57,35 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def _read_body(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        return self.rfile.read(length) if length else b""
+
+    def _ota_authorized(self):
+        password = type(self).ota_password
+        if password is None:
+            return True
+        authorization = self.headers.get("Authorization", "")
+        if not authorization.startswith("Bearer "):
+            return False
+        try:
+            supplied = base64.b64decode(authorization[7:], validate=True).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return False
+        return supplied == password
+
+    def _require_ota_authorized(self):
+        if self._ota_authorized():
+            return True
+        self.send_response(401)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("WWW-Authenticate", 'Bearer realm="ota"')
+        body = b'{"error":"ota_password_required"}'
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+        return False
 
     def _handle_api_get(self, path: str) -> bool:
         # System stats used by index.js
@@ -124,7 +156,10 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
             return True
 
         if path == "/api/system/ota/http/settings":
-            self._send_json({"includePrereleases": False})
+            self._send_json({
+                "includePrereleases": False,
+                "passwordProtected": type(self).ota_password is not None,
+            })
             return True
 
         if path == "/api/events":
@@ -208,10 +243,78 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"ok": True})
             return
         if self.path == "/api/system/ota/http/settings":
+            self._read_body()
             self.send_response(204)
             self.end_headers()
             return
+        if self.path.startswith("/api/system/ota/http/check"):
+            if not self._require_ota_authorized():
+                return
+            self._send_json({"ok": True, "available": True, "pending": False, "version": "9.9.9-test"})
+            return
+        if self.path.startswith("/api/system/ota/http/notes"):
+            if not self._require_ota_authorized():
+                return
+            self._send_json({"ok": True, "pending": False, "notes": "Mock release notes"})
+            return
+        if self.path == "/api/system/ota/http/apply":
+            if not self._require_ota_authorized():
+                return
+            self._send_json({"ok": True, "started": True, "version": "9.9.9-test"})
+            return
+        if self.path in ("/api/system/ota/firmware", "/api/system/ota/fs"):
+            if not self._require_ota_authorized():
+                self._read_body()
+                return
+            self._read_body()
+            image_type = "firmware" if self.path.endswith("firmware") else "filesystem"
+            self._send_json({"ok": True, "type": image_type})
+            return
+        if self.path == "/api/system/factory-reset":
+            if not self._require_ota_authorized():
+                self._read_body()
+                return
+            try:
+                payload = json.loads(self._read_body() or b"{}")
+            except json.JSONDecodeError:
+                payload = {}
+            if payload.get("confirm") != "factory-reset":
+                self._send_json({"error": "bad_request"}, 400)
+                return
+            type(self).ota_password = None
+            self._send_json({"ok": True, "rebooting": True}, 202)
+            return
         return super().do_POST()
+
+    def do_PUT(self):
+        if self.path == "/api/system/ota/password":
+            if not self._require_ota_authorized():
+                self._read_body()
+                return
+            try:
+                payload = json.loads(self._read_body() or b"{}")
+            except json.JSONDecodeError:
+                payload = {}
+            password = payload.get("password")
+            length = len(password.encode("utf-8")) if isinstance(password, str) else 0
+            if length < 8 or length > 128:
+                self._send_json({"error": "invalid_password"}, 400)
+                return
+            type(self).ota_password = password
+            self.send_response(204)
+            self.end_headers()
+            return
+        return super().do_PUT()
+
+    def do_DELETE(self):
+        if self.path == "/api/system/ota/password":
+            if not self._require_ota_authorized():
+                return
+            type(self).ota_password = None
+            self.send_response(204)
+            self.end_headers()
+            return
+        self.send_error(404)
 
 
 def find_project_root(start: Path) -> Path:

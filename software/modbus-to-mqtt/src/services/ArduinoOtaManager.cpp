@@ -5,8 +5,13 @@
 #include "Logger.h"
 
 static Logger *g_logger = nullptr;
+static bool g_started = false;
 
 void ArduinoOtaManager::begin(Logger *logger) {
+    if (DEV_OTA_ARDUINO_PASS[0] == '\0') {
+        if (logger) logger->logWarning("Dev-OTA disabled: no local password supplied");
+        return;
+    }
     g_logger = logger;
 
     ArduinoOTA
@@ -28,11 +33,12 @@ void ArduinoOtaManager::begin(Logger *logger) {
     ArduinoOTA.setPassword(DEV_OTA_ARDUINO_PASS);
     ArduinoOTA.setPartitionLabel("spiffs");
     ArduinoOTA.begin();
+    g_started = true;
     if (g_logger) g_logger->logInformation("Dev-OTA: Ready");
 }
 
 void ArduinoOtaManager::loop() {
-    ArduinoOTA.handle();
+    if (g_started) ArduinoOTA.handle();
 }
 #else
 void ArduinoOtaManager::begin(Logger *) {}

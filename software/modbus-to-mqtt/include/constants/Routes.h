@@ -32,6 +32,8 @@ public:
     constexpr static auto OTA_HTTP_NOTES = "/api/system/ota/http/notes";
     constexpr static auto OTA_HTTP_APPLY = "/api/system/ota/http/apply";
     constexpr static auto OTA_HTTP_SETTINGS = "/api/system/ota/http/settings";
+    constexpr static auto OTA_PASSWORD = "/api/system/ota/password";
+    constexpr static auto FACTORY_RESET = "/api/system/factory-reset";
     constexpr static auto DEVICE_RESET = "/api/system/reboot";
     constexpr static auto SYSTEM_STATS = "/api/stats/system";
     constexpr static auto LOGS = "/api/logs";

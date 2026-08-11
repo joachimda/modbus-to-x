@@ -3,12 +3,14 @@
 #include <array>
 #include <cstdlib>
 #include <memory>
+#include <new>
 #include "network/mbx_server/BodyAccumulator.h"
 #include "storage/ConfigFs.h"
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
+#include <nvs_flash.h>
 #include <AsyncEventSource.h>
 #include <Arduino.h>
 #include "Config.h"
@@ -18,8 +20,13 @@
 #include "constants/Routes.h"
 #include "network/NetworkPortal.h"
 #include "services/StatService.h"
+#include "services/FactoryResetCore.h"
 #include "services/OtaService.h"
 #include "services/ota/HttpOtaService.h"
+#include "services/ota/OtaAuthorizationCore.h"
+#include "services/ota/OtaCredentialCore.h"
+#include "services/ota/OtaCredentialService.h"
+#include "services/ota/OtaUploadGuardCore.h"
 #include "services/IndicatorService.h"
 #include "modbus/ModbusManager.h"
 
@@ -29,6 +36,13 @@ auto constexpr OTA_END_FAIL_RESP = R"({"error":"ota_end_failed"})";
 auto constexpr OTA_END_FW_UPLOAD_OK = R"({"ok":true,"type":"firmware"})";
 auto constexpr OTA_END_FS_UPLOAD_OK = R"({"ok":true,"type":"filesystem"})";
 auto constexpr BAD_REQUEST_RESP = R"({"error":"bad_request"})";
+auto constexpr OTA_UNAUTHORIZED_RESP = R"({"error":"ota_password_required"})";
+auto constexpr OTA_PASSWORD_INVALID_RESP = R"({"error":"invalid_password"})";
+auto constexpr OTA_PASSWORD_STORAGE_RESP = R"({"error":"credential_storage_failed"})";
+auto constexpr FACTORY_RESET_BUSY_RESP = R"({"error":"factory_reset_in_progress"})";
+auto constexpr FACTORY_RESET_TASK_RESP = R"({"error":"factory_reset_task_failed"})";
+auto constexpr FACTORY_RESET_CONFIG_RESP = R"({"error":"factory_reset_config_storage_failed"})";
+auto constexpr FACTORY_RESET_NVS_RESP = R"({"error":"factory_reset_nvs_failed"})";
 auto constexpr WIFI_HANDLER_OK_RESP = "{\"ok\":true}";
 auto constexpr WIFI_ALREADY_CONNECTING_RESP = R"({"error":"already_connecting"})";
 
@@ -46,6 +60,7 @@ static std::atomic<size_t> g_lastLogCursor{0};
 static std::atomic<uint32_t> g_lastLogCheckAt{0};
 static std::atomic<uint32_t> g_eventSeq{0};
 static std::atomic<bool> g_otaHttpApplying{false};
+static std::atomic<bool> g_factoryResetInProgress{false};
 
 constexpr uint32_t STATS_PUSH_INTERVAL_MS = 5000;
 constexpr uint32_t STATS_HEARTBEAT_MS = 30000;
@@ -55,6 +70,131 @@ constexpr uint32_t LOGS_CHECK_INTERVAL_MS = 1200;
 constexpr uint32_t EVENTS_PING_INTERVAL_MS = 30000;
 constexpr uint32_t EVENT_RETRY_MS = 5000;
 constexpr size_t LOG_CHUNK_BYTES = 2048;
+
+namespace {
+
+constexpr uint32_t OTA_UPLOAD_STATE_MAGIC = 0x4F544155U;
+constexpr const char *OTA_UPLOAD_STATE_ATTRIBUTE = "otaUploadState";
+
+struct OtaUploadState {
+    uint32_t magic;
+    OtaUploadGuardCore::State guard;
+};
+
+struct OtaOperationContext {
+    OtaOperationContext(const Logger *loggerValue, const bool firmwareValue)
+        : logger(loggerValue), firmware(firmwareValue) {}
+
+    const Logger *logger;
+    bool firmware;
+};
+
+struct FactoryResetContext {
+    AsyncWebServerRequestPtr request;
+    const Logger *logger = nullptr;
+    esp_err_t nvsResult = ESP_OK;
+    esp_err_t nvsRecoveryResult = ESP_OK;
+};
+
+bool formatFactoryResetConfigStorage(void *) {
+    return ConfigFS.format();
+}
+
+bool eraseFactoryResetNvsStorage(void *context) {
+    auto *reset = static_cast<FactoryResetContext *>(context);
+    WiFi.persistent(false);
+    reset->nvsResult = nvs_flash_erase();
+    if (reset->nvsResult != ESP_OK) reset->nvsRecoveryResult = nvs_flash_init();
+    return reset->nvsResult == ESP_OK;
+}
+
+bool scheduleFactoryResetTask(void *context) {
+    return xTaskCreatePinnedToCore([](void *parameter) {
+        auto *reset = static_cast<FactoryResetContext *>(parameter);
+        const FactoryResetCore::Operations operations{
+            formatFactoryResetConfigStorage,
+            eraseFactoryResetNvsStorage,
+        };
+        const FactoryResetCore::RunResult result = FactoryResetCore::execute(operations, reset);
+        auto request = reset->request.lock();
+
+        switch (result) {
+            case FactoryResetCore::RunResult::Ok:
+                if (request) {
+                    request->send(HttpResponseCodes::ACCEPTED, HttpMediaTypes::JSON,
+                                  R"({"ok":true,"rebooting":true})");
+                }
+                delete reset;
+                delay(1000);
+                ESP.restart();
+                break;
+            case FactoryResetCore::RunResult::ConfigStorageFailed:
+                if (reset->logger) {
+                    reset->logger->logError("Factory reset failed: config filesystem format failed");
+                }
+                if (request) {
+                    request->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON,
+                                  FACTORY_RESET_CONFIG_RESP);
+                }
+                delete reset;
+                g_factoryResetInProgress.store(false, std::memory_order_release);
+                break;
+            case FactoryResetCore::RunResult::NvsStorageFailed:
+                if (reset->logger) {
+                    const String message = String("Factory reset failed: NVS erase returned ")
+                        + static_cast<int>(reset->nvsResult) + "; recovery returned "
+                        + static_cast<int>(reset->nvsRecoveryResult);
+                    reset->logger->logError(message.c_str());
+                }
+                if (request) {
+                    request->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON,
+                                  FACTORY_RESET_NVS_RESP);
+                }
+                delete reset;
+                g_factoryResetInProgress.store(false, std::memory_order_release);
+                break;
+        }
+        request.reset();
+        vTaskDelete(nullptr);
+    }, "factoryReset", 4096, context, 1, nullptr, APP_CPU_NUM) == pdPASS;
+}
+
+bool beginOtaOperation(void *context) {
+    const auto *operation = static_cast<OtaOperationContext *>(context);
+    return operation->firmware
+               ? OtaService::beginFirmware(0, operation->logger)
+               : OtaService::beginFilesystem(0, operation->logger);
+}
+
+bool writeOtaOperation(void *context, uint8_t *data, const size_t len) {
+    const auto *operation = static_cast<OtaOperationContext *>(context);
+    return OtaService::write(data, len, operation->logger);
+}
+
+bool authorizeOtaRequest(void *context) {
+    return MBXServerHandlers::isOtaRequestAuthorized(static_cast<AsyncWebServerRequest *>(context));
+}
+
+bool verifyOtaPassword(const uint8_t *password, const size_t passwordLength, void *) {
+    return OtaCredentialService::verify(String(reinterpret_cast<const char *>(password), passwordLength));
+}
+
+OtaUploadState *otaUploadState(AsyncWebServerRequest *req) {
+    if (req == nullptr || !req->getAttribute(OTA_UPLOAD_STATE_ATTRIBUTE, false)) return nullptr;
+    auto *state = static_cast<OtaUploadState *>(req->_tempObject);
+    return state != nullptr && state->magic == OTA_UPLOAD_STATE_MAGIC ? state : nullptr;
+}
+
+OtaUploadState *beginOtaUploadRequest(AsyncWebServerRequest *req) {
+    OtaUploadState *state = otaUploadState(req);
+    if (state == nullptr || !state->guard.authorizationChecked || !state->guard.authorized) {
+        MBXServerHandlers::sendOtaUnauthorized(req);
+        return nullptr;
+    }
+    return state;
+}
+
+}  // namespace
 
 enum class StatsCategory : uint8_t {
     System = 0,
@@ -898,14 +1038,47 @@ void MBXServerHandlers::handleDeviceReset(const Logger *logger) {
     ESP.restart();
 }
 
+bool MBXServerHandlers::isOtaRequestAuthorized(const AsyncWebServerRequest *req) {
+    if (!OtaCredentialService::isProtected()) return true;
+    if (req == nullptr || req->authType() != AsyncAuthType::AUTH_BEARER) return false;
+    const String &encoded = req->authChallenge();
+    return OtaAuthorizationCore::authorize(
+        true, encoded.c_str(), encoded.length(), verifyOtaPassword, nullptr);
+}
+
+bool MBXServerHandlers::cacheOtaUploadAuthorization(AsyncWebServerRequest *req) {
+    if (req == nullptr || req->_tempObject != nullptr) return false;
+
+    auto *state = static_cast<OtaUploadState *>(calloc(1U, sizeof(OtaUploadState)));
+    if (state == nullptr) return false;
+    state->magic = OTA_UPLOAD_STATE_MAGIC;
+    req->_tempObject = state;
+    req->setAttribute(OTA_UPLOAD_STATE_ATTRIBUTE, true);
+    return OtaUploadGuardCore::authorize(state->guard, authorizeOtaRequest, req);
+}
+
+void MBXServerHandlers::sendOtaUnauthorized(AsyncWebServerRequest *req) {
+    if (req == nullptr) return;
+    AsyncWebServerResponse *response = req->beginResponse(
+        HttpResponseCodes::UNAUTHORIZED, HttpMediaTypes::JSON, OTA_UNAUTHORIZED_RESP);
+    response->addHeader("WWW-Authenticate", "Bearer realm=\"ota\"");
+    response->addHeader("Cache-Control", "no-store");
+    req->send(response);
+}
+
 void MBXServerHandlers::handleOtaFirmwareUpload(AsyncWebServerRequest *r, const String &fn, const size_t index,
                                                 uint8_t *data, const size_t len, const bool final,
                                                 const Logger *logger) {
     if (index == 0U) {
+        OtaUploadState *state = beginOtaUploadRequest(r);
+        if (state == nullptr || !state->guard.authorized) return;
         if (logger) {
             logger->logInformation((String("OTA firmware upload start: ") + fn).c_str());
         }
-        if (!OtaService::beginFirmware(0, logger)) {
+        OtaOperationContext operation{logger, true};
+        const auto start = OtaUploadGuardCore::start(
+            state->guard, beginOtaOperation, &operation);
+        if (start != OtaUploadGuardCore::StartResult::Started) {
             if (logger) {
                 logger->logError("OTA begin firmware failed");
             }
@@ -913,8 +1086,11 @@ void MBXServerHandlers::handleOtaFirmwareUpload(AsyncWebServerRequest *r, const 
             return;
         }
     }
+    OtaUploadState *state = otaUploadState(r);
+    if (state == nullptr || !state->guard.authorized || !state->guard.begun) return;
     if (len) {
-        if (!OtaService::write(data, len, logger)) {
+        OtaOperationContext operation{logger, true};
+        if (!OtaUploadGuardCore::write(state->guard, writeOtaOperation, &operation, data, len)) {
             if (logger) logger->logError("OTA firmware write failed");
         }
     }
@@ -937,15 +1113,23 @@ void MBXServerHandlers::handleOtaFilesystemUpload(AsyncWebServerRequest *r, cons
                                                   uint8_t *data, const size_t len, const bool final,
                                                   const Logger *logger) {
     if (index == 0U) {
+        OtaUploadState *state = beginOtaUploadRequest(r);
+        if (state == nullptr || !state->guard.authorized) return;
         if (logger) logger->logInformation((String("OTA filesystem upload start: ") + fn).c_str());
-        if (!OtaService::beginFilesystem(0, logger)) {
+        OtaOperationContext operation{logger, false};
+        const auto start = OtaUploadGuardCore::start(
+            state->guard, beginOtaOperation, &operation);
+        if (start != OtaUploadGuardCore::StartResult::Started) {
             if (logger) logger->logError("OTA begin fs failed");
             r->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, OTA_FS_UPLOAD_BEGIN_FAIL_RESP);
             return;
         }
     }
+    OtaUploadState *state = otaUploadState(r);
+    if (state == nullptr || !state->guard.authorized || !state->guard.begun) return;
     if (len) {
-        if (!OtaService::write(data, len, logger)) {
+        OtaOperationContext operation{logger, false};
+        if (!OtaUploadGuardCore::write(state->guard, writeOtaOperation, &operation, data, len)) {
             if (logger) logger->logError("OTA fs write failed");
         }
     }
@@ -1101,6 +1285,7 @@ void MBXServerHandlers::handleGetOtaHttpSettings(AsyncWebServerRequest *req) {
 #if OTA_HTTP_ENABLED
     JsonDocument doc;
     doc["includePrereleases"] = HttpOtaService::getIncludePrereleases();
+    doc["passwordProtected"] = OtaCredentialService::isProtected();
     sendJson(req, doc);
 #else
     JsonDocument doc;
@@ -1135,4 +1320,87 @@ void MBXServerHandlers::handlePutOtaHttpSettingsBody(AsyncWebServerRequest *req,
     doc["error"] = "ota_http_disabled";
     sendJson(req, doc);
 #endif
+}
+
+void MBXServerHandlers::handlePutOtaPasswordBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
+                                                 const size_t index, const size_t total) {
+    char *body = BodyAccumulator::append(req->_tempObject, data, len, index, total);
+    if (body == nullptr) {
+        if (index + len == total) {
+            req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        }
+        return;
+    }
+
+    JsonDocument doc;
+    const DeserializationError error = deserializeJson(doc, body, total);
+    if (error || !doc["password"].is<const char *>()) {
+        req->send(HttpResponseCodes::BAD_REQUEST_HTTP, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        return;
+    }
+
+    const String password = doc["password"].as<String>();
+    switch (OtaCredentialService::setPassword(password)) {
+        case OtaCredentialService::SaveResult::Ok:
+            req->send(HttpResponseCodes::NO_CONTENT);
+            return;
+        case OtaCredentialService::SaveResult::InvalidPassword:
+            req->send(HttpResponseCodes::BAD_REQUEST_HTTP, HttpMediaTypes::JSON, OTA_PASSWORD_INVALID_RESP);
+            return;
+        case OtaCredentialService::SaveResult::StorageError:
+            req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, OTA_PASSWORD_STORAGE_RESP);
+            return;
+    }
+}
+
+void MBXServerHandlers::handleDeleteOtaPassword(AsyncWebServerRequest *req) {
+    if (!OtaCredentialService::clearPassword()) {
+        req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, OTA_PASSWORD_STORAGE_RESP);
+        return;
+    }
+    req->send(HttpResponseCodes::NO_CONTENT);
+}
+
+void MBXServerHandlers::handleFactoryResetBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
+                                               const size_t index, const size_t total, const Logger *logger) {
+    char *body = BodyAccumulator::append(req->_tempObject, data, len, index, total);
+    if (body == nullptr) {
+        if (index + len == total) {
+            req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        }
+        return;
+    }
+
+    JsonDocument doc;
+    const DeserializationError error = deserializeJson(doc, body, total);
+    const String confirmation = doc["confirm"] | "";
+    if (error || confirmation != "factory-reset") {
+        req->send(HttpResponseCodes::BAD_REQUEST_HTTP, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        return;
+    }
+
+    if (g_factoryResetInProgress.exchange(true, std::memory_order_acq_rel)) {
+        req->send(HttpResponseCodes::CONFLICT, HttpMediaTypes::JSON, FACTORY_RESET_BUSY_RESP);
+        return;
+    }
+
+    auto *context = new (std::nothrow) FactoryResetContext;
+    if (context == nullptr) {
+        g_factoryResetInProgress.store(false, std::memory_order_release);
+        if (logger) logger->logError("Factory reset failed: task context allocation failed");
+        req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, FACTORY_RESET_TASK_RESP);
+        return;
+    }
+    context->request = req->pause();
+    context->logger = logger;
+
+    if (FactoryResetCore::start(scheduleFactoryResetTask, context)
+        == FactoryResetCore::StartResult::TaskUnavailable) {
+        delete context;
+        g_factoryResetInProgress.store(false, std::memory_order_release);
+        if (logger) logger->logError("Factory reset failed: task creation failed");
+        req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, FACTORY_RESET_TASK_RESP);
+        return;
+    }
+    if (logger) logger->logWarning("Factory reset requested; clearing all persistent configuration");
 }

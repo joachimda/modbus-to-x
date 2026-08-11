@@ -27,6 +27,8 @@ let logsBuffer = "";
 let statsState = {};
 const MAX_LOG_CHARS = 16000;
 const otaState = { available: false, version: "" };
+let otaPasswordProtected = false;
+let otaPassword = null;
 let otaCheckTimer = null;
 let otaNotesTimer = null;
 let otaRebootTimer = null;
@@ -56,6 +58,7 @@ const OTA_SPINNER_STAGES = new Set([
 
 window.initIndex = async function initIndex() {
     $("#btn-reboot").addEventListener("click", reboot);
+    $("#btn-factory-reset").addEventListener("click", factoryReset);
     setupOtaControls();
     setupLogs();
     startEventStream();
@@ -244,8 +247,13 @@ function setupOtaControls() {
     if (modalClose) modalClose.addEventListener("click", closeOtaModal);
     if (modalCancel) modalCancel.addEventListener("click", closeOtaModal);
     if (modalConfirm) modalConfirm.addEventListener("click", confirmOtaApply);
+    $("#btn-ota-password-save")?.addEventListener("click", saveOtaPassword);
+    $("#btn-ota-password-clear")?.addEventListener("click", clearOtaPassword);
+    $("#btn-ota-firmware-upload")?.addEventListener("click", () => uploadOtaImage("firmware"));
+    $("#btn-ota-filesystem-upload")?.addEventListener("click", () => uploadOtaImage("filesystem"));
     setOtaButtons({ checking: false, applying: false });
     setupOtaPrereleaseToggle();
+    refreshOtaProtectionState();
 }
 
 async function setupOtaPrereleaseToggle() {
@@ -342,19 +350,21 @@ function closeOtaModal() {
 }
 
 function getOtaAuthHeader() {
-    const token = sessionStorage.getItem("otaAuth");
-    if (!token) return null;
-    return `Basic ${token}`;
+    return otaPassword == null ? null : `Bearer ${encodeOtaPassword(otaPassword)}`;
+}
+
+function encodeOtaPassword(value) {
+    const bytes = new TextEncoder().encode(value);
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary);
 }
 
 async function requestOtaAuth() {
-    const user = prompt("OTA username:");
-    if (!user) return null;
     const pass = prompt("OTA password:");
-    if (pass == null) return null;
-    const token = btoa(`${user}:${pass}`);
-    sessionStorage.setItem("otaAuth", token);
-    return `Basic ${token}`;
+    if (pass == null || pass === "") return null;
+    otaPassword = pass;
+    return `Bearer ${encodeOtaPassword(pass)}`;
 }
 
 async function otaFetchJson(url, init) {
@@ -364,7 +374,7 @@ async function otaFetchJson(url, init) {
 
     const first = await fetch(url, { cache: "no-store", ...init, headers });
     if (first.status === 401) {
-        sessionStorage.removeItem("otaAuth");
+        otaPassword = null;
         const retryAuth = await requestOtaAuth();
         if (!retryAuth) {
             throw new Error("auth_required");
@@ -372,10 +382,125 @@ async function otaFetchJson(url, init) {
         headers.set("Authorization", retryAuth);
         const second = await fetch(url, { cache: "no-store", ...init, headers });
         if (!second.ok) throw new Error(`${second.status} ${second.statusText}`);
+        if (second.status === 204) return {};
         return await second.json();
     }
     if (!first.ok) throw new Error(`${first.status} ${first.statusText}`);
+    if (first.status === 204) return {};
     return await first.json();
+}
+
+async function refreshOtaProtectionState() {
+    const status = $("#ota-protection-status");
+    try {
+        const settings = await safeJson(API.OTA_HTTP_SETTINGS, { method: "GET" });
+        otaPasswordProtected = !!settings.passwordProtected;
+        if (status) {
+            status.textContent = otaPasswordProtected
+                ? "Protected — OTA operations require the configured password."
+                : "Unprotected — set an OTA password to prevent unintended updates.";
+        }
+        const save = $("#btn-ota-password-save");
+        if (save) save.textContent = otaPasswordProtected ? "Change password" : "Set password";
+        const clear = $("#btn-ota-password-clear");
+        if (clear) clear.disabled = !otaPasswordProtected;
+    } catch (err) {
+        if (status) status.textContent = `OTA protection state unavailable: ${err?.message || err}`;
+    }
+}
+
+async function saveOtaPassword() {
+    const password = $("#ota-new-password")?.value || "";
+    const confirmation = $("#ota-confirm-password")?.value || "";
+    const byteLength = new TextEncoder().encode(password).length;
+    if (password !== confirmation) {
+        setOtaStatus("The new passwords do not match.");
+        return;
+    }
+    if (byteLength < 8 || byteLength > 128) {
+        setOtaStatus("The OTA password must be 8–128 UTF-8 bytes.");
+        return;
+    }
+    if (otaPasswordProtected && !getOtaAuthHeader() && !(await requestOtaAuth())) return;
+    try {
+        await otaFetchJson(API.OTA_PASSWORD, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password }),
+        });
+        otaPassword = null;
+        $("#ota-new-password").value = "";
+        $("#ota-confirm-password").value = "";
+        setOtaStatus("OTA password saved.");
+        await refreshOtaProtectionState();
+    } catch (err) {
+        otaPassword = null;
+        setOtaStatus(`Failed to save OTA password: ${err?.message || err}`);
+    }
+}
+
+async function clearOtaPassword() {
+    if (!otaPasswordProtected || !confirm("Clear the OTA password and leave updates unprotected?")) return;
+    if (!getOtaAuthHeader() && !(await requestOtaAuth())) return;
+    try {
+        await otaFetchJson(API.OTA_PASSWORD, { method: "DELETE" });
+        otaPassword = null;
+        setOtaStatus("OTA password cleared. Updates are now unprotected.");
+        await refreshOtaProtectionState();
+    } catch (err) {
+        otaPassword = null;
+        setOtaStatus(`Failed to clear OTA password: ${err?.message || err}`);
+    }
+}
+
+async function uploadOtaImage(type) {
+    const firmware = type === "firmware";
+    const input = $(firmware ? "#ota-firmware-file" : "#ota-filesystem-file");
+    const file = input?.files?.[0];
+    if (!file) {
+        setOtaStatus(`Select a ${type} .bin file first.`);
+        return;
+    }
+    const protection = otaPasswordProtected
+        ? "The configured OTA password will be required."
+        : "WARNING: OTA protection is not configured.";
+    if (!confirm(`Upload ${file.name} as the ${type} image?\n\n${protection}\nThe device will reboot after a successful upload.`)) return;
+    if (otaPasswordProtected && !getOtaAuthHeader() && !(await requestOtaAuth())) return;
+
+    const form = new FormData();
+    form.append(type, file, file.name);
+    setOtaStatus(`Uploading ${type} image...`, true);
+    try {
+        const result = await otaFetchJson(firmware ? API.OTA_FIRMWARE : API.OTA_FILESYSTEM, {
+            method: "POST",
+            body: form,
+        });
+        setOtaStatus(result.ok ? `${type} upload complete. Device is rebooting...` : `${type} upload failed.`);
+        if (input) input.value = "";
+    } catch (err) {
+        setOtaStatus(`${type} upload failed: ${err?.message || err}`);
+    } finally {
+        otaPassword = null;
+    }
+}
+
+async function factoryReset() {
+    if (!confirm("Factory reset this device? All Wi-Fi, MQTT, Modbus, OTA, and password settings will be erased.")) return;
+    const typed = prompt('Type "factory-reset" to confirm:');
+    if (typed !== "factory-reset") return;
+    if (otaPasswordProtected && !getOtaAuthHeader() && !(await requestOtaAuth())) return;
+    try {
+        await otaFetchJson(API.FACTORY_RESET, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ confirm: "factory-reset" }),
+        });
+        otaPassword = null;
+        alert("Factory reset started. The device will reboot into setup mode.");
+    } catch (err) {
+        otaPassword = null;
+        alert(`Factory reset failed: ${err?.message || err}`);
+    }
 }
 
 async function onOtaCheck() {

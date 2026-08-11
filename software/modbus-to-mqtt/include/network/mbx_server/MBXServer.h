@@ -22,6 +22,8 @@ private:
 
     void configureRoutes() const;
 
+    void configureOtaRoutes() const;
+
     void ensureConfigFile() const;
 
     static auto safeWriteFile(FS &fs, const char *path, const String &content) -> bool;

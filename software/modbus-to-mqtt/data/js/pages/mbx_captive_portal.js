@@ -1,4 +1,4 @@
-import {API, reboot, rssiBadge, rssiToBars} from 'app';
+import {API, mbxFetch, reboot, rssiBadge, rssiToBars} from 'app';
 
 window.initCaptivePortal = async function initCaptivePortal() {
     document.querySelector('#btn-reboot').onclick = reboot;
@@ -169,7 +169,7 @@ async function connect() {
 
     try {
         log('→ POST /api/wifi/connect');
-        const res = await fetch(API.CONNECT, {
+        const res = await mbxFetch(API.CONNECT, {
             method: 'POST',
             headers: {'Content-Type':'application/json'},
             body: JSON.stringify(payload)
@@ -220,7 +220,7 @@ async function cancel() {
     connectBtn.disabled = false; cancelBtn.disabled = true;
     quickStatus.textContent = 'Cancelled.';
     try {
-        await fetch(API.CANCEL, { method: 'POST' });
+        await mbxFetch(API.CANCEL, { method: 'POST' });
     } catch (_) {}
     log('⏹️ Connect cancelled.');
 }
@@ -264,4 +264,3 @@ selectHidden.addEventListener('click', () => {
     hiddenDetails.open = false;
     log('Using hidden SSID: ' + ssid.value);
 });
-

@@ -43,7 +43,7 @@ function encodedPassword(value){var bytes=new TextEncoder().encode(value),binary
 function authHeaders(headers){var h=new Headers(headers||{});if(password!==null)h.set('Authorization','Bearer '+encodedPassword(password));return h;}
 function parse(r){if(r.status===204)return {};return r.json();}
 async function api(url,options){
-  options=options||{};options.headers=authHeaders(options.headers);
+  options=options||{};options.headers=authHeaders(options.headers);options.headers.set('X-MBX-Request','1');
   var response=await fetch(url,options);
   if(response.status===401){password=null;if(!askPassword())throw new Error('password required');options.headers=authHeaders(options.headers);response=await fetch(url,options);}
   if(!response.ok)throw new Error(response.status+' '+response.statusText);return parse(response);

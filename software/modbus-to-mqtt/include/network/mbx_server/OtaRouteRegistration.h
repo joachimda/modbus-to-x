@@ -23,8 +23,8 @@ namespace OtaRouteRegistration {
 /**
  * @brief Registers all OTA-related routes on a server.
  *
- * Protected routes receive an authorization filter followed by an
- * unauthorized fallback handler. Upload authorization uses
+ * Mutation routes receive a request-context filter before optional OTA
+ * authorization. Upload authorization uses
  * `cacheUploadAuthorization()` so the decision can be reused for subsequent
  * chunks. The HTTP OTA settings GET and POST routes are registered without an
  * authorization filter.
@@ -33,7 +33,9 @@ namespace OtaRouteRegistration {
  * @p Callbacks must be copyable and provide the following operations:
  * @code{.cpp}
  * bool isAuthorized(const Request *request) const;
+ * bool isMutationAllowed(const Request *request) const;
  * bool cacheUploadAuthorization(Request *request) const;
+ * void sendForbidden(Request *request) const;
  * void sendUnauthorized(Request *request) const;
  * void logRequest(const Request *request) const;
  * void handleFirmwareUpload(Request *, const Filename &, size_t,
@@ -73,13 +75,25 @@ void configure(Server *server, const Callbacks callbacks,
     const auto authorized = [callbacks](const char *route, const Method method) {
         return [callbacks, route, method](Request *request) {
             return request != nullptr && request->method() == method && request->url() == route
-                   && callbacks.isAuthorized(request);
+                   && callbacks.isMutationAllowed(request) && callbacks.isAuthorized(request);
         };
     };
     const auto authorizedUpload = [callbacks, post](const char *route) {
         return [callbacks, route, post](Request *request) {
             return request != nullptr && request->method() == post && request->url() == route
-                   && callbacks.cacheUploadAuthorization(request);
+                   && callbacks.isMutationAllowed(request) && callbacks.cacheUploadAuthorization(request);
+        };
+    };
+    const auto guarded = [callbacks](const char *route, const Method method) {
+        return [callbacks, route, method](Request *request) {
+            return request != nullptr && request->method() == method && request->url() == route
+                   && callbacks.isMutationAllowed(request);
+        };
+    };
+    const auto rejected = [callbacks](const char *route, const Method method) {
+        return [callbacks, route, method](Request *request) {
+            return request != nullptr && request->method() == method && request->url() == route
+                   && !callbacks.isMutationAllowed(request);
         };
     };
 
@@ -90,11 +104,11 @@ void configure(Server *server, const Callbacks callbacks,
         callbacks.handleFirmwareUpload(request, filename, index, data, length, final);
     });
     firmware.setFilter(authorizedUpload(Routes::OTA_FIRMWARE));
-    server->on(Routes::OTA_FIRMWARE, post, [callbacks](Request *request) {
-        callbacks.sendUnauthorized(request);
-    }, [callbacks](Request *request, const Filename &, const size_t index, uint8_t *, const size_t, const bool) {
-        if (index == 0U) callbacks.sendUnauthorized(request);
+    auto &forbiddenFirmware = server->on(Routes::OTA_FIRMWARE, post, [callbacks](Request *request) {
+        callbacks.sendForbidden(request);
     });
+    forbiddenFirmware.setFilter(rejected(Routes::OTA_FIRMWARE, post));
+    server->on(Routes::OTA_FIRMWARE, post, [callbacks](Request *request) { callbacks.sendUnauthorized(request); });
 
     auto &filesystem = server->on(Routes::OTA_FILESYSTEM, post, [callbacks](Request *request) {
         callbacks.logRequest(request);
@@ -103,17 +117,21 @@ void configure(Server *server, const Callbacks callbacks,
         callbacks.handleFilesystemUpload(request, filename, index, data, length, final);
     });
     filesystem.setFilter(authorizedUpload(Routes::OTA_FILESYSTEM));
-    server->on(Routes::OTA_FILESYSTEM, post, [callbacks](Request *request) {
-        callbacks.sendUnauthorized(request);
-    }, [callbacks](Request *request, const Filename &, const size_t index, uint8_t *, const size_t, const bool) {
-        if (index == 0U) callbacks.sendUnauthorized(request);
+    auto &forbiddenFilesystem = server->on(Routes::OTA_FILESYSTEM, post, [callbacks](Request *request) {
+        callbacks.sendForbidden(request);
     });
+    forbiddenFilesystem.setFilter(rejected(Routes::OTA_FILESYSTEM, post));
+    server->on(Routes::OTA_FILESYSTEM, post, [callbacks](Request *request) { callbacks.sendUnauthorized(request); });
 
     auto &check = server->on(Routes::OTA_HTTP_CHECK, post, [callbacks](Request *request) {
         callbacks.logRequest(request);
         callbacks.handleHttpCheck(request);
     });
     check.setFilter(authorized(Routes::OTA_HTTP_CHECK, post));
+    auto &forbiddenCheck = server->on(Routes::OTA_HTTP_CHECK, post, [callbacks](Request *request) {
+        callbacks.sendForbidden(request);
+    });
+    forbiddenCheck.setFilter(rejected(Routes::OTA_HTTP_CHECK, post));
     server->on(Routes::OTA_HTTP_CHECK, post, [callbacks](Request *request) {
         callbacks.sendUnauthorized(request);
     });
@@ -123,6 +141,10 @@ void configure(Server *server, const Callbacks callbacks,
         callbacks.handleHttpNotes(request);
     });
     notes.setFilter(authorized(Routes::OTA_HTTP_NOTES, post));
+    auto &forbiddenNotes = server->on(Routes::OTA_HTTP_NOTES, post, [callbacks](Request *request) {
+        callbacks.sendForbidden(request);
+    });
+    forbiddenNotes.setFilter(rejected(Routes::OTA_HTTP_NOTES, post));
     server->on(Routes::OTA_HTTP_NOTES, post, [callbacks](Request *request) {
         callbacks.sendUnauthorized(request);
     });
@@ -132,6 +154,10 @@ void configure(Server *server, const Callbacks callbacks,
         callbacks.handleHttpApply(request);
     });
     apply.setFilter(authorized(Routes::OTA_HTTP_APPLY, post));
+    auto &forbiddenApply = server->on(Routes::OTA_HTTP_APPLY, post, [callbacks](Request *request) {
+        callbacks.sendForbidden(request);
+    });
+    forbiddenApply.setFilter(rejected(Routes::OTA_HTTP_APPLY, post));
     server->on(Routes::OTA_HTTP_APPLY, post, [callbacks](Request *request) {
         callbacks.sendUnauthorized(request);
     });
@@ -140,11 +166,15 @@ void configure(Server *server, const Callbacks callbacks,
         callbacks.logRequest(request);
         callbacks.handleGetHttpSettings(request);
     });
-    server->on(Routes::OTA_HTTP_SETTINGS, post, [callbacks](const Request *request) {
+    auto &putSettings = server->on(Routes::OTA_HTTP_SETTINGS, post, [callbacks](const Request *request) {
         callbacks.logRequest(request);
     }, nullptr, [callbacks](Request *request, const uint8_t *data, const size_t length,
                             const size_t index, const size_t total) {
         callbacks.handlePutHttpSettingsBody(request, data, length, index, total);
+    });
+    putSettings.setFilter(guarded(Routes::OTA_HTTP_SETTINGS, post));
+    server->on(Routes::OTA_HTTP_SETTINGS, post, [callbacks](Request *request) {
+        callbacks.sendForbidden(request);
     });
 
     auto &setPassword = server->on(Routes::OTA_PASSWORD, put, [callbacks](const Request *request) {
@@ -154,6 +184,10 @@ void configure(Server *server, const Callbacks callbacks,
         callbacks.handlePutPasswordBody(request, data, length, index, total);
     });
     setPassword.setFilter(authorized(Routes::OTA_PASSWORD, put));
+    auto &forbiddenSetPassword = server->on(Routes::OTA_PASSWORD, put, [callbacks](Request *request) {
+        callbacks.sendForbidden(request);
+    });
+    forbiddenSetPassword.setFilter(rejected(Routes::OTA_PASSWORD, put));
     server->on(Routes::OTA_PASSWORD, put, [callbacks](Request *request) {
         callbacks.sendUnauthorized(request);
     });
@@ -163,6 +197,10 @@ void configure(Server *server, const Callbacks callbacks,
         callbacks.handleDeletePassword(request);
     });
     deletePassword.setFilter(authorized(Routes::OTA_PASSWORD, remove));
+    auto &forbiddenDeletePassword = server->on(Routes::OTA_PASSWORD, remove, [callbacks](Request *request) {
+        callbacks.sendForbidden(request);
+    });
+    forbiddenDeletePassword.setFilter(rejected(Routes::OTA_PASSWORD, remove));
     server->on(Routes::OTA_PASSWORD, remove, [callbacks](Request *request) {
         callbacks.sendUnauthorized(request);
     });
@@ -174,6 +212,10 @@ void configure(Server *server, const Callbacks callbacks,
         callbacks.handleFactoryResetBody(request, data, length, index, total);
     });
     factoryReset.setFilter(authorized(Routes::FACTORY_RESET, post));
+    auto &forbiddenFactoryReset = server->on(Routes::FACTORY_RESET, post, [callbacks](Request *request) {
+        callbacks.sendForbidden(request);
+    });
+    forbiddenFactoryReset.setFilter(rejected(Routes::FACTORY_RESET, post));
     server->on(Routes::FACTORY_RESET, post, [callbacks](Request *request) {
         callbacks.sendUnauthorized(request);
     });

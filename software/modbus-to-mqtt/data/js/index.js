@@ -1,4 +1,4 @@
-import {API, safeGet, safeJson, reboot} from "app";
+import {API, mbxFetch, safeGet, safeJson, reboot} from "app";
 
 const $ = (sel) => document.querySelector(sel);
 const kv = (k, v) => `<div class="key">${k}</div><div>${v ?? "—"}</div>`;
@@ -372,7 +372,7 @@ async function otaFetchJson(url, init) {
     const auth = getOtaAuthHeader();
     if (auth) headers.set("Authorization", auth);
 
-    const first = await fetch(url, { cache: "no-store", ...init, headers });
+    const first = await mbxFetch(url, { cache: "no-store", ...init, headers });
     if (first.status === 401) {
         otaPassword = null;
         const retryAuth = await requestOtaAuth();
@@ -380,7 +380,7 @@ async function otaFetchJson(url, init) {
             throw new Error("auth_required");
         }
         headers.set("Authorization", retryAuth);
-        const second = await fetch(url, { cache: "no-store", ...init, headers });
+        const second = await mbxFetch(url, { cache: "no-store", ...init, headers });
         if (!second.ok) throw new Error(`${second.status} ${second.statusText}`);
         if (second.status === 204) return {};
         return await second.json();

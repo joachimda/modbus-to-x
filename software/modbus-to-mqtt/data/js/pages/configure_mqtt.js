@@ -1,9 +1,36 @@
 import {API, STATIC_FILES, safeJson} from "app";
 
+let mqttConstraints = null;
+
 window.initConfigureMqtt = async function initConfigureMqtt() {
+    try {
+        mqttConstraints = await safeJson(API.GET_MQTT_CONSTRAINTS);
+        applyConstraints();
+    } catch (e) {
+        document.querySelector('#btn-save').disabled = true;
+        document.querySelector('#btn-test').disabled = true;
+        alert('Failed to load MQTT field constraints: ' + e.message);
+        return;
+    }
     await load();
     document.querySelector('#btn-save').onclick = saveWithStatus;
     document.querySelector('#btn-test').onclick = testConnectionWithStatus;
+}
+
+function applyConstraints() {
+    document.querySelector('#broker-ip').maxLength = mqttConstraints.brokerIpMaxBytes;
+    document.querySelector('#broker-user').maxLength = mqttConstraints.userMaxBytes;
+    document.querySelector('#broker-pass').maxLength = mqttConstraints.passwordMaxBytes;
+
+    const port = document.querySelector('#broker-port');
+    port.minLength = 1;
+    port.maxLength = mqttConstraints.portMaxBytes;
+
+    const hint = document.querySelector('#mqtt-constraints-hint');
+    hint.textContent = `Broker IP and URL host: ${mqttConstraints.brokerMaxBytes} UTF-8 bytes maximum. `
+        + `Port: ${mqttConstraints.portMin}-${mqttConstraints.portMax}. `
+        + `Username: ${mqttConstraints.userMaxBytes} UTF-8 bytes maximum. `
+        + `Password: ${mqttConstraints.passwordMaxBytes} UTF-8 bytes maximum.`;
 }
 
 async function load() {
@@ -12,7 +39,9 @@ async function load() {
         document.querySelector('#mqtt-enabled').checked = Boolean(j.enabled);
         document.querySelector('#broker-ip').value = j.broker_ip || '';
         document.querySelector('#broker-url').value = j.broker_url || '';
-        document.querySelector('#broker-port').value = j.broker_port || '1883';
+        document.querySelector('#broker-port').value = j.broker_port === undefined || j.broker_port === null
+            ? '1883'
+            : String(j.broker_port);
         document.querySelector('#broker-user').value = j.user || '';
         document.querySelector('#root-topic').value = j.root_topic || 'mbx_root';
     } catch (e) {
@@ -60,7 +89,8 @@ async function saveWithStatus() {
     const el = document.querySelector('#save-status');
     try {
         const cfg = readForm();
-        const pass = (document.querySelector('#broker-pass').value || '').trim();
+        const pass = document.querySelector('#broker-pass').value || '';
+        validateMaximumBytes('Password', pass, mqttConstraints.passwordMaxBytes);
         setStatus(el, { pending: true, text: 'Saving…' });
         if (pass.length) {
             await safeJson(API.PUT_MQTT_SECRET, {
@@ -97,11 +127,22 @@ async function saveWithStatus() {
 */
 
 function readForm() {
+    if (!mqttConstraints) throw new Error('MQTT field constraints are unavailable.');
     const ip = (document.querySelector('#broker-ip').value || '').trim();
     const url = (document.querySelector('#broker-url').value || '').trim();
-    const port = String((document.querySelector('#broker-port').value || '').trim() || '1883');
+    const port = String((document.querySelector('#broker-port').value || '').trim());
     const user = (document.querySelector('#broker-user').value || '').trim();
     const enabled = Boolean(document.querySelector('#mqtt-enabled').checked);
+
+    validateMaximumBytes('Broker IP', ip, mqttConstraints.brokerIpMaxBytes);
+    const urlHost = extractHost(url);
+    validateMaximumBytes('Broker URL host', urlHost, mqttConstraints.brokerUrlHostMaxBytes);
+    const selectedBroker = ip.length && ip !== '0.0.0.0'
+        ? ip
+        : (url.length ? urlHost : '0.0.0.0');
+    validateMaximumBytes('Selected broker', selectedBroker, mqttConstraints.brokerMaxBytes);
+    validateMaximumBytes('Username', user, mqttConstraints.userMaxBytes);
+
     let root_topic = (document.querySelector('#root-topic').value || '').trim();
     // Normalize and validate root topic
     // - trim leading/trailing slashes
@@ -114,9 +155,12 @@ function readForm() {
     if (!valid) {
         throw new Error('Root topic may contain letters, numbers, _ , - and / (as separators), no spaces.');
     }
+    if (!/^[0-9]+$/.test(port) || utf8Length(port) > mqttConstraints.portMaxBytes) {
+        throw new Error(`Broker port must contain 1-${mqttConstraints.portMaxBytes} ASCII decimal digits.`);
+    }
     const pnum = Number(port);
-    if (!Number.isInteger(pnum) || pnum < 1 || pnum > 65535) {
-        throw new Error('Broker port must be 1-65535');
+    if (!Number.isInteger(pnum) || pnum < mqttConstraints.portMin || pnum > mqttConstraints.portMax) {
+        throw new Error(`Broker port must be ${mqttConstraints.portMin}-${mqttConstraints.portMax}.`);
     }
     return {
         enabled,
@@ -126,6 +170,29 @@ function readForm() {
         user,
         root_topic,
     };
+}
+
+function utf8Length(value) {
+    return new TextEncoder().encode(value).length;
+}
+
+function validateMaximumBytes(label, value, maximum) {
+    const length = utf8Length(value);
+    if (length > maximum) {
+        throw new Error(`${label} must be at most ${maximum} UTF-8 bytes; received ${length}.`);
+    }
+}
+
+function extractHost(url) {
+    if (!url.length) return '';
+    const scheme = url.indexOf('://');
+    const start = scheme >= 0 ? scheme + 3 : 0;
+    const slash = url.indexOf('/', start);
+    const colon = url.indexOf(':', start);
+    let end = url.length;
+    if (slash >= 0 && slash < end) end = slash;
+    if (colon >= 0 && colon < end) end = colon;
+    return url.slice(start, end);
 }
 
 /* async function save() {

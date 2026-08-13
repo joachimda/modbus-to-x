@@ -2,12 +2,13 @@
 
 #include "Config.h"
 #include "ESPAsyncWebServer.h"
+#include "mqtt/MqttConfigDocument.h"
 #include <cstdio>
 #include <atomic>
 #include <utility>
 #include "services/IndicatorService.h"
 #include "storage/ConfigFs.h"
-#include <ArduinoJson.h>
+#include <Preferences.h>
 #include <WiFi.h>
 #include <esp_wifi.h>
 
@@ -16,9 +17,6 @@ static MqttManager *s_activeMqttManager = nullptr;
 static  String mqtt_client_prefix = "MBX_CLIENT-";
 static constexpr auto MQTT_TASK_STACK = 4096;
 static constexpr auto MQTT_TASK_LOOP_DELAY_MS = 100;
-static constexpr auto default_mqtt_broker = "0.0.0.0";
-static constexpr auto default_mqtt_port = "1883";
-static constexpr auto default_mqtt_root_topic = "mbx_root";
 static const String system_subscription_network_reset = "/system/network/reset";
 static const String system_subscription_echo = "/system/log/echo";
 
@@ -40,105 +38,99 @@ MqttManager::MqttManager(MqttSubscriptionHandler *subscriptionHandler, PubSubCli
 
 auto MqttManager::begin() -> bool {
     _mqttClient->setBufferSize(MQTT_BUFFER_SIZE);
-    loadMQTTConfig();
-
-    const char *broker = {_mqttBroker};
-    _mqttClient->setServer(broker, atoi(_mqttPort));
+    const bool loaded = loadMQTTConfig();
     _mqttClient->setCallback(handleMqttMessage);
-    addSystemSubscriptionHandlers(_mqttRootTopic);
+    if (loaded) {
+        applyServerConfiguration();
+        addSystemSubscriptionHandlers(_mqttRootTopic);
+    }
 
     // Do NOT attempt connection here; Wi‑Fi/LWIP may not be initialized yet.
     // The background task will handle connecting once Wi‑Fi is up.
-    setMQTTEnabled(_mqttEnabledConfigured);
+    setMQTTEnabled(loaded && _mqttEnabledConfigured);
     return startMqttTask();
 }
 
-void MqttManager::loadMQTTConfig() {
-    String server = default_mqtt_broker;
-    String user, port, rootTopic = "";
-    _mqttEnabledConfigured = false;
-    if (ConfigFS.exists(ConfigFs::kMqttConfigFile)) {
-        File config_file = ConfigFS.open(ConfigFs::kMqttConfigFile, FILE_READ);
-        if (config_file) {
-            String text = config_file.readString();
-            config_file.close();
-            JsonDocument doc;
-            if (!deserializeJson(doc, text)) {
-                _mqttEnabledConfigured = doc["enabled"] | false;
-                String ip_from_file = doc["broker_ip"] | "";
-                String url_from_file = doc["broker_url"] | "";
-                String port_from_file = doc["broker_port"] | default_mqtt_port;
-                String user_from_file = doc["user"] | "";
-                String root_topic_from_file = doc["root_topic"] | default_mqtt_root_topic;
-                auto extractHost = [](const String &uurl) -> String {
-                    if (uurl.length() == 0) {
-                        return {""};
-                    }
-                    int start = uurl.indexOf("://");
-                    start = (start >= 0) ? (start + 3) : 0;
-                    const int slash = uurl.indexOf('/', start);
-                    const int colon = uurl.indexOf(':', start);
-                    unsigned int end;
-                    if (slash >= 0 && colon >= 0) {
-                        end = slash < colon ? slash : colon;
-                    } else if (slash >= 0) {
-                        end = slash;
-                    } else if (colon >= 0) {
-                        end = colon;
-                    } else {
-                        end = uurl.length();
-                    }
-                    return uurl.substring(start, end);
-                };
-                ip_from_file.trim();
-                url_from_file.trim();
-                port_from_file.trim();
-                user_from_file.trim();
-                root_topic_from_file.trim();
-                if (ip_from_file.length() && ip_from_file != default_mqtt_broker) server = ip_from_file;
-                else if (url_from_file.length()) {
-                    server = extractHost(url_from_file);
-                }
-                if (port_from_file.length()) {
-                    port = port_from_file;
-                }
-                user = user_from_file;
-                rootTopic = root_topic_from_file;
-            }
-        }
-    }
-    _mqttRootTopic = rootTopic;
-    strcpy(_mqttBroker, server.c_str());
-    strcpy(_mqttPort, port.c_str());
-    if (user.length()) {
-        strcpy(_mqttUser, user.c_str());
-    }
-    else {
-        _mqttUser[0] = '\0';
+bool MqttManager::loadMQTTConfig() {
+    clearLoadedConfiguration();
+    if (!ConfigFS.exists(ConfigFs::kMqttConfigFile)) {
+        _logger->logError("[MQTT] Configuration load failed: mqtt.json is missing");
+        return false;
     }
 
-    _logger->logDebug(("[MQTT] Loaded configuration; User: "
-        + String(_mqttUser) + ", Broker: " + String(_mqttBroker)
-        + ", Port: " + String(_mqttPort) + ", Root Topic: " + String(_mqttRootTopic)  ).c_str());
-    // _mqttEnabledConfigured now holds the persisted user setting.
+    File configFile = ConfigFS.open(ConfigFs::kMqttConfigFile, FILE_READ);
+    if (!configFile) {
+        _logger->logError("[MQTT] Configuration load failed: mqtt.json could not be opened");
+        return false;
+    }
+    const String text = configFile.readString();
+    configFile.close();
 
-    preferences.begin(MQTT_PREFS_NAMESPACE, false);
+    MqttConfigDocument::StoredConfig stored;
+    if (!MqttConfigDocument::parseConfig(text.c_str(), text.length(), stored)) {
+        _logger->logError("[MQTT] Configuration load failed: mqtt.json is malformed");
+        return false;
+    }
+
+    Preferences preferences;
+    if (!preferences.begin(MQTT_PREFS_NAMESPACE, false)) {
+        _logger->logError("[MQTT] Configuration load failed: password storage is unavailable");
+        return false;
+    }
     if (preferences.isKey("pass")) {
-        strcpy(_mqttPassword, preferences.getString("pass").c_str());
-    } else {
-        _mqttPassword[0] = '\0';
+        const String password = preferences.getString("pass");
+        stored.connection.password.assign(password.c_str(), password.length());
     }
     preferences.end();
+
+    MqttConfigCore::PreparedConnection candidate;
+    MqttConfigCore::ValidationError validation;
+    if (!MqttConfigCore::prepareConnection(stored.connection, candidate, validation)) {
+        const String message = String("[MQTT] Configuration load failed: ")
+                               + MqttConfigCore::fieldName(validation.field) + " "
+                               + MqttConfigCore::constraintMessage(validation);
+        _logger->logError(message.c_str());
+        return false;
+    }
+
+    _mqttConnection = candidate;
+    _mqttRootTopic = MqttConfigCore::trim(stored.rootTopic).c_str();
+    _mqttEnabledConfigured = stored.enabled;
+
+    _logger->logDebug(("[MQTT] Loaded configuration; User: "
+        + String(_mqttConnection.user.data()) + ", Broker: " + String(_mqttConnection.broker.data())
+        + ", Port: " + String(_mqttConnection.port) + ", Root Topic: " + _mqttRootTopic).c_str());
+    return true;
+}
+
+bool MqttManager::applyServerConfiguration() {
+    return MqttConfigCore::withValidConnection(
+        _mqttConnection, [this](const MqttConfigCore::PreparedConnection &connection) {
+        _mqttClient->setServer(connection.broker.data(), connection.port);
+        return true;
+    });
+}
+
+void MqttManager::clearLoadedConfiguration() {
+    _mqttConnection = MqttConfigCore::PreparedConnection();
+    _mqttRootTopic.clear();
+    _mqttEnabledConfigured = false;
+    setMQTTEnabled(false);
 }
 
 
 auto MqttManager::ensureMQTTConnection() -> bool {
-    if (_mqttBroker[0] == '\0' || String(_mqttBroker) == default_mqtt_broker) {
+    if (!_mqttConnection.valid) {
+        _logger->logError("[MQTT] Configuration is invalid; skipping connection attempt");
+        return false;
+    }
+    if (_mqttConnection.broker[0] == '\0' || String(_mqttConnection.broker.data()) == MqttConfigCore::DEFAULT_BROKER) {
         _logger->logWarning("[MQTT] Broker not configured; skipping connection attempt");
         return false;
     }
     _logger->logInformation(
-        (String("Connecting to MQTT broker [") + _mqttBroker + ":" + String(_mqttPort) + "]").c_str());
+        (String("Connecting to MQTT broker [") + _mqttConnection.broker.data() + ":"
+         + String(_mqttConnection.port) + "]").c_str());
 
     String clientId = _clientId;
     if (!clientId.length()) {
@@ -146,18 +138,21 @@ auto MqttManager::ensureMQTTConnection() -> bool {
     }
     _clientId = clientId;
     bool connected = false;
-    const bool hasUser = (_mqttUser[0] != '\0');
+    const bool hasUser = (_mqttConnection.user[0] != '\0');
     if (_hasWill && _willTopic.length() && _willMessage.length()) {
         const char *willTopic = _willTopic.c_str();
         const char *willMessage = _willMessage.c_str();
         if (hasUser) {
-            connected = _mqttClient->connect(_clientId.c_str(), _mqttUser, _mqttPassword, willTopic, _willQos, _willRetain, willMessage);
+            connected = _mqttClient->connect(_clientId.c_str(), _mqttConnection.user.data(),
+                                             _mqttConnection.password.data(), willTopic, _willQos,
+                                             _willRetain, willMessage);
         } else {
             connected = _mqttClient->connect(_clientId.c_str(), willTopic, _willQos, _willRetain, willMessage);
         }
     } else {
         if (hasUser) {
-            connected = _mqttClient->connect(_clientId.c_str(), _mqttUser, _mqttPassword);
+            connected = _mqttClient->connect(_clientId.c_str(), _mqttConnection.user.data(),
+                                             _mqttConnection.password.data());
         } else {
             connected = _mqttClient->connect(_clientId.c_str());
         }
@@ -297,7 +292,7 @@ void MqttManager::onMqttMessage(const String &topic, const uint8_t *payload, con
 }
 
 char *MqttManager::getMqttBroker() {
-    return _mqttBroker;
+    return _mqttConnection.broker.data();
 }
 
 int MqttManager::getMQTTState() const {
@@ -305,7 +300,7 @@ int MqttManager::getMQTTState() const {
 }
 
 char *MqttManager::getMQTTUser() {
-    return _mqttUser;
+    return _mqttConnection.user.data();
 }
 
 const String &MqttManager::getRootTopic() const {
@@ -321,19 +316,31 @@ bool MqttManager::isMQTTEnabled() {
 }
 
 bool MqttManager::testConnectOnce() {
-    // Load settings and try connecting once, do not start the task
-    loadMQTTConfig();
-    const char *broker = {_mqttBroker};
-    _logger->logInformation((String("Test connect to MQTT [") + broker + ":" + String(_mqttPort) + "]").c_str());
-    _mqttClient->setServer(broker, atoi(_mqttPort));
-    if (WiFiClass::status() != WL_CONNECTED) {
-        _logger->logError("MQTT test connect requested but Wi-Fi not connected");
-        return false;
-    }
-    return ensureMQTTConnection();
+    // Load settings and try connecting once, do not start the task. A valid
+    // configuration restores the persisted enabled preference after the test;
+    // an invalid load remains fail-closed through clearLoadedConfiguration().
+    return MqttConfigCore::runOneShotConnectionTest(
+        [this](bool &configuredEnabled) {
+            if (!loadMQTTConfig()) return false;
+            configuredEnabled = _mqttEnabledConfigured;
+            return true;
+        },
+        [this]() {
+            if (!applyServerConfiguration()) return false;
+            _logger->logInformation((String("Test connect to MQTT [") + _mqttConnection.broker.data()
+                                     + ":" + String(_mqttConnection.port) + "]").c_str());
+            if (WiFiClass::status() != WL_CONNECTED) {
+                _logger->logError("MQTT test connect requested but Wi-Fi not connected");
+                return false;
+            }
+            return ensureMQTTConnection();
+        },
+        [](const bool configuredEnabled) {
+            MqttManager::setMQTTEnabled(configuredEnabled);
+        });
 }
 
-void MqttManager::reconfigureFromFile() {
+bool MqttManager::reconfigureFromFile() {
     // Temporarily pause MQTT processing loop
     setMQTTEnabled(false);
     IndicatorService::instance().setMqttConnected(false);
@@ -345,15 +352,11 @@ void MqttManager::reconfigureFromFile() {
         _mqttClient->disconnect();
     }
 
-    // Reload configuration from SPIFFS/NVS
-    loadMQTTConfig();
-
-    // Point client to new broker/port
-    const char *broker = {_mqttBroker};
-    _mqttClient->setServer(broker, atoi(_mqttPort));
+    // Remove subscriptions before loading so stale topics cannot remain active.
+    _subscriptionHandler->clear();
+    if (!loadMQTTConfig() || !applyServerConfiguration()) return false;
 
     // Rebuild subscriptions for new root topic
-    _subscriptionHandler->clear();
     addSystemSubscriptionHandlers(_mqttRootTopic);
 
     // Resume MQTT processing based on user preference
@@ -367,6 +370,7 @@ void MqttManager::reconfigureFromFile() {
             _logger->logError("[MQTT] Reconfigure failed to connect");
         }
     }
+    return true;
 }
 
 void MqttManager::setClientId(String clientId) {

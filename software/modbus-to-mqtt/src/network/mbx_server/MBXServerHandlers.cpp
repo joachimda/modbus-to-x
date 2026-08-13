@@ -5,6 +5,8 @@
 #include <memory>
 #include <new>
 #include "network/mbx_server/BodyAccumulator.h"
+#include "mqtt/MqttConfigCore.h"
+#include "mqtt/MqttConfigMutationCore.h"
 #include "storage/ConfigFs.h"
 #include <WiFi.h>
 #include <esp_wifi.h>
@@ -688,6 +690,96 @@ void logHandlerError(const char *msg) {
         mem->logError(msg);
     }
 }
+
+bool writeMqttConfig(const char *value, const size_t length, void *) {
+    File file = ConfigFS.open(ConfigFs::kMqttConfigFile, FILE_WRITE);
+    if (!file) {
+        logHandlerError("PUT /api/config/mqtt: failed to open /conf/mqtt.json for writing");
+        return false;
+    }
+    const size_t written = file.write(reinterpret_cast<const uint8_t *>(value), length);
+    file.close();
+    if (written != length) {
+        logHandlerError("PUT /api/config/mqtt: short write to /conf/mqtt.json (config FS full?)");
+        return false;
+    }
+    return true;
+}
+
+bool reloadMqttConfig(void *) {
+    if (auto *link = g_comm.load(std::memory_order_acquire)) {
+        if (!link->reconfigureFromFile()) {
+            logHandlerError("PUT /api/config/mqtt: persisted configuration could not be applied");
+            return false;
+        }
+    }
+    return true;
+}
+
+bool writeMqttPassword(const char *value, const size_t length, void *) {
+    const String password(value == nullptr ? "" : value);
+    if (password.length() != length) {
+        logHandlerError("POST /api/config/mqtt/secret: password contains unsupported NUL bytes");
+        return false;
+    }
+
+    Preferences preferences;
+    if (!preferences.begin(MQTT_PREFS_NAMESPACE, false)) {
+        logHandlerError("POST /api/config/mqtt/secret: failed to open password storage");
+        return false;
+    }
+    const size_t written = preferences.putString("pass", password);
+    const bool stored = written == length
+                        && preferences.isKey("pass")
+                        && preferences.getString("pass") == password;
+    preferences.end();
+    if (!stored) {
+        logHandlerError("POST /api/config/mqtt/secret: failed to store password");
+        return false;
+    }
+    return true;
+}
+
+void sendMqttMutationResult(AsyncWebServerRequest *req, const MqttConfigMutationCore::Result &result) {
+    using MqttConfigMutationCore::Status;
+    if (result.status == Status::Ok) {
+        req->send(HttpResponseCodes::NO_CONTENT);
+        return;
+    }
+
+    JsonDocument document;
+    int status = HttpResponseCodes::BAD_REQUEST_HTTP;
+    switch (result.status) {
+        case Status::InvalidJson:
+            document["error"] = "invalid_json";
+            break;
+        case Status::InvalidField:
+            document["error"] = "invalid_mqtt_field";
+            document["field"] = MqttConfigCore::fieldName(result.validation.field);
+            document["constraint"] = MqttConfigCore::constraintMessage(result.validation);
+            if (result.validation.constraint == MqttConfigCore::Constraint::MaximumBytes) {
+                document["maximumBytes"] = MqttConfigCore::maximumBytes(result.validation.field);
+            } else if (result.validation.constraint == MqttConfigCore::Constraint::PortRange) {
+                document["minimum"] = MqttConfigCore::PORT_MIN;
+                document["maximum"] = MqttConfigCore::PORT_MAX;
+            }
+            break;
+        case Status::StorageFailed:
+            status = HttpResponseCodes::INTERNAL_SERVER_ERROR;
+            document["error"] = "mqtt_storage_failed";
+            break;
+        case Status::ReloadFailed:
+            status = HttpResponseCodes::INTERNAL_SERVER_ERROR;
+            document["error"] = "mqtt_reload_failed";
+            break;
+        case Status::Ok:
+            break;
+    }
+
+    String response;
+    serializeJson(document, response);
+    req->send(status, HttpMediaTypes::JSON, response);
+}
 }  // namespace
 
 void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
@@ -741,27 +833,8 @@ void MBXServerHandlers::handlePutMqttConfigBody(AsyncWebServerRequest *req, cons
         return;
     }
 
-    // Write non-sensitive config to config FS
-    File f = ConfigFS.open(ConfigFs::kMqttConfigFile, FILE_WRITE);
-    if (!f) {
-        logHandlerError("PUT /api/config/mqtt: failed to open /conf/mqtt.json for writing");
-        req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
-        return;
-    }
-    const size_t written = f.write(reinterpret_cast<const uint8_t *>(body), total);
-    f.close();
-    if (written != total) {
-        logHandlerError("PUT /api/config/mqtt: short write to /conf/mqtt.json (config FS full?)");
-        req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
-        return;
-    }
-
-    // Hot-reload MQTT configuration
-    if (auto *link = g_comm.load(std::memory_order_acquire)) {
-        link->reconfigureFromFile();
-    }
-
-    req->send(HttpResponseCodes::NO_CONTENT);
+    const MqttConfigMutationCore::ConfigOperations operations{writeMqttConfig, reloadMqttConfig};
+    sendMqttMutationResult(req, MqttConfigMutationCore::applyConfig(body, total, operations, nullptr));
 }
 
 void MBXServerHandlers::handlePutMqttSecretBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
@@ -775,18 +848,21 @@ void MBXServerHandlers::handlePutMqttSecretBody(AsyncWebServerRequest *req, cons
         return;
     }
 
-    JsonDocument doc;
-    const DeserializationError derr = deserializeJson(doc, body, total);
-    if (derr) {
-        req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
-        return;
-    }
-    const String pass = doc["password"] | "";
-    Preferences prefs;
-    prefs.begin(MQTT_PREFS_NAMESPACE, false);
-    prefs.putString("pass", pass);
-    prefs.end();
-    req->send(HttpResponseCodes::NO_CONTENT);
+    const MqttConfigMutationCore::SecretOperations operations{writeMqttPassword};
+    sendMqttMutationResult(req, MqttConfigMutationCore::applySecret(body, total, operations, nullptr));
+}
+
+void MBXServerHandlers::handleGetMqttConstraints(AsyncWebServerRequest *req) {
+    JsonDocument document;
+    document["brokerIpMaxBytes"] = MqttConfigCore::BROKER_MAX_BYTES;
+    document["brokerUrlHostMaxBytes"] = MqttConfigCore::BROKER_MAX_BYTES;
+    document["brokerMaxBytes"] = MqttConfigCore::BROKER_MAX_BYTES;
+    document["portMin"] = MqttConfigCore::PORT_MIN;
+    document["portMax"] = MqttConfigCore::PORT_MAX;
+    document["portMaxBytes"] = MqttConfigCore::PORT_MAX_BYTES;
+    document["userMaxBytes"] = MqttConfigCore::USER_MAX_BYTES;
+    document["passwordMaxBytes"] = MqttConfigCore::PASSWORD_MAX_BYTES;
+    sendJson(req, document);
 }
 
 void MBXServerHandlers::handleWifiConnect(AsyncWebServerRequest *req, WifiConnectionController &wifi,

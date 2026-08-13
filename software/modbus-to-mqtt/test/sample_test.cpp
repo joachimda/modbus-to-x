@@ -5,6 +5,9 @@
 // build_src_filter just for one file.
 
 #include "../src/network/mbx_server/BodyAccumulator.cpp"
+#include "../src/mqtt/MqttConfigCore.cpp"
+#include "../src/mqtt/MqttConfigDocument.cpp"
+#include "../src/mqtt/MqttConfigMutationCore.cpp"
 #include "../include/network/mbx_server/MutationRequestGuardCore.h"
 #include "../include/network/mbx_server/MutationRouteRegistration.h"
 #include "../include/network/mbx_server/OtaRouteRegistration.h"
@@ -1071,6 +1074,421 @@ void test_registered_ota_matrix_checks_mutation_context_before_auth_or_payload(v
     TEST_ASSERT_EQUAL_INT(1, state.getSettingsCalls);
 }
 
+namespace {
+
+std::string repeated(const std::string &value, const size_t count) {
+    std::string result;
+    result.reserve(value.size() * count);
+    for (size_t i = 0U; i < count; ++i) result += value;
+    return result;
+}
+
+MqttConfigCore::ConnectionInput validMqttInput() {
+    MqttConfigCore::ConnectionInput input;
+    input.brokerIp = "broker.local";
+    input.brokerPort = "1883";
+    return input;
+}
+
+struct MqttMutationFake {
+    std::string config = "previous-config";
+    std::string password = "previous-password";
+    int configWrites = 0;
+    int passwordWrites = 0;
+    int reloads = 0;
+    bool writeSucceeds = true;
+    bool reloadSucceeds = true;
+};
+
+bool writeFakeMqttConfig(const char *value, const size_t length, void *context) {
+    auto *fake = static_cast<MqttMutationFake *>(context);
+    ++fake->configWrites;
+    if (!fake->writeSucceeds) return false;
+    fake->config.assign(value, length);
+    return true;
+}
+
+bool writeFakeMqttPassword(const char *value, const size_t length, void *context) {
+    auto *fake = static_cast<MqttMutationFake *>(context);
+    ++fake->passwordWrites;
+    if (!fake->writeSucceeds) return false;
+    fake->password.assign(value, length);
+    return true;
+}
+
+bool reloadFakeMqttConfig(void *context) {
+    auto *fake = static_cast<MqttMutationFake *>(context);
+    ++fake->reloads;
+    return fake->reloadSucceeds;
+}
+
+}  // namespace
+
+void test_mqtt_connection_field_byte_boundaries(void) {
+    const size_t brokerLengths[] = {
+        MqttConfigCore::BROKER_MAX_BYTES - 1U,
+        MqttConfigCore::BROKER_MAX_BYTES,
+        MqttConfigCore::BROKER_MAX_BYTES + 1U,
+    };
+    for (const size_t length : brokerLengths) {
+        auto input = validMqttInput();
+        input.brokerIp = repeated("b", length);
+        MqttConfigCore::PreparedConnection connection;
+        MqttConfigCore::ValidationError error;
+        const bool expected = length <= MqttConfigCore::BROKER_MAX_BYTES;
+        TEST_ASSERT_EQUAL(expected, MqttConfigCore::prepareConnection(input, connection, error));
+        if (expected) {
+            TEST_ASSERT_TRUE(connection.valid);
+            TEST_ASSERT_EQUAL_UINT(length, std::strlen(connection.broker.data()));
+            TEST_ASSERT_EQUAL_CHAR('\0', connection.broker[length]);
+        } else {
+            TEST_ASSERT_EQUAL_INT(static_cast<int>(MqttConfigCore::Field::BrokerIp),
+                                  static_cast<int>(error.field));
+            TEST_ASSERT_FALSE(connection.valid);
+        }
+    }
+
+    for (const size_t length : brokerLengths) {
+        auto input = validMqttInput();
+        input.brokerIp.clear();
+        input.brokerUrl = "mqtt://" + repeated("h", length) + "/path-is-not-limited";
+        MqttConfigCore::PreparedConnection connection;
+        MqttConfigCore::ValidationError error;
+        const bool expected = length <= MqttConfigCore::BROKER_MAX_BYTES;
+        TEST_ASSERT_EQUAL(expected, MqttConfigCore::prepareConnection(input, connection, error));
+        if (expected) {
+            TEST_ASSERT_EQUAL_UINT(length, std::strlen(connection.broker.data()));
+            TEST_ASSERT_EQUAL_CHAR('\0', connection.broker[length]);
+        } else {
+            TEST_ASSERT_EQUAL_INT(static_cast<int>(MqttConfigCore::Field::BrokerUrlHost),
+                                  static_cast<int>(error.field));
+        }
+    }
+
+    const size_t credentialLengths[] = {
+        MqttConfigCore::USER_MAX_BYTES - 1U,
+        MqttConfigCore::USER_MAX_BYTES,
+        MqttConfigCore::USER_MAX_BYTES + 1U,
+    };
+    for (const size_t length : credentialLengths) {
+        auto input = validMqttInput();
+        input.user = repeated("u", length);
+        MqttConfigCore::PreparedConnection connection;
+        MqttConfigCore::ValidationError error;
+        const bool expected = length <= MqttConfigCore::USER_MAX_BYTES;
+        TEST_ASSERT_EQUAL(expected, MqttConfigCore::prepareConnection(input, connection, error));
+        if (expected) {
+            TEST_ASSERT_EQUAL_UINT(length, std::strlen(connection.user.data()));
+            TEST_ASSERT_EQUAL_CHAR('\0', connection.user[length]);
+        } else {
+            TEST_ASSERT_EQUAL_INT(static_cast<int>(MqttConfigCore::Field::User),
+                                  static_cast<int>(error.field));
+        }
+    }
+
+    for (const size_t length : credentialLengths) {
+        auto input = validMqttInput();
+        input.password = repeated("p", length);
+        MqttConfigCore::PreparedConnection connection;
+        MqttConfigCore::ValidationError error;
+        const bool expected = length <= MqttConfigCore::PASSWORD_MAX_BYTES;
+        TEST_ASSERT_EQUAL(expected, MqttConfigCore::prepareConnection(input, connection, error));
+        if (expected) {
+            TEST_ASSERT_EQUAL_UINT(length, std::strlen(connection.password.data()));
+            TEST_ASSERT_EQUAL_CHAR('\0', connection.password[length]);
+        } else {
+            TEST_ASSERT_EQUAL_INT(static_cast<int>(MqttConfigCore::Field::Password),
+                                  static_cast<int>(error.field));
+        }
+    }
+}
+
+void test_mqtt_multibyte_credentials_use_utf8_byte_lengths(void) {
+    const std::string twoByteCharacter = "\xC3\xA9";
+    const std::string thirtyBytes = repeated(twoByteCharacter, 15U);
+    const std::string thirtyOneBytes = thirtyBytes + "a";
+    const std::string thirtyTwoBytes = repeated(twoByteCharacter, 16U);
+    const std::string values[] = {thirtyBytes, thirtyOneBytes, thirtyTwoBytes};
+
+    for (size_t i = 0U; i < sizeof(values) / sizeof(values[0]); ++i) {
+        auto input = validMqttInput();
+        input.user = values[i];
+        MqttConfigCore::PreparedConnection connection;
+        MqttConfigCore::ValidationError error;
+        const bool expected = values[i].size() <= MqttConfigCore::USER_MAX_BYTES;
+        TEST_ASSERT_EQUAL(expected, MqttConfigCore::prepareConnection(input, connection, error));
+        if (expected) {
+            TEST_ASSERT_EQUAL_UINT(values[i].size(), std::strlen(connection.user.data()));
+        } else {
+            TEST_ASSERT_EQUAL_INT(static_cast<int>(MqttConfigCore::Field::User),
+                                  static_cast<int>(error.field));
+        }
+    }
+
+    for (size_t i = 0U; i < sizeof(values) / sizeof(values[0]); ++i) {
+        auto input = validMqttInput();
+        input.password = values[i];
+        MqttConfigCore::PreparedConnection connection;
+        MqttConfigCore::ValidationError error;
+        const bool expected = values[i].size() <= MqttConfigCore::PASSWORD_MAX_BYTES;
+        TEST_ASSERT_EQUAL(expected, MqttConfigCore::prepareConnection(input, connection, error));
+        if (expected) {
+            TEST_ASSERT_EQUAL_UINT(values[i].size(), std::strlen(connection.password.data()));
+        } else {
+            TEST_ASSERT_EQUAL_INT(static_cast<int>(MqttConfigCore::Field::Password),
+                                  static_cast<int>(error.field));
+        }
+    }
+}
+
+void test_mqtt_port_contract(void) {
+    struct PortCase {
+        const char *text;
+        bool valid;
+        uint16_t value;
+        MqttConfigCore::Constraint constraint;
+    };
+    const PortCase cases[] = {
+        {"1", true, 1U, MqttConfigCore::Constraint::None},
+        {"9999", true, 9999U, MqttConfigCore::Constraint::None},
+        {"65534", true, 65534U, MqttConfigCore::Constraint::None},
+        {"65535", true, 65535U, MqttConfigCore::Constraint::None},
+        {"", false, 0U, MqttConfigCore::Constraint::PortDecimal},
+        {" \t", false, 0U, MqttConfigCore::Constraint::PortDecimal},
+        {"0", false, 0U, MqttConfigCore::Constraint::PortRange},
+        {"65536", false, 0U, MqttConfigCore::Constraint::PortRange},
+        {"18x3", false, 0U, MqttConfigCore::Constraint::PortDecimal},
+        {"123456", false, 0U, MqttConfigCore::Constraint::MaximumBytes},
+    };
+
+    for (const auto &testCase : cases) {
+        auto input = validMqttInput();
+        input.brokerPort = testCase.text;
+        MqttConfigCore::PreparedConnection connection;
+        MqttConfigCore::ValidationError error;
+        TEST_ASSERT_EQUAL(testCase.valid, MqttConfigCore::prepareConnection(input, connection, error));
+        if (testCase.valid) TEST_ASSERT_EQUAL_UINT16(testCase.value, connection.port);
+        else {
+            TEST_ASSERT_EQUAL_INT(static_cast<int>(MqttConfigCore::Field::BrokerPort),
+                                  static_cast<int>(error.field));
+            TEST_ASSERT_EQUAL_INT(static_cast<int>(testCase.constraint), static_cast<int>(error.constraint));
+        }
+    }
+}
+
+void test_mqtt_handler_core_rejects_before_storage_or_reload(void) {
+    const std::string oversizedBroker = repeated("b", MqttConfigCore::BROKER_MAX_BYTES + 1U);
+    const std::string oversizedUser = repeated("u", MqttConfigCore::USER_MAX_BYTES + 1U);
+    struct InvalidConfigCase {
+        std::string json;
+        MqttConfigMutationCore::Status status;
+        MqttConfigCore::Field field;
+    };
+    const InvalidConfigCase invalidConfigs[] = {
+        {"{\"broker_ip\":\"" + oversizedBroker + "\",\"broker_port\":\"1883\"}",
+         MqttConfigMutationCore::Status::InvalidField, MqttConfigCore::Field::BrokerIp},
+        {"{\"broker_url\":\"mqtt://" + oversizedBroker + "/path\",\"broker_port\":\"1883\"}",
+         MqttConfigMutationCore::Status::InvalidField, MqttConfigCore::Field::BrokerUrlHost},
+        {"{\"broker_ip\":\"broker.local\",\"broker_port\":\"1883\",\"user\":\"" + oversizedUser + "\"}",
+         MqttConfigMutationCore::Status::InvalidField, MqttConfigCore::Field::User},
+        {R"({"broker_ip":"broker.local","broker_port":"65536"})",
+         MqttConfigMutationCore::Status::InvalidField, MqttConfigCore::Field::BrokerPort},
+        {R"({"broker_ip":"broker.local","broker_port":""})",
+         MqttConfigMutationCore::Status::InvalidField, MqttConfigCore::Field::BrokerPort},
+        {R"({"broker_ip":"broker.local","broker_port":"  "})",
+         MqttConfigMutationCore::Status::InvalidField, MqttConfigCore::Field::BrokerPort},
+        {"{not-json", MqttConfigMutationCore::Status::InvalidJson, MqttConfigCore::Field::None},
+    };
+    const MqttConfigMutationCore::ConfigOperations configOperations{
+        writeFakeMqttConfig,
+        reloadFakeMqttConfig,
+    };
+
+    for (const auto &testCase : invalidConfigs) {
+        MqttMutationFake fake;
+        const auto result = MqttConfigMutationCore::applyConfig(
+            testCase.json.c_str(), testCase.json.size(), configOperations, &fake);
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(testCase.status), static_cast<int>(result.status));
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(testCase.field), static_cast<int>(result.validation.field));
+        TEST_ASSERT_EQUAL_STRING("previous-config", fake.config.c_str());
+        TEST_ASSERT_EQUAL_INT(0, fake.configWrites);
+        TEST_ASSERT_EQUAL_INT(0, fake.reloads);
+    }
+
+    MqttMutationFake secretFake;
+    const std::string oversizedPassword = repeated("p", MqttConfigCore::PASSWORD_MAX_BYTES + 1U);
+    const std::string secretJson = "{\"password\":\"" + oversizedPassword + "\"}";
+    const MqttConfigMutationCore::SecretOperations secretOperations{writeFakeMqttPassword};
+    const auto secretResult = MqttConfigMutationCore::applySecret(
+        secretJson.c_str(), secretJson.size(), secretOperations, &secretFake);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(MqttConfigMutationCore::Status::InvalidField),
+                          static_cast<int>(secretResult.status));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(MqttConfigCore::Field::Password),
+                          static_cast<int>(secretResult.validation.field));
+    TEST_ASSERT_EQUAL_STRING("previous-password", secretFake.password.c_str());
+    TEST_ASSERT_EQUAL_INT(0, secretFake.passwordWrites);
+}
+
+void test_mqtt_handler_core_accepts_boundary_values(void) {
+    MqttMutationFake fake;
+    const std::string broker = repeated("b", MqttConfigCore::BROKER_MAX_BYTES);
+    const std::string user = repeated("u", MqttConfigCore::USER_MAX_BYTES);
+    const std::string configJson = "{\"enabled\":true,\"broker_ip\":\"" + broker
+                                   + "\",\"broker_url\":\"\",\"broker_port\":\"65535\",\"user\":\""
+                                   + user + "\",\"root_topic\":\"mbx_root\"}";
+    const MqttConfigMutationCore::ConfigOperations configOperations{
+        writeFakeMqttConfig,
+        reloadFakeMqttConfig,
+    };
+    const auto configResult = MqttConfigMutationCore::applyConfig(
+        configJson.c_str(), configJson.size(), configOperations, &fake);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(MqttConfigMutationCore::Status::Ok),
+                          static_cast<int>(configResult.status));
+    TEST_ASSERT_EQUAL_STRING(configJson.c_str(), fake.config.c_str());
+    TEST_ASSERT_EQUAL_INT(1, fake.configWrites);
+    TEST_ASSERT_EQUAL_INT(1, fake.reloads);
+
+    const std::string password = repeated("p", MqttConfigCore::PASSWORD_MAX_BYTES);
+    const std::string secretJson = "{\"password\":\"" + password + "\"}";
+    const MqttConfigMutationCore::SecretOperations secretOperations{writeFakeMqttPassword};
+    const auto secretResult = MqttConfigMutationCore::applySecret(
+        secretJson.c_str(), secretJson.size(), secretOperations, &fake);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(MqttConfigMutationCore::Status::Ok),
+                          static_cast<int>(secretResult.status));
+    TEST_ASSERT_EQUAL_STRING(password.c_str(), fake.password.c_str());
+    TEST_ASSERT_EQUAL_INT(1, fake.passwordWrites);
+}
+
+void test_mqtt_document_defaults_only_a_missing_port(void) {
+    MqttConfigDocument::StoredConfig missingPort;
+    constexpr const char *missingPortJson = R"({"broker_ip":"broker.local"})";
+    TEST_ASSERT_TRUE(MqttConfigDocument::parseConfig(
+        missingPortJson, std::strlen(missingPortJson), missingPort));
+    TEST_ASSERT_EQUAL_STRING(MqttConfigCore::DEFAULT_PORT, missingPort.connection.brokerPort.c_str());
+
+    MqttConfigDocument::StoredConfig emptyPort;
+    constexpr const char *emptyPortJson = R"({"broker_ip":"broker.local","broker_port":""})";
+    TEST_ASSERT_TRUE(MqttConfigDocument::parseConfig(
+        emptyPortJson, std::strlen(emptyPortJson), emptyPort));
+    TEST_ASSERT_TRUE(emptyPort.connection.brokerPort.empty());
+
+    MqttConfigCore::PreparedConnection connection;
+    MqttConfigCore::ValidationError error;
+    TEST_ASSERT_FALSE(MqttConfigCore::prepareConnection(emptyPort.connection, connection, error));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(MqttConfigCore::Field::BrokerPort),
+                          static_cast<int>(error.field));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(MqttConfigCore::Constraint::PortDecimal),
+                          static_cast<int>(error.constraint));
+}
+
+void test_mqtt_one_shot_test_restores_enabled_state_after_valid_load(void) {
+    struct TestCase {
+        bool configuredEnabled;
+        bool attemptResult;
+    };
+    const TestCase cases[] = {
+        {true, true},
+        {true, false},
+        {false, true},
+        {false, false},
+    };
+
+    for (const auto &testCase : cases) {
+        bool runtimeEnabled = true;
+        int loadCalls = 0;
+        int attemptCalls = 0;
+        int restoreCalls = 0;
+        const bool connected = MqttConfigCore::runOneShotConnectionTest(
+            [&](bool &configuredEnabled) {
+                ++loadCalls;
+                runtimeEnabled = false;
+                configuredEnabled = testCase.configuredEnabled;
+                return true;
+            },
+            [&]() {
+                ++attemptCalls;
+                return testCase.attemptResult;
+            },
+            [&](const bool configuredEnabled) {
+                ++restoreCalls;
+                runtimeEnabled = configuredEnabled;
+            });
+
+        TEST_ASSERT_EQUAL(testCase.attemptResult, connected);
+        TEST_ASSERT_EQUAL(testCase.configuredEnabled, runtimeEnabled);
+        TEST_ASSERT_EQUAL_INT(1, loadCalls);
+        TEST_ASSERT_EQUAL_INT(1, attemptCalls);
+        TEST_ASSERT_EQUAL_INT(1, restoreCalls);
+    }
+
+    bool runtimeEnabled = true;
+    int attemptCalls = 0;
+    int restoreCalls = 0;
+    TEST_ASSERT_FALSE(MqttConfigCore::runOneShotConnectionTest(
+        [&](bool &) {
+            runtimeEnabled = false;
+            return false;
+        },
+        [&]() {
+            ++attemptCalls;
+            return true;
+        },
+        [&](const bool configuredEnabled) {
+            ++restoreCalls;
+            runtimeEnabled = configuredEnabled;
+        }));
+    TEST_ASSERT_FALSE(runtimeEnabled);
+    TEST_ASSERT_EQUAL_INT(0, attemptCalls);
+    TEST_ASSERT_EQUAL_INT(0, restoreCalls);
+}
+
+void test_invalid_persisted_mqtt_fields_clear_state_and_gate_client_calls(void) {
+    const std::string oversizedBroker = repeated("b", MqttConfigCore::BROKER_MAX_BYTES + 1U);
+    const std::string oversizedUser = repeated("u", MqttConfigCore::USER_MAX_BYTES + 1U);
+    struct PersistedCase {
+        std::string json;
+        std::string password;
+    };
+    const PersistedCase cases[] = {
+        {"{\"broker_ip\":\"" + oversizedBroker + "\",\"broker_port\":\"1883\"}", ""},
+        {"{\"broker_url\":\"mqtt://" + oversizedBroker + "\",\"broker_port\":\"1883\"}", ""},
+        {"{\"broker_ip\":\"broker.local\",\"broker_port\":\"1883\",\"user\":\"" + oversizedUser + "\"}", ""},
+        {R"({"broker_ip":"broker.local","broker_port":"123456"})", ""},
+        {R"({"broker_ip":"broker.local","broker_port":""})", ""},
+        {R"({"broker_ip":"broker.local","broker_port":"  "})", ""},
+        {R"({"broker_ip":"broker.local","broker_port":"1883"})",
+         repeated("p", MqttConfigCore::PASSWORD_MAX_BYTES + 1U)},
+    };
+
+    for (const auto &testCase : cases) {
+        MqttConfigDocument::StoredConfig stored;
+        TEST_ASSERT_TRUE(MqttConfigDocument::parseConfig(
+            testCase.json.c_str(), testCase.json.size(), stored));
+        stored.connection.password = testCase.password;
+
+        MqttConfigCore::PreparedConnection connection;
+        connection.valid = true;
+        connection.broker[0] = 's';
+        connection.user[0] = 's';
+        connection.password[0] = 's';
+        connection.port = 1883U;
+        MqttConfigCore::ValidationError error;
+        TEST_ASSERT_FALSE(MqttConfigCore::prepareConnection(stored.connection, connection, error));
+        TEST_ASSERT_FALSE(connection.valid);
+        TEST_ASSERT_EQUAL_CHAR('\0', connection.broker[0]);
+        TEST_ASSERT_EQUAL_CHAR('\0', connection.user[0]);
+        TEST_ASSERT_EQUAL_CHAR('\0', connection.password[0]);
+        TEST_ASSERT_EQUAL_UINT16(0U, connection.port);
+
+        int clientCalls = 0;
+        TEST_ASSERT_FALSE(MqttConfigCore::withValidConnection(connection, [&clientCalls](const auto &) {
+            ++clientCalls;
+            return true;
+        }));
+        TEST_ASSERT_EQUAL_INT(0, clientCalls);
+    }
+}
+
 int main(int /*argc*/, char ** /*argv*/) {
     UNITY_BEGIN();
     RUN_TEST(test_single_chunk_returns_full_buffer);
@@ -1095,5 +1513,13 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_mutation_request_guard_validates_marker_and_allowed_hosts);
     RUN_TEST(test_registered_mutation_matrix_fails_closed_before_dispatch);
     RUN_TEST(test_registered_ota_matrix_checks_mutation_context_before_auth_or_payload);
+    RUN_TEST(test_mqtt_connection_field_byte_boundaries);
+    RUN_TEST(test_mqtt_multibyte_credentials_use_utf8_byte_lengths);
+    RUN_TEST(test_mqtt_port_contract);
+    RUN_TEST(test_mqtt_handler_core_rejects_before_storage_or_reload);
+    RUN_TEST(test_mqtt_handler_core_accepts_boundary_values);
+    RUN_TEST(test_mqtt_document_defaults_only_a_missing_port);
+    RUN_TEST(test_mqtt_one_shot_test_restores_enabled_state_after_valid_load);
+    RUN_TEST(test_invalid_persisted_mqtt_fields_clear_state_and_gate_client_calls);
     return UNITY_END();
 }

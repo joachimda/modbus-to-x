@@ -15,6 +15,7 @@ import http.server
 import json
 import mimetypes
 import random
+import re
 import socket
 import socketserver
 import sys
@@ -37,6 +38,7 @@ mimetypes.add_type("text/html; charset=utf-8", ".html")
 
 class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
     ota_password = None
+    mqtt_constraints = None
     mutation_routes = {
         ("POST", "/api/wifi/connect"),
         ("POST", "/api/wifi/cancel"),
@@ -147,6 +149,10 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
         return False
 
     def _handle_api_get(self, path: str) -> bool:
+        if path == "/api/config/mqtt/constraints":
+            self._send_json(type(self).mqtt_constraints)
+            return True
+
         # System stats used by index.js
         if path == "/api/stats/system":
             now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -390,6 +396,29 @@ def find_project_root(start: Path) -> Path:
     return start
 
 
+def load_mqtt_constraints(project_root: Path) -> dict:
+    header = project_root / "include" / "mqtt" / "MqttConfigCore.h"
+    source = header.read_text(encoding="utf-8")
+
+    def constant(name: str) -> int:
+        match = re.search(rf"constexpr\s+(?:size_t|uint16_t)\s+{name}\s*=\s*(\d+)U;", source)
+        if not match:
+            raise RuntimeError(f"MQTT constraint {name} not found in {header}")
+        return int(match.group(1))
+
+    broker_max = constant("BROKER_MAX_BYTES")
+    return {
+        "brokerIpMaxBytes": broker_max,
+        "brokerUrlHostMaxBytes": broker_max,
+        "brokerMaxBytes": broker_max,
+        "portMin": constant("PORT_MIN"),
+        "portMax": constant("PORT_MAX"),
+        "portMaxBytes": constant("PORT_MAX_BYTES"),
+        "userMaxBytes": constant("USER_MAX_BYTES"),
+        "passwordMaxBytes": constant("PASSWORD_MAX_BYTES"),
+    }
+
+
 def wait_for_port(host: str, port: int, timeout: float = 3.0) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -415,6 +444,7 @@ def main():
     script_path = Path(__file__).resolve()
     project_root = find_project_root(script_path.parent)
     data_dir = Path(args.dir).resolve() if args.dir else (project_root / "data").resolve()
+    NoCacheRequestHandler.mqtt_constraints = load_mqtt_constraints(project_root)
 
     if not data_dir.is_dir():
         print(f"[ERR] Data directory not found: {data_dir}", file=sys.stderr)

@@ -25,6 +25,8 @@ public:
     static void handlePutMqttSecretBody(AsyncWebServerRequest *req, const uint8_t *data, size_t len, size_t index,
                                         size_t total);
 
+    static void handleGetMqttConstraints(AsyncWebServerRequest *req);
+
     static void handleModbusDisable(AsyncWebServerRequest * req, bool state);
 
     static void handleNetworkReset(AsyncWebServerRequest *req);

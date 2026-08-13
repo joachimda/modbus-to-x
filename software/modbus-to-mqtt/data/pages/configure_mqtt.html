@@ -64,7 +64,7 @@
             <label for="broker-url"></label><input id="broker-url" type="text" placeholder="e.g. mqtt://my.broker.local" />
 
             <div>Port</div>
-            <label for="broker-port"></label><input id="broker-port" type="number" min="1" max="65535" value="1883" />
+            <label for="broker-port"></label><input id="broker-port" type="text" inputmode="numeric" pattern="[0-9]+" value="1883" required />
 
             <div>Username</div>
             <label for="broker-user"></label><input id="broker-user" type="text" placeholder="optional" />
@@ -77,7 +77,8 @@
             <div>Root Topic</div>
             <label for="root-topic"></label><input id="root-topic" type="text" placeholder="e.g. mbx_root or home/mbx" />
         </div>
-        <div class="hint" style="margin-top:.75rem;">MQTT stays off until enabled. When both IP and URL are provided, the IP is preferred for connection. Password is saved separately in secure NVS storage.</div>
+        <div class="hint" id="mqtt-constraints-hint" style="margin-top:.75rem;"></div>
+        <div class="hint" style="margin-top:.35rem;">MQTT stays off until enabled. When both IP and URL are provided, the IP is preferred for connection. Password is saved separately in secure NVS storage.</div>
         <div class="divider"></div>
         <div class="hstack">
             <button class="btn" id="btn-test">Test Connection</button>

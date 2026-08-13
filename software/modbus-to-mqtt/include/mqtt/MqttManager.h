@@ -3,7 +3,7 @@
 
 #include <PubSubClient.h>
 #include <mqtt/MqttSubscriptionHandler.h>
-#include <Preferences.h>
+#include "mqtt/MqttConfigCore.h"
 
 class MqttManager {
 public:
@@ -47,21 +47,22 @@ public:
 
     auto testConnectOnce() -> bool;
 
-    void reconfigureFromFile();
+    bool reconfigureFromFile();
 
     String getClientId();
 
 private:
     [[noreturn]] static void processMQTTAsync(void *parameter);
 
-    void loadMQTTConfig();
+    bool loadMQTTConfig();
+
+    bool applyServerConfiguration();
+
+    void clearLoadedConfiguration();
 
     void setClientId(String clientId);
 
-    char _mqttBroker[150] = "";
-    char _mqttPort[6] = "";
-    char _mqttUser[32] = "";
-    char _mqttPassword[32] = "";
+    MqttConfigCore::PreparedConnection _mqttConnection;
     String _mqttRootTopic = "";
     String _clientId = "";
 
@@ -69,7 +70,6 @@ private:
     Logger *_logger;
     TaskHandle_t _mqttTaskHandle;
     MqttSubscriptionHandler *_subscriptionHandler;
-    Preferences preferences;
     bool _hasWill{false};
     String _willTopic;
     String _willMessage;

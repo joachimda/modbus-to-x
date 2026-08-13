@@ -10,6 +10,7 @@ export const API = {
     PUT_MODBUS_CONFIG: '/api/config/modbus',
     PUT_MQTT_CONFIG: '/api/config/mqtt',
     PUT_MQTT_SECRET: '/api/config/mqtt/secret',
+    GET_MQTT_CONSTRAINTS: '/api/config/mqtt/constraints',
     POST_MQTT_TEST: '/api/mqtt/test',
     POST_MODBUS_EXECUTE: '/api/modbus/execute',
     POST_SYSTEM_RESET: '/api/system/reboot',
@@ -121,7 +122,21 @@ export function mbxFetch(url, init = {}) {
 export async function safeJson(url, init) {
     const r = await mbxFetch(url, { cache: "no-cache", ...init });
     if (!r.ok) {
-        throw new Error(`${r.status} ${r.statusText}`);
+        let detail = '';
+        try {
+            const body = await r.json();
+            if (body.field && body.constraint) {
+                detail = `${body.field}: ${body.constraint}`;
+                if (body.maximumBytes) detail += ` (${body.maximumBytes} bytes maximum)`;
+                else if (body.minimum !== undefined && body.maximum !== undefined) {
+                    detail += ` (${body.minimum}-${body.maximum})`;
+                }
+            }
+            else detail = body.message || body.error || '';
+        } catch (_) {
+            // Keep the status fallback when the response is not JSON.
+        }
+        throw new Error(detail ? `${r.status} ${detail}` : `${r.status} ${r.statusText}`);
     }
     if (r.status === 204) {
         return {};

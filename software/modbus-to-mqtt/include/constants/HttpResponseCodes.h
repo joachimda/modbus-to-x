@@ -6,10 +6,11 @@ public:
     static constexpr int OK = 200;
     static constexpr int BAD_REQUEST_HTTP = 400;
     static constexpr int UNAUTHORIZED = 401;
+    static constexpr int FORBIDDEN = 403;
     static constexpr int ACCEPTED = 202;
     static constexpr int NO_CONTENT = 204;
     static constexpr int REDIRECT = 302;
-    static constexpr int BAD_REQUEST = 403;
+    static constexpr int BAD_REQUEST = FORBIDDEN;
     static constexpr int NOT_FOUND = 404;
     static constexpr int CONFLICT = 409;
     static constexpr int INTERNAL_SERVER_ERROR = 500;

@@ -10,6 +10,7 @@
 #include "storage/ConfigFs.h"
 #include "network/NetworkPortal.h"
 #include "network/mbx_server/MBXServerHandlers.h"
+#include "network/mbx_server/MutationRequestGuardCore.h"
 #include "network/mbx_server/OtaRouteRegistration.h"
 #include "services/IndicatorService.h"
 #include "services/ArduinoOtaManager.h"
@@ -83,27 +84,9 @@ void MBXServer::configureRoutes() const {
         req->send(SPIFFS, "/pages/configure_modbus.html", HttpMediaTypes::HTML);
     });
 
-    server->on(Routes::PUT_MODBUS_CONFIG, HTTP_PUT, [this](const AsyncWebServerRequest *req) {
-        logRequest(req);
-    }, nullptr,[](AsyncWebServerRequest *req, const uint8_t *data, const size_t len, const size_t index, const size_t total) {
-        MBXServerHandlers::handlePutModbusConfigBody(req, data, len, index, total);
-    });
-
     server->on(Routes::GET_MODBUS_CONFIG, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         serveFsFile(req, ConfigFS, ConfigFs::kModbusConfigFile, nullptr, HttpMediaTypes::JSON, _logger);
-    });
-
-    server->on(Routes::PUT_MQTT_CONFIG, HTTP_PUT, [this](const AsyncWebServerRequest *req) {
-        logRequest(req);
-    }, nullptr,[](AsyncWebServerRequest *req, const uint8_t *data, const size_t len, const size_t index, const size_t total) {
-        MBXServerHandlers::handlePutMqttConfigBody(req, data, len, index, total);
-    });
-
-    server->on(Routes::PUT_MQTT_SECRET, HTTP_POST, [this](const AsyncWebServerRequest *req) {
-        logRequest(req);
-    }, nullptr,[](AsyncWebServerRequest *req, const uint8_t *data, const size_t len, const size_t index, const size_t total) {
-        MBXServerHandlers::handlePutMqttSecretBody(req, data, len, index, total);
     });
 
     server->on(Routes::GET_MQTT_CONFIG, HTTP_GET, [this](AsyncWebServerRequest *req) {
@@ -116,37 +99,12 @@ void MBXServer::configureRoutes() const {
         MBXServerHandlers::getLogs(req);
     });
 
-    server->on(Routes::RESET_NETWORK, HTTP_GET, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        serveFsFile(req, SPIFFS, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML,
-                        _logger);
-    });
-
     server->on(Routes::SYSTEM_STATS, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         MBXServerHandlers::getSystemStats(req, _logger);
     });
 
-    server->on(Routes::MQTT_TEST_CONNECT, HTTP_POST, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        MBXServerHandlers::handleMqttTestConnection(req);
-    });
-
-    server->on(Routes::POST_MODBUS_EXECUTE, HTTP_POST, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        MBXServerHandlers::handleModbusExecute(req);
-    });
-
-    server->on(Routes::POST_MBUS_DISABLE, HTTP_POST, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        MBXServerHandlers::handleModbusDisable(req, false);
-    });
-
-    server->on(Routes::POST_MBUS_ENABLE, HTTP_POST, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        MBXServerHandlers::handleModbusDisable(req, true);
-    });
-
+    configureMutationRoutes(MutationRouteRegistration::Mode::Station);
     configureOtaRoutes();
 
     server->onNotFound([this](AsyncWebServerRequest *req) {
@@ -158,10 +116,97 @@ void MBXServer::configureRoutes() const {
         req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT, "I haz no file");
     });
 
-    server->on(Routes::DEVICE_RESET, HTTP_POST, [this](const AsyncWebServerRequest *req) {
-        logRequest(req);
-        MBXServerHandlers::handleDeviceReset(_logger);
-    });
+}
+
+bool MBXServer::isMutationAllowed(const AsyncWebServerRequest *request) {
+    if (request == nullptr) return false;
+
+    const AsyncWebHeader *marker = nullptr;
+    size_t markerCount = 0U;
+    size_t hostCount = 0U;
+    for (size_t i = 0U; i < request->headers(); ++i) {
+        const AsyncWebHeader *header = request->getHeader(i);
+        if (header != nullptr && header->name().equalsIgnoreCase(MutationRequestGuardCore::REQUEST_HEADER)) {
+            marker = header;
+            ++markerCount;
+        }
+        if (header != nullptr && header->name().equalsIgnoreCase("Host")) ++hostCount;
+    }
+    if (markerCount != 1U || marker == nullptr || hostCount != 1U) return false;
+
+    const String stationIp = WiFi.localIP().toString();
+    const String accessPointIp = WiFi.softAPIP().toString();
+    return MutationRequestGuardCore::isAllowed(
+        marker->value().c_str(), request->host().c_str(), stationIp.c_str(), accessPointIp.c_str(), DEFAULT_HOSTNAME);
+}
+
+void MBXServer::configureMutationRoutes(const MutationRouteRegistration::Mode mode) const {
+    struct Callbacks {
+        const MBXServer *owner;
+
+        bool isMutationAllowed(const AsyncWebServerRequest *request) const {
+            return MBXServer::isMutationAllowed(request);
+        }
+
+        void sendForbidden(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::sendMutationForbidden(request);
+        }
+
+        void logRequest(const AsyncWebServerRequest *request) const {
+            owner->logRequest(request);
+        }
+
+        void handlePutModbusConfigBody(AsyncWebServerRequest *request, const uint8_t *data, const size_t length,
+                                       const size_t index, const size_t total) const {
+            MBXServerHandlers::handlePutModbusConfigBody(request, data, length, index, total);
+        }
+
+        void handlePutMqttConfigBody(AsyncWebServerRequest *request, const uint8_t *data, const size_t length,
+                                     const size_t index, const size_t total) const {
+            MBXServerHandlers::handlePutMqttConfigBody(request, data, length, index, total);
+        }
+
+        void handlePutMqttSecretBody(AsyncWebServerRequest *request, const uint8_t *data, const size_t length,
+                                     const size_t index, const size_t total) const {
+            MBXServerHandlers::handlePutMqttSecretBody(request, data, length, index, total);
+        }
+
+        void handleMqttTestConnection(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::handleMqttTestConnection(request);
+        }
+
+        void handleModbusExecute(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::handleModbusExecute(request);
+        }
+
+        void handleModbusDisable(AsyncWebServerRequest *request, const bool state) const {
+            MBXServerHandlers::handleModbusDisable(request, state);
+        }
+
+        void handleDeviceReset(AsyncWebServerRequest *) const {
+            MBXServerHandlers::handleDeviceReset(owner->_logger);
+        }
+
+        void handleWifiConnectBody(AsyncWebServerRequest *request, const uint8_t *data, const size_t length,
+                                   const size_t index, const size_t total) const {
+            MBXServerHandlers::handleWifiConnect(request, g_wifi, data, length, index, total);
+        }
+
+        void handleWifiApOff(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::handleWifiApOff(request);
+        }
+
+        void handleWifiCancel(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::handleWifiCancel(request, g_wifi);
+        }
+
+        void handleNetworkReset(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::handleNetworkReset(request);
+        }
+    };
+
+    MutationRouteRegistration::configure<AsyncWebServerRequest>(
+        server, Callbacks{this}, mode, HTTP_POST, HTTP_PUT);
 }
 
 void MBXServer::configureOtaRoutes() const {
@@ -172,12 +217,20 @@ void MBXServer::configureOtaRoutes() const {
             return MBXServerHandlers::isOtaRequestAuthorized(request);
         }
 
+        bool isMutationAllowed(const AsyncWebServerRequest *request) const {
+            return MBXServer::isMutationAllowed(request);
+        }
+
         bool cacheUploadAuthorization(AsyncWebServerRequest *request) const {
             return MBXServerHandlers::cacheOtaUploadAuthorization(request);
         }
 
         void sendUnauthorized(AsyncWebServerRequest *request) const {
             MBXServerHandlers::sendOtaUnauthorized(request);
+        }
+
+        void sendForbidden(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::sendMutationForbidden(request);
         }
 
         void logRequest(const AsyncWebServerRequest *request) const {
@@ -257,35 +310,11 @@ void MBXServer::configureAccessPointRoutes() const {
         MBXServerHandlers::getSsidListAsJson(req);
     });
 
-    server->on(Routes::POST_WIFI_CONNECT, HTTP_POST,
-               [this](const AsyncWebServerRequest *req) {
-                   logRequest(req);
-               },
-               nullptr,
-               [](AsyncWebServerRequest *req, const uint8_t *data, const size_t len, const size_t index, const size_t total) {
-                   MBXServerHandlers::handleWifiConnect(req, g_wifi, data, len, index, total);
-               }
-    );
-
-    server->on(Routes::RESET_NETWORK, HTTP_GET, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        serveFsFile(req, SPIFFS, "/pages/reset_result.html", MBXServerHandlers::handleNetworkReset, HttpMediaTypes::HTML,
-                        _logger);
-    }).setFilter(accessPointFilter);
-
     server->on(Routes::GET_WIFI_STATUS, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         MBXServerHandlers::handleWifiStatus(req, g_wifi);
     });
-    server->on(Routes::POST_WIFI_AP_OFF, HTTP_POST, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        MBXServerHandlers::handleWifiApOff(req);
-    });
-    server->on(Routes::POST_WIFI_CANCEL, HTTP_POST, [this](AsyncWebServerRequest *req) {
-        logRequest(req);
-        MBXServerHandlers::handleWifiCancel(req, g_wifi);
-    });
-
+    configureMutationRoutes(MutationRouteRegistration::Mode::AccessPoint);
     configureOtaRoutes();
 
     for (const char *path : CAPTIVE_PORTAL_ENDPOINTS) {

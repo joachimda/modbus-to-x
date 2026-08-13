@@ -27,7 +27,7 @@ public:
 
     static void handleModbusDisable(AsyncWebServerRequest * req, bool state);
 
-    static void handleNetworkReset();
+    static void handleNetworkReset(AsyncWebServerRequest *req);
 
     static void handleWifiConnect(AsyncWebServerRequest *req, WifiConnectionController &wifi, const uint8_t *data,
                                   size_t len, size_t index, size_t total);
@@ -60,6 +60,8 @@ public:
     static bool cacheOtaUploadAuthorization(AsyncWebServerRequest *req);
 
     static void sendOtaUnauthorized(AsyncWebServerRequest *req);
+
+    static void sendMutationForbidden(AsyncWebServerRequest *req);
 
     static void handleMqttTestConnection(AsyncWebServerRequest *req);
 

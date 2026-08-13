@@ -1,6 +1,7 @@
 export const API = {
     SSIDS: '/api/ssids',
     CONNECT: '/api/wifi/connect',
+    RESET_NETWORK: '/api/wifi/reset',
     STATUS: '/api/wifi/status',
     CANCEL: '/api/wifi/cancel',
     SYSTEM_STATS: '/api/stats/system',
@@ -66,7 +67,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 export async function reboot() {
     if (!confirm("Reboot the device now?")) return;
     try {
-        const r = await fetch(API.POST_SYSTEM_RESET, { method: "POST" });
+        const r = await mbxFetch(API.POST_SYSTEM_RESET, { method: "POST" });
         if (r.ok) {
             alert("Rebooting… The page will try to reconnect automatically.");
             // Optional: try to reload after a short pause
@@ -105,8 +106,20 @@ export async function safeGet(url) {
         return { __error: e.message };
     }
 }
+export function mutationHeaders(headers) {
+    const result = new Headers(headers || {});
+    result.set('X-MBX-Request', '1');
+    return result;
+}
+
+export function mbxFetch(url, init = {}) {
+    const method = String(init.method || 'GET').toUpperCase();
+    if (method === 'GET' || method === 'HEAD') return fetch(url, init);
+    return fetch(url, { ...init, headers: mutationHeaders(init.headers) });
+}
+
 export async function safeJson(url, init) {
-    const r = await fetch(url, { cache: "no-cache", ...init });
+    const r = await mbxFetch(url, { cache: "no-cache", ...init });
     if (!r.ok) {
         throw new Error(`${r.status} ${r.statusText}`);
     }

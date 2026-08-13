@@ -4,6 +4,7 @@
 #include <DNSServer.h>
 #include "ESPAsyncWebServer.h"
 #include "Logger.h"
+#include "network/mbx_server/MutationRouteRegistration.h"
 
 static constexpr int serverPort = 80;
 
@@ -23,6 +24,10 @@ private:
     void configureRoutes() const;
 
     void configureOtaRoutes() const;
+
+    void configureMutationRoutes(MutationRouteRegistration::Mode mode) const;
+
+    static bool isMutationAllowed(const AsyncWebServerRequest *request);
 
     void ensureConfigFile() const;
 

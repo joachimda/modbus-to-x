@@ -19,6 +19,7 @@
 #include "constants/HttpResponseCodes.h"
 #include "constants/Routes.h"
 #include "network/NetworkPortal.h"
+#include "network/mbx_server/MutationRequestGuardCore.h"
 #include "services/StatService.h"
 #include "services/FactoryResetCore.h"
 #include "services/OtaService.h"
@@ -45,6 +46,7 @@ auto constexpr FACTORY_RESET_CONFIG_RESP = R"({"error":"factory_reset_config_sto
 auto constexpr FACTORY_RESET_NVS_RESP = R"({"error":"factory_reset_nvs_failed"})";
 auto constexpr WIFI_HANDLER_OK_RESP = "{\"ok\":true}";
 auto constexpr WIFI_ALREADY_CONNECTING_RESP = R"({"error":"already_connecting"})";
+auto constexpr NETWORK_RESET_ACCEPTED_RESP = R"({"ok":true,"resetting":true})";
 
 auto constexpr NETWORK_RESET_DELAY_MS = 5000;
 
@@ -628,9 +630,12 @@ void MBXServerHandlers::getSsidListAsJson(AsyncWebServerRequest *req) {
     req->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, out);
 }
 
-void MBXServerHandlers::handleNetworkReset() {
+void MBXServerHandlers::handleNetworkReset(AsyncWebServerRequest *req) {
+    if (req == nullptr) return;
+    req->send(HttpResponseCodes::ACCEPTED, HttpMediaTypes::JSON, NETWORK_RESET_ACCEPTED_RESP);
     Serial.println("MBXServerHandlers::handleNetworkReset called");
     xTaskCreatePinnedToCore([](void *) {
+        delay(500);
         WiFi.persistent(true);
         WiFi.setAutoReconnect(false);
         esp_wifi_set_storage(WIFI_STORAGE_FLASH);
@@ -1062,6 +1067,14 @@ void MBXServerHandlers::sendOtaUnauthorized(AsyncWebServerRequest *req) {
     AsyncWebServerResponse *response = req->beginResponse(
         HttpResponseCodes::UNAUTHORIZED, HttpMediaTypes::JSON, OTA_UNAUTHORIZED_RESP);
     response->addHeader("WWW-Authenticate", "Bearer realm=\"ota\"");
+    response->addHeader("Cache-Control", "no-store");
+    req->send(response);
+}
+
+void MBXServerHandlers::sendMutationForbidden(AsyncWebServerRequest *req) {
+    if (req == nullptr) return;
+    AsyncWebServerResponse *response = req->beginResponse(
+        HttpResponseCodes::FORBIDDEN, HttpMediaTypes::JSON, MutationRequestGuardCore::FORBIDDEN_RESPONSE);
     response->addHeader("Cache-Control", "no-store");
     req->send(response);
 }

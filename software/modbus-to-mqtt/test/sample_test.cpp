@@ -5,6 +5,8 @@
 // build_src_filter just for one file.
 
 #include "../src/network/mbx_server/BodyAccumulator.cpp"
+#include "../include/network/mbx_server/MutationRequestGuardCore.h"
+#include "../include/network/mbx_server/MutationRouteRegistration.h"
 #include "../include/network/mbx_server/OtaRouteRegistration.h"
 #include "../include/services/FactoryResetCore.h"
 #include "../src/services/ota/OtaCredentialCore.cpp"
@@ -83,11 +85,13 @@ enum RouteTestMethod {
     ROUTE_TEST_POST,
     ROUTE_TEST_PUT,
     ROUTE_TEST_DELETE,
+    ROUTE_TEST_HEAD,
 };
 
 struct RouteTestState {
     int mode = 0;
     int unauthorizedCalls = 0;
+    int forbiddenCalls = 0;
     int firmwareBeginCalls = 0;
     int filesystemBeginCalls = 0;
     int writeCalls = 0;
@@ -102,6 +106,7 @@ struct RouteTestState {
     int factoryResetScheduleCalls = 0;
     int factoryResetFormatCalls = 0;
     int factoryResetEraseCalls = 0;
+    int mutationSideEffectCalls = 0;
 };
 
 struct RouteTestRequest {
@@ -110,6 +115,8 @@ struct RouteTestRequest {
     std::string bearer;
     OtaUploadGuardCore::State uploadState{};
     RouteTestState *state = nullptr;
+    std::string marker = MutationRequestGuardCore::REQUEST_HEADER_VALUE;
+    std::string host = "192.168.1.42";
 
     RouteTestMethod method() const {
         return requestMethod;
@@ -173,7 +180,12 @@ public:
 
     bool dispatchUploadChunk(RouteTestRequest &request, uint8_t *data, const size_t length) {
         RouteTestEntry *route = matchingRoute(request);
-        if (route == nullptr || !route->uploadHandler) return false;
+        if (route == nullptr) return false;
+        if (!route->uploadHandler) {
+            if (!route->requestHandler) return false;
+            route->requestHandler(&request);
+            return true;
+        }
         route->uploadHandler(&request, "image.bin", 0U, data, length, false);
         return true;
     }
@@ -272,6 +284,11 @@ struct RouteTestCallbacks {
         return request != nullptr && authorizeRouteRequest(*request);
     }
 
+    bool isMutationAllowed(const RouteTestRequest *request) const {
+        return request != nullptr && MutationRequestGuardCore::isAllowed(
+            request->marker.c_str(), request->host.c_str(), "192.168.1.42", "192.168.4.1", "modbus-to-x");
+    }
+
     bool cacheUploadAuthorization(RouteTestRequest *request) const {
         if (request == nullptr || request->uploadState.authorizationChecked) return false;
         bool authorized = authorizeRouteRequest(*request);
@@ -281,6 +298,10 @@ struct RouteTestCallbacks {
 
     void sendUnauthorized(RouteTestRequest *) const {
         ++state->unauthorizedCalls;
+    }
+
+    void sendForbidden(RouteTestRequest *) const {
+        ++state->forbiddenCalls;
     }
 
     void logRequest(const RouteTestRequest *) const {}
@@ -334,6 +355,35 @@ struct RouteTestCallbacks {
         (void)FactoryResetCore::execute(operations, state);
     }
 
+    void handlePutModbusConfigBody(RouteTestRequest *, const uint8_t *, const size_t,
+                                   const size_t, const size_t) const {
+        ++state->mutationSideEffectCalls;
+    }
+
+    void handlePutMqttConfigBody(RouteTestRequest *, const uint8_t *, const size_t,
+                                 const size_t, const size_t) const {
+        ++state->mutationSideEffectCalls;
+    }
+
+    void handlePutMqttSecretBody(RouteTestRequest *, const uint8_t *, const size_t,
+                                 const size_t, const size_t) const {
+        ++state->mutationSideEffectCalls;
+    }
+
+    void handleMqttTestConnection(RouteTestRequest *) const { ++state->mutationSideEffectCalls; }
+    void handleModbusExecute(RouteTestRequest *) const { ++state->mutationSideEffectCalls; }
+    void handleModbusDisable(RouteTestRequest *, bool) const { ++state->mutationSideEffectCalls; }
+    void handleDeviceReset(RouteTestRequest *) const { ++state->mutationSideEffectCalls; }
+
+    void handleWifiConnectBody(RouteTestRequest *, const uint8_t *, const size_t,
+                               const size_t, const size_t) const {
+        ++state->mutationSideEffectCalls;
+    }
+
+    void handleWifiApOff(RouteTestRequest *) const { ++state->mutationSideEffectCalls; }
+    void handleWifiCancel(RouteTestRequest *) const { ++state->mutationSideEffectCalls; }
+    void handleNetworkReset(RouteTestRequest *) const { ++state->mutationSideEffectCalls; }
+
 private:
     void handleUpload(RouteTestRequest *request, uint8_t *data, const size_t length, const bool firmware) const {
         RouteUploadOperation operation{state, firmware};
@@ -351,6 +401,13 @@ RouteTestServer configuredRouteTestServer(RouteTestState &state) {
     OtaRouteRegistration::configure<RouteTestRequest, std::string>(
         &server, RouteTestCallbacks{&state},
         ROUTE_TEST_GET, ROUTE_TEST_POST, ROUTE_TEST_PUT, ROUTE_TEST_DELETE);
+    return server;
+}
+
+RouteTestServer configuredMutationTestServer(RouteTestState &state, const MutationRouteRegistration::Mode mode) {
+    RouteTestServer server;
+    MutationRouteRegistration::configure<RouteTestRequest>(
+        &server, RouteTestCallbacks{&state}, mode, ROUTE_TEST_POST, ROUTE_TEST_PUT);
     return server;
 }
 
@@ -667,10 +724,10 @@ void test_registered_ota_routes_decode_bearer_and_dispatch_first_upload_chunk(vo
         state.mode = routeMode;
         RouteTestServer server = configuredRouteTestServer(state);
 
-        TEST_ASSERT_EQUAL_UINT(2U, server.count(Routes::OTA_FIRMWARE, ROUTE_TEST_POST));
-        TEST_ASSERT_EQUAL_UINT(2U, server.count(Routes::OTA_FILESYSTEM, ROUTE_TEST_POST));
-        TEST_ASSERT_EQUAL_UINT(2U, server.count(Routes::OTA_HTTP_CHECK, ROUTE_TEST_POST));
-        TEST_ASSERT_EQUAL_UINT(2U, server.count(Routes::FACTORY_RESET, ROUTE_TEST_POST));
+        TEST_ASSERT_EQUAL_UINT(3U, server.count(Routes::OTA_FIRMWARE, ROUTE_TEST_POST));
+        TEST_ASSERT_EQUAL_UINT(3U, server.count(Routes::OTA_FILESYSTEM, ROUTE_TEST_POST));
+        TEST_ASSERT_EQUAL_UINT(3U, server.count(Routes::OTA_HTTP_CHECK, ROUTE_TEST_POST));
+        TEST_ASSERT_EQUAL_UINT(3U, server.count(Routes::FACTORY_RESET, ROUTE_TEST_POST));
 
         RouteTestRequest setPassword{ROUTE_TEST_PUT, Routes::OTA_PASSWORD, "", {}, &state};
         TEST_ASSERT_TRUE(server.dispatchBody(setPassword, R"({"password":"route-password"})"));
@@ -807,6 +864,213 @@ void test_registered_ota_routes_fail_closed_when_credential_storage_is_unavailab
     Preferences::setBeginFailure(false);
 }
 
+void test_mutation_request_guard_validates_marker_and_allowed_hosts(void) {
+    TEST_ASSERT_TRUE(MutationRequestGuardCore::hasValidMarker("1"));
+    TEST_ASSERT_FALSE(MutationRequestGuardCore::hasValidMarker(nullptr));
+    TEST_ASSERT_FALSE(MutationRequestGuardCore::hasValidMarker(""));
+    TEST_ASSERT_FALSE(MutationRequestGuardCore::hasValidMarker("01"));
+    TEST_ASSERT_FALSE(MutationRequestGuardCore::hasValidMarker("1 "));
+
+    const char *allowedHosts[] = {
+        "192.168.1.42",
+        "192.168.1.42:80",
+        "192.168.4.1",
+        "192.168.4.1:8080",
+        "modbus-to-x",
+        "MODBUS-TO-X:80",
+        "modbus-to-x.local",
+        "MODBUS-TO-X.LOCAL:8000",
+    };
+    for (const char *host : allowedHosts) {
+        TEST_ASSERT_TRUE(MutationRequestGuardCore::isAllowed(
+            "1", host, "192.168.1.42", "192.168.4.1", "modbus-to-x"));
+    }
+
+    const char *rejectedHosts[] = {
+        "",
+        "0.0.0.0",
+        "192.168.1.43",
+        "modbus-to-x.example",
+        "evil-modbus-to-x.local",
+        "modbus-to-x.local.",
+        "modbus-to-x:0",
+        "modbus-to-x:65536",
+        "modbus-to-x:http",
+        "modbus-to-x:80:90",
+        "modbus-to-x,evil.example",
+        "user@modbus-to-x",
+        "[192.168.1.42]",
+    };
+    for (const char *host : rejectedHosts) {
+        TEST_ASSERT_FALSE(MutationRequestGuardCore::isAllowed(
+            "1", host, "192.168.1.42", "192.168.4.1", "modbus-to-x"));
+    }
+    TEST_ASSERT_FALSE(MutationRequestGuardCore::isAllowed(
+        "1", "0.0.0.0", "0.0.0.0", "0.0.0.0", "modbus-to-x"));
+    TEST_ASSERT_EQUAL_STRING(
+        R"({"error":"forbidden_request_context"})", MutationRequestGuardCore::FORBIDDEN_RESPONSE);
+}
+
+void test_registered_mutation_matrix_fails_closed_before_dispatch(void) {
+    struct MutationCase {
+        const char *path;
+        RouteTestMethod method;
+        bool hasBody;
+    };
+    const MutationCase stationRoutes[] = {
+        {Routes::PUT_MODBUS_CONFIG, ROUTE_TEST_PUT, true},
+        {Routes::PUT_MQTT_CONFIG, ROUTE_TEST_PUT, true},
+        {Routes::PUT_MQTT_SECRET, ROUTE_TEST_POST, true},
+        {Routes::MQTT_TEST_CONNECT, ROUTE_TEST_POST, false},
+        {Routes::POST_MODBUS_EXECUTE, ROUTE_TEST_POST, false},
+        {Routes::POST_MBUS_DISABLE, ROUTE_TEST_POST, false},
+        {Routes::POST_MBUS_ENABLE, ROUTE_TEST_POST, false},
+        {Routes::DEVICE_RESET, ROUTE_TEST_POST, false},
+        {Routes::POST_WIFI_RESET, ROUTE_TEST_POST, false},
+    };
+    const MutationCase accessPointRoutes[] = {
+        {Routes::POST_WIFI_CONNECT, ROUTE_TEST_POST, true},
+        {Routes::POST_WIFI_AP_OFF, ROUTE_TEST_POST, false},
+        {Routes::POST_WIFI_CANCEL, ROUTE_TEST_POST, false},
+        {Routes::POST_WIFI_RESET, ROUTE_TEST_POST, false},
+    };
+
+    for (int modeIndex = 0; modeIndex < 2; ++modeIndex) {
+        RouteTestState state;
+        const bool station = modeIndex == 0;
+        RouteTestServer server = configuredMutationTestServer(
+            state, station ? MutationRouteRegistration::Mode::Station
+                           : MutationRouteRegistration::Mode::AccessPoint);
+        const MutationCase *routes = station ? stationRoutes : accessPointRoutes;
+        const size_t routeCount = station
+            ? sizeof(stationRoutes) / sizeof(stationRoutes[0])
+            : sizeof(accessPointRoutes) / sizeof(accessPointRoutes[0]);
+
+        for (size_t i = 0U; i < routeCount; ++i) {
+            const MutationCase &route = routes[i];
+            TEST_ASSERT_EQUAL_UINT(2U, server.count(route.path, route.method));
+
+            const int callsBefore = state.mutationSideEffectCalls;
+            RouteTestRequest valid{route.method, route.path, "", {}, &state};
+            TEST_ASSERT_TRUE(route.hasBody ? server.dispatchBody(valid, "{}") : server.dispatchRequest(valid));
+            TEST_ASSERT_EQUAL_INT(callsBefore + 1, state.mutationSideEffectCalls);
+
+            RouteTestRequest missingMarker{route.method, route.path, "", {}, &state};
+            missingMarker.marker.clear();
+            TEST_ASSERT_TRUE(route.hasBody
+                                 ? server.dispatchBody(missingMarker, R"({"dangerous":true})")
+                                 : server.dispatchRequest(missingMarker));
+            TEST_ASSERT_EQUAL_INT(callsBefore + 1, state.mutationSideEffectCalls);
+
+            RouteTestRequest wrongMarker{route.method, route.path, "", {}, &state};
+            wrongMarker.marker = "0";
+            TEST_ASSERT_TRUE(route.hasBody
+                                 ? server.dispatchBody(wrongMarker, R"({"dangerous":true})")
+                                 : server.dispatchRequest(wrongMarker));
+            TEST_ASSERT_EQUAL_INT(callsBefore + 1, state.mutationSideEffectCalls);
+
+            RouteTestRequest invalidHost{route.method, route.path, "", {}, &state};
+            invalidHost.host = "attacker.example";
+            TEST_ASSERT_TRUE(route.hasBody
+                                 ? server.dispatchBody(invalidHost, R"({"dangerous":true})")
+                                 : server.dispatchRequest(invalidHost));
+            TEST_ASSERT_EQUAL_INT(callsBefore + 1, state.mutationSideEffectCalls);
+
+            RouteTestRequest getRequest{ROUTE_TEST_GET, route.path, "", {}, &state};
+            RouteTestRequest headRequest{ROUTE_TEST_HEAD, route.path, "", {}, &state};
+            TEST_ASSERT_FALSE(server.dispatchRequest(getRequest));
+            TEST_ASSERT_FALSE(server.dispatchRequest(headRequest));
+            TEST_ASSERT_EQUAL_INT(callsBefore + 1, state.mutationSideEffectCalls);
+        }
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(routeCount * 3U), state.forbiddenCalls);
+        TEST_ASSERT_EQUAL_UINT(0U, server.count("/reset", ROUTE_TEST_GET));
+        TEST_ASSERT_EQUAL_UINT(0U, server.count(Routes::POST_WIFI_RESET, ROUTE_TEST_GET));
+        TEST_ASSERT_EQUAL_UINT(0U, server.count(Routes::POST_WIFI_RESET, ROUTE_TEST_HEAD));
+        if (station) {
+            TEST_ASSERT_EQUAL_UINT(0U, server.count(Routes::POST_WIFI_CONNECT, ROUTE_TEST_POST));
+        } else {
+            TEST_ASSERT_EQUAL_UINT(0U, server.count(Routes::DEVICE_RESET, ROUTE_TEST_POST));
+            TEST_ASSERT_EQUAL_UINT(0U, server.count(Routes::PUT_MODBUS_CONFIG, ROUTE_TEST_PUT));
+        }
+    }
+}
+
+void test_registered_ota_matrix_checks_mutation_context_before_auth_or_payload(void) {
+    Preferences::resetTestStorage();
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(OtaCredentialService::SaveResult::Ok),
+                          static_cast<int>(OtaCredentialService::setPassword(String("route-password"))));
+
+    RouteTestState state;
+    RouteTestServer server = configuredRouteTestServer(state);
+    const char *requestRoutes[] = {
+        Routes::OTA_HTTP_CHECK,
+        Routes::OTA_HTTP_NOTES,
+        Routes::OTA_HTTP_APPLY,
+        Routes::OTA_PASSWORD,
+    };
+    const RouteTestMethod requestMethods[] = {
+        ROUTE_TEST_POST,
+        ROUTE_TEST_POST,
+        ROUTE_TEST_POST,
+        ROUTE_TEST_DELETE,
+    };
+    for (size_t i = 0U; i < sizeof(requestRoutes) / sizeof(requestRoutes[0]); ++i) {
+        RouteTestRequest request{requestMethods[i], requestRoutes[i], "", {}, &state};
+        request.marker.clear();
+        TEST_ASSERT_TRUE(server.dispatchRequest(request));
+    }
+
+    RouteTestRequest settings{ROUTE_TEST_POST, Routes::OTA_HTTP_SETTINGS, "", {}, &state};
+    settings.host = "public.example";
+    TEST_ASSERT_TRUE(server.dispatchBody(settings, R"({"includePrereleases":true})"));
+
+    RouteTestRequest setPassword{ROUTE_TEST_PUT, Routes::OTA_PASSWORD, "", {}, &state};
+    setPassword.host = "public.example";
+    TEST_ASSERT_TRUE(server.dispatchBody(setPassword, R"({"password":"replacement-password"})"));
+
+    RouteTestRequest factoryReset{ROUTE_TEST_POST, Routes::FACTORY_RESET, "", {}, &state};
+    factoryReset.marker = "invalid";
+    TEST_ASSERT_TRUE(server.dispatchBody(factoryReset, R"({"confirm":"factory-reset"})"));
+
+    uint8_t chunk[] = {1U, 2U, 3U};
+    RouteTestRequest firmware{ROUTE_TEST_POST, Routes::OTA_FIRMWARE, "", {}, &state};
+    firmware.host = "public.example";
+    TEST_ASSERT_TRUE(server.dispatchUploadChunk(firmware, chunk, sizeof(chunk)));
+    RouteTestRequest filesystem{ROUTE_TEST_POST, Routes::OTA_FILESYSTEM, "", {}, &state};
+    filesystem.marker.clear();
+    TEST_ASSERT_TRUE(server.dispatchUploadChunk(filesystem, chunk, sizeof(chunk)));
+
+    TEST_ASSERT_EQUAL_INT(9, state.forbiddenCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.unauthorizedCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.checkCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.notesCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.applyCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.putSettingsCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.passwordHandlerCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.deletePasswordCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.factoryResetHandlerCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.firmwareBeginCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.filesystemBeginCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.writeCalls);
+
+    RouteTestRequest unauthorized{ROUTE_TEST_POST, Routes::OTA_HTTP_CHECK, "", {}, &state};
+    TEST_ASSERT_TRUE(server.dispatchRequest(unauthorized));
+    TEST_ASSERT_EQUAL_INT(1, state.unauthorizedCalls);
+    TEST_ASSERT_EQUAL_INT(9, state.forbiddenCalls);
+
+    constexpr const char *correctBearer = "cm91dGUtcGFzc3dvcmQ=";
+    RouteTestRequest accepted{ROUTE_TEST_POST, Routes::OTA_HTTP_CHECK, correctBearer, {}, &state};
+    accepted.host = "MODBUS-TO-X.LOCAL:80";
+    TEST_ASSERT_TRUE(server.dispatchRequest(accepted));
+    TEST_ASSERT_EQUAL_INT(1, state.checkCalls);
+
+    RouteTestRequest readSettings{ROUTE_TEST_GET, Routes::OTA_HTTP_SETTINGS, "", {}, &state};
+    readSettings.marker.clear();
+    readSettings.host = "public.example";
+    TEST_ASSERT_TRUE(server.dispatchRequest(readSettings));
+    TEST_ASSERT_EQUAL_INT(1, state.getSettingsCalls);
+}
+
 int main(int /*argc*/, char ** /*argv*/) {
     UNITY_BEGIN();
     RUN_TEST(test_single_chunk_returns_full_buffer);
@@ -828,5 +1092,8 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_registered_ota_routes_decode_bearer_and_dispatch_first_upload_chunk);
     RUN_TEST(test_registered_factory_reset_route_clears_persisted_credential);
     RUN_TEST(test_registered_ota_routes_fail_closed_when_credential_storage_is_unavailable);
+    RUN_TEST(test_mutation_request_guard_validates_marker_and_allowed_hosts);
+    RUN_TEST(test_registered_mutation_matrix_fails_closed_before_dispatch);
+    RUN_TEST(test_registered_ota_matrix_checks_mutation_context_before_auth_or_payload);
     return UNITY_END();
 }

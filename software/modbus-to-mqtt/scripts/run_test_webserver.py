@@ -23,6 +23,7 @@ import time
 import webbrowser
 from functools import partial
 from pathlib import Path
+from urllib.parse import urlsplit
 
 # Ensure common web types are present
 mimetypes.init()
@@ -36,6 +37,29 @@ mimetypes.add_type("text/html; charset=utf-8", ".html")
 
 class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
     ota_password = None
+    mutation_routes = {
+        ("POST", "/api/wifi/connect"),
+        ("POST", "/api/wifi/cancel"),
+        ("POST", "/api/wifi/ap_off"),
+        ("POST", "/api/wifi/reset"),
+        ("PUT", "/api/config/modbus"),
+        ("PUT", "/api/config/mqtt"),
+        ("POST", "/api/config/mqtt/secret"),
+        ("POST", "/api/mqtt/test"),
+        ("POST", "/api/modbus/execute"),
+        ("POST", "/api/modbus/state/disable"),
+        ("POST", "/api/modbus/state/enable"),
+        ("POST", "/api/system/reboot"),
+        ("POST", "/api/system/ota/firmware"),
+        ("POST", "/api/system/ota/fs"),
+        ("POST", "/api/system/ota/http/check"),
+        ("POST", "/api/system/ota/http/notes"),
+        ("POST", "/api/system/ota/http/apply"),
+        ("POST", "/api/system/ota/http/settings"),
+        ("PUT", "/api/system/ota/password"),
+        ("DELETE", "/api/system/ota/password"),
+        ("POST", "/api/system/factory-reset"),
+    }
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
@@ -61,6 +85,41 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
     def _read_body(self):
         length = int(self.headers.get("Content-Length", "0"))
         return self.rfile.read(length) if length else b""
+
+    def _normalized_host(self):
+        value = self.headers.get("Host", "")
+        if not value or any(ch in value for ch in " ,/@[]"):
+            return None
+        if ":" in value:
+            if value.count(":") != 1:
+                return None
+            value, port = value.rsplit(":", 1)
+            if not port.isdigit() or not 1 <= int(port) <= 65535:
+                return None
+        value = value.lower()
+        if not value or value.startswith(".") or value.endswith("."):
+            return None
+        return value
+
+    def _mutation_context_allowed(self):
+        marker_values = self.headers.get_all("X-MBX-Request", failobj=[])
+        if marker_values != ["1"]:
+            return False
+        host = self._normalized_host()
+        bound_host = str(self.server.server_address[0]).lower()
+        allowed_hosts = {"127.0.0.1", "localhost"}
+        if bound_host not in ("", "0.0.0.0"):
+            allowed_hosts.add(bound_host)
+        return host in allowed_hosts
+
+    def _require_mutation_context(self):
+        path = urlsplit(self.path).path
+        if (self.command, path) not in self.mutation_routes:
+            return True
+        if self._mutation_context_allowed():
+            return True
+        self._send_json({"error": "forbidden_request_context"}, 403)
+        return False
 
     def _ota_authorized(self):
         password = type(self).ota_password
@@ -151,10 +210,6 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(body)
             return True
 
-        if path == "/api/system/reboot":
-            self._send_json({"ok": True})
-            return True
-
         if path == "/api/system/ota/http/settings":
             self._send_json({
                 "includePrereleases": False,
@@ -239,8 +294,13 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
+        if not self._require_mutation_context():
+            return
         if self.path == "/api/system/reboot":
             self._send_json({"ok": True})
+            return
+        if self.path == "/api/wifi/reset":
+            self._send_json({"ok": True, "resetting": True}, 202)
             return
         if self.path == "/api/system/ota/http/settings":
             self._read_body()
@@ -287,6 +347,8 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
         return super().do_POST()
 
     def do_PUT(self):
+        if not self._require_mutation_context():
+            return
         if self.path == "/api/system/ota/password":
             if not self._require_ota_authorized():
                 self._read_body()
@@ -307,6 +369,8 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
         return super().do_PUT()
 
     def do_DELETE(self):
+        if not self._require_mutation_context():
+            return
         if self.path == "/api/system/ota/password":
             if not self._require_ota_authorized():
                 return

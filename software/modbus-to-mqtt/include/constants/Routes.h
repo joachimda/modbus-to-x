@@ -5,7 +5,6 @@ class Routes {
 public:
     constexpr static auto ROOT = "/";
     constexpr static auto CONFIGURE = "/configure";
-    constexpr static auto RESET_NETWORK = "/reset";
     constexpr static auto GET_MODBUS_CONFIG = "/conf/config.json";
     constexpr static auto GET_MQTT_CONFIG = "/conf/mqtt.json";
 
@@ -15,6 +14,7 @@ public:
     constexpr static auto POST_WIFI_AP_OFF = "/api/wifi/ap_off";
     constexpr static auto POST_WIFI_CANCEL = "/api/wifi/cancel";
     constexpr static auto POST_WIFI_CONNECT = "/api/wifi/connect";
+    constexpr static auto POST_WIFI_RESET = "/api/wifi/reset";
 
     // Modbus
     constexpr static auto PUT_MODBUS_CONFIG = "/api/config/modbus";

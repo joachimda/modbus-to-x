@@ -20,6 +20,7 @@ public:
     constexpr static auto PUT_MODBUS_CONFIG = "/api/config/modbus";
     constexpr static auto PUT_MQTT_CONFIG = "/api/config/mqtt";
     constexpr static auto PUT_MQTT_SECRET = "/api/config/mqtt/secret";
+    constexpr static auto GET_MQTT_CONSTRAINTS = "/api/config/mqtt/constraints";
     constexpr static auto POST_MODBUS_EXECUTE = "/api/modbus/execute";
     constexpr static auto GET_MBUS_STATE = "/api/modbus/state";
     constexpr static auto POST_MBUS_DISABLE = "/api/modbus/state/disable";

@@ -104,27 +104,6 @@ String ModbusBus::dumpRx() const {
     return String();
 }
 
-uint32_t ModbusBus::getErrorCount() {
-    if (s_instance == nullptr) {
-        return 0;
-    }
-    return s_instance->errorCount();
-}
-
-bool ModbusBus::isEnabled() {
-    return s_instance != nullptr && s_instance->isActive();
-}
-
-void ModbusBus::setEnabled(const bool enabled) {
-    if (s_instance != nullptr) {
-        s_instance->setActive(enabled);
-    }
-}
-
-bool ModbusBus::isBusy() const {
-    return _busy.load(std::memory_order_acquire);
-}
-
 void ModbusBus::enableCapture(const bool enable) {
     if (_tee) {
         _tee->enableCapture(enable);

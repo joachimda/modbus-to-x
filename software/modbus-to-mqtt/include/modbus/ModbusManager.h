@@ -1,83 +1,113 @@
 #ifndef MODBUSMANAGER_H
 #define MODBUSMANAGER_H
-#include <Preferences.h>
+
+#include <atomic>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 #include <vector>
 
+#include "Config.h"
 #include "Logger.h"
-#include "config_structs/ModbusDatapoint.h"
+#include "concurrency/CoherentSnapshotCore.h"
+#include "concurrency/LatestRevisionCore.h"
 #include "config_structs/ConfigurationRoot.h"
 #include "modbus/ModbusBus.h"
 #include "modbus/ModbusMqttBridge.h"
+#include "modbus/ModbusRuntimeTypes.h"
 
 class MqttManager;
 
+// Ownership contract:
+// - the Arduino loop task is the sole owner of _modbusRoot, polling scratch
+//   pointers, ModbusBus initialization and every bus transaction;
+// - HTTP, MQTT and other tasks submit owned requests through the bounded queue;
+// - readers consume narrow value snapshots and never retain live pointers.
 class ModbusManager {
 public:
     explicit ModbusManager(Logger *logger);
 
     bool begin();
 
-    bool loadConfiguration();
-
     void loop();
 
-    /**
-     Execute an adhoc Modbus command against a slave.
-     For read functions (1..4), fills outBuf with up to outBufCap words and sets outCount.
-     For write functions (5,6,16), writeValue is used if hasWriteValue=true; outCount will be 0 on success.
-     Returns ModbusMaster status code (0 on success).
-    */
-    uint8_t executeCommand(uint8_t slaveId,
-                           int function,
-                           uint16_t addr,
-                           uint16_t len,
-                           uint16_t writeValue,
-                           bool hasWriteValue,
-                           uint16_t *outBuf,
-                           uint16_t outBufCap,
-                           uint16_t &outCount,
-                           String &rxDump);
+    ModbusCommandResult executeCommand(const ModbusCommandRequest &request);
 
-    uint8_t findSlaveIdByDatapointId(const String &dpId) const;
+    ModbusOperationResult submitWriteCommand(const ModbusCommandRequest &request);
 
-    const ModbusDatapoint *findDatapointById(const String &dpId, const ModbusDevice **outDevice = nullptr) const;
+    bool reconfigureFromFile();
+
+    ModbusOperationResult requestReconfigureFromFile();
+
+    ModbusOperationResult requestReconfigure(const String &configurationJson,
+                                             uint32_t revision);
+
+    uint32_t issueConfigurationRevision();
+
+    bool isConfigurationRevisionObsolete(uint32_t revision) const;
+
+    ModbusOperationResult setEnabled(bool enabled);
+
+    ModbusRuntimeSnapshot getRuntimeSnapshot() const;
+
+    ModbusOperationResult submitPublicationCompletion(
+        const ModbusPublicationCompletion &completion);
 
     void setMqttManager(MqttManager *mqtt);
 
     static const char *statusToString(uint8_t code);
 
-    static String registersToAscii(const uint16_t *buf, uint16_t count);
-
-    // Reload config file at runtime and reinitialize wiring.
-    // Returns true if the new config is loaded and the bus stays active.
-    bool reconfigureFromFile();
+    static String registersToAscii(const uint16_t *buffer, uint16_t count);
 
     static uint16_t sliceRegister(uint16_t word, RegisterSlice slice);
 
-    const ConfigurationRoot &getConfiguration() const;
-
-    static uint32_t getBusErrorCount();
-
-    static void setModbusEnabled(bool enabled);
-
-    static bool getBusState();
-
 private:
-    bool readModbusDevice(ModbusDevice &dev, const std::vector<ModbusDatapoint *> &dueDatapoints, uint32_t nowMs);
+    struct Command;
 
-    static const char *functionToString(ModbusFunctionType fn);
+    bool loadConfigurationCandidate(ConfigurationRoot &candidate) const;
+
+    ModbusOperationResult activateConfiguration(ConfigurationRoot candidate,
+                                                uint32_t revision = 0U);
+
+    ModbusOperationResult submitAndWait(Command *command, uint32_t waitMs = MODBUS_COMMAND_WAIT_MS,
+                                        ModbusCommandResult *result = nullptr,
+                                        LatestRevisionCore::Admission *admission = nullptr);
+
+    ModbusOperationResult submitAsync(Command *command);
+
+    void drainCommands();
+
+    void processCommand(Command &command);
+
+    ModbusCommandResult executeOwned(const ModbusCommandRequest &request);
+
+    bool readModbusDevice(ModbusDevice &device, const std::vector<ModbusDatapoint *> &dueDatapoints,
+                          uint32_t nowMs);
+
+    static const char *functionToString(ModbusFunctionType function);
 
     void incrementBusErrorCount();
 
+    void updateRuntimeSnapshot();
 
-    std::vector<ModbusDatapoint> _modbusRegisters;
+    bool inOwnerContext() const;
+
+    void recordOwnerViolation();
+
     ModbusBus _bus;
     ModbusMqttBridge _mqttBridge;
     Logger *_logger;
-    Preferences preferences;
     ConfigurationRoot _modbusRoot{};
     MqttManager *_mqtt{nullptr};
-    bool _mqttConnectedLastLoop{false};
+    uint32_t _generation{0U};
+    LatestRevisionCore _configurationRevisions;
     std::vector<ModbusDatapoint *> _dueScratch;
+    QueueHandle_t _commandQueue{nullptr};
+    TaskHandle_t _ownerTaskHandle{nullptr};
+    std::atomic<bool> _ownerAvailable{false};
+    std::atomic<bool> _shuttingDown{false};
+    CoherentSnapshotCore<ModbusRuntimeSnapshot> _runtimeSnapshot;
+    std::atomic<uint32_t> _ownerViolationCount{0U};
+    std::atomic<uint32_t> _commandFailureCount{0U};
 };
+
 #endif

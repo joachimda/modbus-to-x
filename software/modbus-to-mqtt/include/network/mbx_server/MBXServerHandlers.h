@@ -12,6 +12,9 @@ class ModbusManager;
 
 class MBXServerHandlers {
 public:
+    static bool beginRuntimeWorker();
+    static void pumpRuntimeResponses();
+
     static void setPortal(NetworkPortal *portal);
 
     static void getSsidListAsJson(AsyncWebServerRequest *req);
@@ -24,6 +27,8 @@ public:
 
     static void handlePutMqttSecretBody(AsyncWebServerRequest *req, const uint8_t *data, size_t len, size_t index,
                                         size_t total);
+
+    static void handleGetMqttConstraints(AsyncWebServerRequest *req);
 
     static void handleModbusDisable(AsyncWebServerRequest * req, bool state);
 

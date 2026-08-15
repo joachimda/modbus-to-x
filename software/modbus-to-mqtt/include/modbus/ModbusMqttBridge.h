@@ -2,11 +2,11 @@
 #define MODBUS_MQTT_BRIDGE_H
 
 #include <Arduino.h>
-#include <vector>
+#include <atomic>
 
 #include "modbus/config_structs/ConfigurationRoot.h"
-#include "modbus/config_structs/ModbusDatapoint.h"
-#include "modbus/config_structs/ModbusDevice.h"
+#include "modbus/ModbusRuntimeTypes.h"
+#include "mqtt/MqttRuntimeTypes.h"
 
 class Logger;
 class MqttManager;
@@ -18,37 +18,64 @@ public:
 
     void setMqttManager(MqttManager *mqtt);
 
-    void onConfigurationLoaded(ConfigurationRoot &root);
+    MqttOperationResult stageConfiguration(const ConfigurationRoot &root, uint32_t modbusGeneration);
 
-    void onConnectionState(bool connectedNow, bool connectedLast, ConfigurationRoot &root);
+    void commitConfiguration(uint32_t modbusGeneration);
 
-    void publishDatapoint(ModbusDevice &device, const ModbusDatapoint &dp, const String &payload) const;
+    void onConfigurationActivated(ConfigurationRoot &root);
+
+    void onConnectionState(const MqttStatusSnapshot &mqttStatus, ConfigurationRoot &root,
+                           uint32_t modbusGeneration);
+
+    void publishDatapoint(ModbusDevice &device, const ModbusDatapoint &datapoint,
+                          const String &payload, uint32_t modbusGeneration) const;
+
+    void onPublicationCompletion(ConfigurationRoot &root,
+                                 const ModbusPublicationCompletion &completion,
+                                 uint32_t modbusGeneration);
+
+    void recoverLostPublicationCompletions(ConfigurationRoot &root);
 
 private:
-    void handleMqttConnected(ConfigurationRoot &root);
+    MqttBridgePlan buildBridgePlan(const ConfigurationRoot &root, uint32_t modbusGeneration) const;
+
+    void handleMqttConnected(ConfigurationRoot &root, uint32_t modbusGeneration);
 
     static void handleMqttDisconnected(ConfigurationRoot &root);
 
-    void rebuildWriteSubscriptions(const ConfigurationRoot &root);
-
     void handleWriteCommand(const String &topic,
                             uint8_t slaveId,
-                            ModbusFunctionType fn,
-                            uint16_t addr,
-                            uint8_t numRegs,
+                            ModbusFunctionType function,
+                            uint16_t address,
+                            uint8_t registerCount,
                             float scale,
+                            uint32_t modbusGeneration,
                             const String &payload) const;
 
-    String buildDatapointTopic(const ModbusDevice &device, const ModbusDatapoint &dp) const;
-    String buildAvailabilityTopic(const ModbusDevice &device) const;
+    String buildDatapointTopic(const ModbusDevice &device, const ModbusDatapoint &datapoint,
+                               const String &rootTopic) const;
 
-    void publishAvailabilityOnline(ModbusDevice &device) const;
-    void publishHomeAssistantDiscovery(ModbusDevice &device) const;
+    String buildAvailabilityTopic(const ModbusDevice &device, const String &rootTopic) const;
+
+    void publishAvailabilityOnline(ModbusDevice &device, size_t deviceIndex,
+                                   const MqttStatusSnapshot &mqttStatus,
+                                   uint32_t modbusGeneration) const;
+
+    void publishHomeAssistantDiscovery(ModbusDevice &device, size_t deviceIndex,
+                                       const MqttStatusSnapshot &mqttStatus,
+                                       uint32_t modbusGeneration) const;
+
+    MqttPublishCallback buildPublishCallback(size_t deviceIndex,
+                                             ModbusPublicationKind kind,
+                                             uint32_t modbusGeneration,
+                                             uint32_t connectionEpoch,
+                                             uint32_t attempt) const;
 
     Logger *_logger;
     ModbusManager *_modbus;
     MqttManager *_mqtt{nullptr};
-    std::vector<String> _writeTopics;
+    uint32_t _lastConnectionEpoch{0U};
+    mutable std::atomic<bool> _publicationCompletionLost{false};
 };
 
 #endif

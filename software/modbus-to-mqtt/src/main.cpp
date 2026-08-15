@@ -80,11 +80,20 @@ void setup() {
     IndicatorService::instance().begin();
 
     mqtt_manager.begin();
-    logger.logDebug("setup() - Starting MBX Server");
     MBXServerHandlers::setMemoryLogger(&memory_logger);
     MBXServerHandlers::setMqttManager(&mqtt_manager);
     modbus_manager.setMqttManager(&mqtt_manager);
     MBXServerHandlers::setModbusManager(&modbus_manager);
+    if (!MBXServerHandlers::beginRuntimeWorker()) {
+        logger.logError("setup() - Failed to start bounded runtime HTTP worker");
+    }
+
+    // Establish the Arduino-loop Modbus owner and its mailbox before HTTP
+    // callbacks can submit configuration or ad hoc bus requests.
+    logger.logDebug("setup() - Starting modbus manager");
+    modbus_manager.begin();
+
+    logger.logDebug("setup() - Starting MBX Server");
     mbx_server.begin();
 
 #if OTA_HTTP_ENABLED
@@ -96,8 +105,6 @@ void setup() {
     }
 #endif
 
-    logger.logDebug("setup() - Starting modbus manager");
-    modbus_manager.begin();
     logger.logDebug("setup() - complete");
 }
 

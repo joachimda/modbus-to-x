@@ -60,6 +60,7 @@ void MBXServer::begin() const {
 }
 
 void MBXServer::loop() {
+    MBXServerHandlers::pumpRuntimeResponses();
     g_wifi.loop();
     MBXServerHandlers::pumpEventStream();
     TimeService::loop();
@@ -92,6 +93,11 @@ void MBXServer::configureRoutes() const {
     server->on(Routes::GET_MQTT_CONFIG, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         serveFsFile(req, ConfigFS, ConfigFs::kMqttConfigFile, nullptr, HttpMediaTypes::JSON, _logger);
+    });
+
+    server->on(Routes::GET_MQTT_CONSTRAINTS, HTTP_GET, [this](AsyncWebServerRequest *req) {
+        logRequest(req);
+        MBXServerHandlers::handleGetMqttConstraints(req);
     });
 
     server->on(Routes::LOGS, HTTP_GET, [this](AsyncWebServerRequest *req) {

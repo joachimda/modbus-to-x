@@ -12,6 +12,9 @@ class ModbusManager;
 
 class MBXServerHandlers {
 public:
+    static bool beginRuntimeWorker();
+    static void pumpRuntimeResponses();
+
     static void setPortal(NetworkPortal *portal);
 
     static void getSsidListAsJson(AsyncWebServerRequest *req);

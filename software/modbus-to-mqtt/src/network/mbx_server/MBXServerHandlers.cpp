@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <memory>
 #include <new>
+#include <functional>
 #include "network/mbx_server/BodyAccumulator.h"
 #include "mqtt/MqttConfigCore.h"
 #include "mqtt/MqttConfigMutationCore.h"
@@ -32,6 +33,7 @@
 #include "services/ota/OtaUploadGuardCore.h"
 #include "services/IndicatorService.h"
 #include "modbus/ModbusManager.h"
+#include "modbus/ModbusConfigLoader.h"
 
 auto constexpr OTA_FS_UPLOAD_BEGIN_FAIL_RESP = R"({"error":"ota_begin_failed"})";
 auto constexpr OTA_FW_UPLOAD_BEGIN_FAIL_RESP = R"({"error":"ota_begin_failed"})";
@@ -65,6 +67,13 @@ static std::atomic<uint32_t> g_lastLogCheckAt{0};
 static std::atomic<uint32_t> g_eventSeq{0};
 static std::atomic<bool> g_otaHttpApplying{false};
 static std::atomic<bool> g_factoryResetInProgress{false};
+static QueueHandle_t g_runtimeJobQueue = nullptr;
+static QueueHandle_t g_runtimeResponseQueue = nullptr;
+static SemaphoreHandle_t g_runtimeJobSlots = nullptr;
+static SemaphoreHandle_t g_configScheduleMutex = nullptr;
+static SemaphoreHandle_t g_configStorageMutex = nullptr;
+static std::array<TaskHandle_t, RUNTIME_HTTP_WORKER_COUNT> g_runtimeWorkerTasks{};
+static std::atomic<size_t> g_runtimeWorkerCount{0U};
 
 constexpr uint32_t STATS_PUSH_INTERVAL_MS = 5000;
 constexpr uint32_t STATS_HEARTBEAT_MS = 30000;
@@ -98,6 +107,108 @@ struct FactoryResetContext {
     const Logger *logger = nullptr;
     esp_err_t nvsResult = ESP_OK;
     esp_err_t nvsRecoveryResult = ESP_OK;
+};
+
+struct RuntimeResponse {
+    int status = HttpResponseCodes::INTERNAL_SERVER_ERROR;
+    String contentType = HttpMediaTypes::JSON;
+    String body = R"({"error":"runtime_job_incomplete"})";
+};
+
+struct RuntimeJob {
+    AsyncWebServerRequestPtr request;
+    std::function<void(RuntimeResponse &)> operation;
+    RuntimeResponse response;
+};
+
+void setRuntimeResponse(RuntimeResponse &response, const int status,
+                        const char *contentType = HttpMediaTypes::JSON,
+                        const String &body = {}) {
+    response.status = status;
+    response.contentType = contentType;
+    response.body = body;
+}
+
+void setRuntimeJsonResponse(RuntimeResponse &response, const JsonDocument &document,
+                            const int status = HttpResponseCodes::OK) {
+    response.status = status;
+    response.contentType = HttpMediaTypes::JSON;
+    response.body.clear();
+    serializeJson(document, response.body);
+}
+
+[[noreturn]] void runtimeWorker(void *) {
+    while (true) {
+        RuntimeJob *job = nullptr;
+        if (xQueueReceive(g_runtimeJobQueue, &job, portMAX_DELAY) != pdTRUE || job == nullptr) continue;
+        job->operation(job->response);
+        // The completion queue is sized for every queued plus in-flight job,
+        // so this non-blocking transfer is bounded and should always succeed.
+        // Only the Arduino loop resumes paused HTTP requests; ESPAsyncWebServer
+        // response state is therefore never advanced concurrently by workers.
+        if (g_runtimeResponseQueue == nullptr
+            || xQueueSend(g_runtimeResponseQueue, &job, 0) != pdTRUE) {
+            delete job;
+            if (g_runtimeJobSlots != nullptr) xSemaphoreGive(g_runtimeJobSlots);
+        }
+    }
+}
+
+bool scheduleRuntimeJob(AsyncWebServerRequest *request,
+                        std::function<void(RuntimeResponse &)> operation) {
+    if (request == nullptr || g_runtimeJobQueue == nullptr || g_runtimeResponseQueue == nullptr
+        || g_runtimeJobSlots == nullptr
+        || g_runtimeWorkerCount.load(std::memory_order_acquire) == 0U) return false;
+    if (xSemaphoreTake(g_runtimeJobSlots, 0) != pdTRUE) return false;
+    auto *job = new (std::nothrow) RuntimeJob;
+    if (job == nullptr) {
+        xSemaphoreGive(g_runtimeJobSlots);
+        return false;
+    }
+    job->request = request->pause();
+    job->operation = std::move(operation);
+    if (xQueueSend(g_runtimeJobQueue, &job, 0) != pdTRUE) {
+        delete job;
+        xSemaphoreGive(g_runtimeJobSlots);
+        return false;
+    }
+    return true;
+}
+
+template<typename Manager, typename Operation>
+bool scheduleConfigurationJob(AsyncWebServerRequest *request,
+                              Manager *manager,
+                              Operation operation) {
+    if (manager == nullptr || g_configScheduleMutex == nullptr) return false;
+    if (xSemaphoreTake(g_configScheduleMutex, pdMS_TO_TICKS(50)) != pdTRUE) return false;
+    // Issuing a ticket is intentionally inert. The manager publishes it only
+    // after the exact candidate reaches its owner queue, so a failed HTTP-job
+    // admission cannot transiently supersede an older admitted candidate.
+    const uint32_t revision = manager->issueConfigurationRevision();
+    const std::function<void(RuntimeResponse &, uint32_t)> ownedOperation = std::move(operation);
+    const bool scheduled = scheduleRuntimeJob(
+        request,
+        [ownedOperation, revision](RuntimeResponse &response) {
+            ownedOperation(response, revision);
+        });
+    xSemaphoreGive(g_configScheduleMutex);
+    return scheduled;
+}
+
+class ConfigurationStorageGuard {
+public:
+    ConfigurationStorageGuard()
+        : _locked(g_configStorageMutex != nullptr
+                  && xSemaphoreTake(g_configStorageMutex, pdMS_TO_TICKS(5000)) == pdTRUE) {}
+
+    ~ConfigurationStorageGuard() {
+        if (_locked) xSemaphoreGive(g_configStorageMutex);
+    }
+
+    explicit operator bool() const { return _locked; }
+
+private:
+    bool _locked;
 };
 
 bool formatFactoryResetConfigStorage(void *) {
@@ -200,6 +311,80 @@ OtaUploadState *beginOtaUploadRequest(AsyncWebServerRequest *req) {
 
 }  // namespace
 
+bool MBXServerHandlers::beginRuntimeWorker() {
+    if (g_runtimeJobQueue != nullptr && g_runtimeResponseQueue != nullptr && g_runtimeJobSlots != nullptr
+        && g_configScheduleMutex != nullptr && g_configStorageMutex != nullptr
+        && g_runtimeWorkerCount.load(std::memory_order_acquire) > 0U) return true;
+    g_runtimeJobQueue = xQueueCreate(RUNTIME_HTTP_JOB_QUEUE_DEPTH, sizeof(RuntimeJob *));
+    if (g_runtimeJobQueue == nullptr) return false;
+    g_runtimeResponseQueue = xQueueCreate(RUNTIME_HTTP_RESPONSE_QUEUE_DEPTH, sizeof(RuntimeJob *));
+    if (g_runtimeResponseQueue == nullptr) {
+        vQueueDelete(g_runtimeJobQueue);
+        g_runtimeJobQueue = nullptr;
+        return false;
+    }
+    g_runtimeJobSlots = xSemaphoreCreateCounting(RUNTIME_HTTP_RESPONSE_QUEUE_DEPTH,
+                                                 RUNTIME_HTTP_RESPONSE_QUEUE_DEPTH);
+    if (g_runtimeJobSlots == nullptr) {
+        vQueueDelete(g_runtimeJobQueue);
+        vQueueDelete(g_runtimeResponseQueue);
+        g_runtimeJobQueue = nullptr;
+        g_runtimeResponseQueue = nullptr;
+        return false;
+    }
+    g_configScheduleMutex = xSemaphoreCreateMutex();
+    g_configStorageMutex = xSemaphoreCreateMutex();
+    if (g_configScheduleMutex == nullptr || g_configStorageMutex == nullptr) {
+        vQueueDelete(g_runtimeJobQueue);
+        vQueueDelete(g_runtimeResponseQueue);
+        vSemaphoreDelete(g_runtimeJobSlots);
+        if (g_configScheduleMutex != nullptr) vSemaphoreDelete(g_configScheduleMutex);
+        if (g_configStorageMutex != nullptr) vSemaphoreDelete(g_configStorageMutex);
+        g_runtimeJobQueue = nullptr;
+        g_runtimeResponseQueue = nullptr;
+        g_runtimeJobSlots = nullptr;
+        g_configScheduleMutex = nullptr;
+        g_configStorageMutex = nullptr;
+        return false;
+    }
+    for (size_t i = 0; i < RUNTIME_HTTP_WORKER_COUNT; ++i) {
+        const String taskName = String("runtimeHttp") + String(i);
+        if (xTaskCreatePinnedToCore(runtimeWorker, taskName.c_str(), 6144, nullptr, 1,
+                                    &g_runtimeWorkerTasks[i], APP_CPU_NUM) != pdPASS) break;
+        g_runtimeWorkerCount.fetch_add(1U, std::memory_order_release);
+    }
+    if (g_runtimeWorkerCount.load(std::memory_order_acquire) == 0U) {
+        vQueueDelete(g_runtimeJobQueue);
+        vQueueDelete(g_runtimeResponseQueue);
+        vSemaphoreDelete(g_runtimeJobSlots);
+        vSemaphoreDelete(g_configScheduleMutex);
+        vSemaphoreDelete(g_configStorageMutex);
+        g_runtimeJobQueue = nullptr;
+        g_runtimeResponseQueue = nullptr;
+        g_runtimeJobSlots = nullptr;
+        g_configScheduleMutex = nullptr;
+        g_configStorageMutex = nullptr;
+        return false;
+    }
+    return g_runtimeWorkerCount.load(std::memory_order_acquire) == RUNTIME_HTTP_WORKER_COUNT;
+}
+
+void MBXServerHandlers::pumpRuntimeResponses() {
+    if (g_runtimeResponseQueue == nullptr) return;
+    RuntimeJob *job = nullptr;
+    if (xQueueReceive(g_runtimeResponseQueue, &job, 0) != pdTRUE || job == nullptr) return;
+    auto request = job->request.lock();
+    if (request) {
+        if (job->response.body.length()) {
+            request->send(job->response.status, job->response.contentType, job->response.body);
+        } else {
+            request->send(job->response.status);
+        }
+    }
+    delete job;
+    if (g_runtimeJobSlots != nullptr) xSemaphoreGive(g_runtimeJobSlots);
+}
+
 enum class StatsCategory : uint8_t {
     System = 0,
     Network,
@@ -262,10 +447,10 @@ const char *stateToStr(const WifiConnectionState s) {
     return "unknown";
 }
 
-void sendJson(AsyncWebServerRequest *req, const JsonDocument &doc) {
+void sendJson(AsyncWebServerRequest *req, const JsonDocument &doc, const int status = HttpResponseCodes::OK) {
     String out;
     serializeJson(doc, out);
-    req->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, out);
+    req->send(status, HttpMediaTypes::JSON, out);
 }
 
 namespace {
@@ -661,27 +846,11 @@ void MBXServerHandlers::handleNetworkReset(AsyncWebServerRequest *req) {
 }
 
 namespace {
-// Per-request body handlers must use ESPAsyncWebServer's request-scoped slots
-// (_tempFile, auto-closed; _tempObject, auto-freed) instead of function-local
-// statics — otherwise concurrent or aborted requests corrupt the next caller.
+// Per-request body handlers use ESPAsyncWebServer's request-scoped _tempObject
+// instead of function-local statics, otherwise concurrent or aborted requests
+// corrupt the next caller.
 // _tempObject is freed with free(), so it can hold malloc/calloc buffers or
 // simple POD flags, but not heap-allocated C++ objects with destructors.
-
-// Marks a body handler as failed mid-stream. Uses _tempObject as a single
-// error byte so the final-chunk branch can decide between success and 500.
-void markBodyError(AsyncWebServerRequest *req) {
-    if (req->_tempObject == nullptr) {
-        req->_tempObject = std::calloc(1U, 1U);
-    }
-    if (req->_tempObject != nullptr) {
-        *static_cast<uint8_t *>(req->_tempObject) = 1U;
-    }
-}
-
-bool bodyFailed(const AsyncWebServerRequest *req) {
-    return req->_tempObject != nullptr
-           && *static_cast<const uint8_t *>(req->_tempObject) != 0U;
-}
 
 // Routes a chunk-body handler error to the UI log terminal via MemoryLogger.
 // No-op if the memory logger has not been wired yet (early boot only).
@@ -691,29 +860,47 @@ void logHandlerError(const char *msg) {
     }
 }
 
-bool writeMqttConfig(const char *value, const size_t length, void *) {
-    File file = ConfigFS.open(ConfigFs::kMqttConfigFile, FILE_WRITE);
+bool writeConfigurationFile(const char *path, const char *value, const size_t length,
+                            const char *errorPrefix) {
+    File file = ConfigFS.open(path, FILE_WRITE);
     if (!file) {
-        logHandlerError("PUT /api/config/mqtt: failed to open /conf/mqtt.json for writing");
+        logHandlerError(errorPrefix);
         return false;
     }
     const size_t written = file.write(reinterpret_cast<const uint8_t *>(value), length);
     file.close();
     if (written != length) {
-        logHandlerError("PUT /api/config/mqtt: short write to /conf/mqtt.json (config FS full?)");
+        logHandlerError("Configuration write was incomplete (config FS full?)");
         return false;
     }
     return true;
 }
 
-bool reloadMqttConfig(void *) {
-    if (auto *link = g_comm.load(std::memory_order_acquire)) {
-        if (!link->reconfigureFromFile()) {
-            logHandlerError("PUT /api/config/mqtt: persisted configuration could not be applied");
-            return false;
-        }
-    }
+bool writeMqttConfig(const char *value, const size_t length, void *) {
+    return writeConfigurationFile(ConfigFs::kMqttConfigFile, value, length,
+                                  "PUT /api/config/mqtt: failed to open mqtt.json for writing");
+}
+
+bool acceptValidatedMqttConfig(const char *, size_t, void *) {
     return true;
+}
+
+bool writeModbusConfig(const char *value, const size_t length) {
+    return writeConfigurationFile(ConfigFs::kModbusConfigFile, value, length,
+                                  "PUT /api/config/modbus: failed to open config.json for writing");
+}
+
+void setSupersededResponse(RuntimeResponse &response, const char *configuration) {
+    JsonDocument document;
+    document["error"] = String(configuration) + "_configuration_superseded";
+    document["reason"] = "superseded";
+    setRuntimeJsonResponse(response, document, HttpResponseCodes::CONFLICT);
+}
+
+void setStorageBusyResponse(RuntimeResponse &response) {
+    JsonDocument document;
+    document["error"] = "configuration_storage_busy";
+    setRuntimeJsonResponse(response, document, HttpResponseCodes::SERVICE_UNAVAILABLE);
 }
 
 bool writeMqttPassword(const char *value, const size_t length, void *) {
@@ -785,39 +972,84 @@ void sendMqttMutationResult(AsyncWebServerRequest *req, const MqttConfigMutation
 void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
                                                   const size_t index,
                                                   const size_t total) {
-    if (index == 0U) {
-        req->_tempFile = ConfigFS.open(ConfigFs::kModbusConfigFile, FILE_WRITE);
-        if (!req->_tempFile) {
-            logHandlerError("PUT /api/config/modbus: failed to open /conf/config.json for writing");
-            markBodyError(req);
-        }
-    }
-    if (req->_tempFile && len > 0U && !bodyFailed(req)) {
-        const size_t written = req->_tempFile.write(data, len);
-        if (written != len) {
-            logHandlerError("PUT /api/config/modbus: short write to /conf/config.json (config FS full?)");
-            req->_tempFile.close();
-            markBodyError(req);
-        }
-    }
-    if (index + len == total) {
-        const bool failed = bodyFailed(req);
-        if (req->_tempFile) req->_tempFile.close();  // framework dtor also closes
-        if (failed) {
+    char *body = BodyAccumulator::append(req->_tempObject, data, len, index, total);
+    if (body == nullptr) {
+        if (index + len == total) {
+            logHandlerError("PUT /api/config/modbus: out of memory accumulating request body");
             req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
-            return;
         }
-        // Hot-reload Modbus configuration
-        if (auto *mb = g_mb.load(std::memory_order_acquire)) {
-            mb->reconfigureFromFile();
-        }
-        req->send(HttpResponseCodes::NO_CONTENT);
+        return;
+    }
+
+    const String configurationJson(body);
+    ConfigurationRoot validatedCandidate;
+    if (!ModbusConfigLoader::parseConfiguration(nullptr, configurationJson.c_str(),
+                                                configurationJson.length(), validatedCandidate)) {
+        req->send(HttpResponseCodes::BAD_REQUEST_HTTP, HttpMediaTypes::JSON,
+                  R"({"error":"invalid_modbus_configuration"})");
+        return;
+    }
+    auto *mb = g_mb.load(std::memory_order_acquire);
+    if (mb == nullptr) {
+        req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::JSON,
+                  R"({"error":"modbus_unavailable"})");
+        return;
+    }
+    if (!scheduleConfigurationJob(
+            req, mb,
+            [mb, configurationJson](RuntimeResponse &runtimeResponse, const uint32_t revision) {
+                {
+                    ConfigurationStorageGuard storage;
+                    if (!storage) {
+                        setStorageBusyResponse(runtimeResponse);
+                        return;
+                    }
+                    if (mb->isConfigurationRevisionObsolete(revision)) {
+                        setSupersededResponse(runtimeResponse, "modbus");
+                        return;
+                    }
+                    if (!writeModbusConfig(configurationJson.c_str(), configurationJson.length())) {
+                        JsonDocument response;
+                        response["error"] = "modbus_storage_failed";
+                        setRuntimeJsonResponse(runtimeResponse, response,
+                                               HttpResponseCodes::INTERNAL_SERVER_ERROR);
+                        return;
+                    }
+                }
+                const ModbusOperationResult result = mb->requestReconfigure(configurationJson, revision);
+                if (result == ModbusOperationResult::Success) {
+                    setRuntimeResponse(runtimeResponse, HttpResponseCodes::NO_CONTENT);
+                } else if (result == ModbusOperationResult::Superseded) {
+                    setSupersededResponse(runtimeResponse, "modbus");
+                } else {
+                    JsonDocument response;
+                    response["error"] = "modbus_reload_failed";
+                    response["reason"] = modbusOperationResultToString(result);
+                    setRuntimeJsonResponse(runtimeResponse, response, HttpResponseCodes::SERVICE_UNAVAILABLE);
+                }
+            })) {
+        req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::JSON,
+                  R"({"error":"runtime_queue_full"})");
     }
 }
 
 void MBXServerHandlers::handleModbusDisable(AsyncWebServerRequest *req, bool state) {
-        if (const auto *mb = g_mb.load(std::memory_order_acquire)) {
-            ModbusManager::setModbusEnabled(state);
+        if (auto *mb = g_mb.load(std::memory_order_acquire)) {
+            if (!scheduleRuntimeJob(req, [mb, state](RuntimeResponse &runtimeResponse) {
+                    const ModbusOperationResult result = mb->setEnabled(state);
+                    if (result == ModbusOperationResult::Success) {
+                        setRuntimeResponse(runtimeResponse, HttpResponseCodes::OK);
+                    } else {
+                        JsonDocument response;
+                        response["error"] = "modbus_state_change_failed";
+                        response["reason"] = modbusOperationResultToString(result);
+                        setRuntimeJsonResponse(runtimeResponse, response, HttpResponseCodes::SERVICE_UNAVAILABLE);
+                    }
+                })) {
+                req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::JSON,
+                          R"({"error":"runtime_queue_full"})");
+            }
+            return;
         }
         req->send(HttpResponseCodes::OK);
 }
@@ -833,8 +1065,71 @@ void MBXServerHandlers::handlePutMqttConfigBody(AsyncWebServerRequest *req, cons
         return;
     }
 
-    const MqttConfigMutationCore::ConfigOperations operations{writeMqttConfig, reloadMqttConfig};
-    sendMqttMutationResult(req, MqttConfigMutationCore::applyConfig(body, total, operations, nullptr));
+    const String configurationJson(body);
+    const MqttConfigMutationCore::ConfigOperations validationOperations{
+        acceptValidatedMqttConfig, nullptr};
+    const MqttConfigMutationCore::Result validation = MqttConfigMutationCore::applyConfig(
+        configurationJson.c_str(), configurationJson.length(), validationOperations, nullptr);
+    if (validation.status != MqttConfigMutationCore::Status::Ok) {
+        sendMqttMutationResult(req, validation);
+        return;
+    }
+    auto *link = g_comm.load(std::memory_order_acquire);
+    if (link == nullptr) {
+        req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::JSON,
+                  R"({"error":"mqtt_unavailable"})");
+        return;
+    }
+    if (!scheduleConfigurationJob(
+            req, link,
+            [link, configurationJson](RuntimeResponse &runtimeResponse, const uint32_t revision) {
+                MqttConfigMutationCore::Result mutation;
+                {
+                    ConfigurationStorageGuard storage;
+                    if (!storage) {
+                        setStorageBusyResponse(runtimeResponse);
+                        return;
+                    }
+                    if (link->isConfigurationRevisionObsolete(revision)) {
+                        setSupersededResponse(runtimeResponse, "mqtt");
+                        return;
+                    }
+                    const MqttConfigMutationCore::ConfigOperations operations{writeMqttConfig, nullptr};
+                    mutation = MqttConfigMutationCore::applyConfig(
+                        configurationJson.c_str(), configurationJson.length(), operations, nullptr);
+                }
+                if (mutation.status != MqttConfigMutationCore::Status::Ok) {
+                    JsonDocument response;
+                    int status = HttpResponseCodes::BAD_REQUEST_HTTP;
+                    if (mutation.status == MqttConfigMutationCore::Status::InvalidJson) {
+                        response["error"] = "invalid_json";
+                    } else if (mutation.status == MqttConfigMutationCore::Status::InvalidField) {
+                        response["error"] = "invalid_mqtt_field";
+                        response["field"] = MqttConfigCore::fieldName(mutation.validation.field);
+                        response["constraint"] = MqttConfigCore::constraintMessage(mutation.validation);
+                    } else {
+                        response["error"] = "mqtt_storage_failed";
+                        status = HttpResponseCodes::INTERNAL_SERVER_ERROR;
+                    }
+                    setRuntimeJsonResponse(runtimeResponse, response, status);
+                    return;
+                }
+
+                const MqttOperationResult operation = link->requestReconfigure(configurationJson, revision);
+                if (operation == MqttOperationResult::Success) {
+                    setRuntimeResponse(runtimeResponse, HttpResponseCodes::NO_CONTENT);
+                } else if (operation == MqttOperationResult::Superseded) {
+                    setSupersededResponse(runtimeResponse, "mqtt");
+                } else {
+                    JsonDocument response;
+                    response["error"] = "mqtt_reload_failed";
+                    response["reason"] = mqttOperationResultToString(operation);
+                    setRuntimeJsonResponse(runtimeResponse, response, HttpResponseCodes::SERVICE_UNAVAILABLE);
+                }
+            })) {
+        req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::JSON,
+                  R"({"error":"runtime_queue_full"})");
+    }
 }
 
 void MBXServerHandlers::handlePutMqttSecretBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
@@ -993,14 +1288,20 @@ void MBXServerHandlers::handleMqttTestConnection(AsyncWebServerRequest *req) {
         return;
     }
 
-    const bool ok = link->testConnectOnce();
-    doc["ok"] = ok;
-    doc["broker"] = link->getMqttBroker();
-    doc["user"] = link->getMQTTUser();
-    doc["state"] = link->getMQTTState();
-    String out;
-    serializeJson(doc, out);
-    req->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, out);
+    if (!scheduleRuntimeJob(req, [link](RuntimeResponse &runtimeResponse) {
+            const MqttTestResult result = link->testConnectOnce();
+            JsonDocument response;
+            response["ok"] = result.connected;
+            response["broker"] = result.broker;
+            response["user"] = result.user;
+            response["state"] = result.clientState;
+            response["operation"] = mqttOperationResultToString(result.operation);
+            setRuntimeJsonResponse(runtimeResponse, response);
+        })) {
+        doc["ok"] = false;
+        doc["error"] = "runtime_queue_full";
+        sendJson(req, doc);
+    }
 }
 
 void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
@@ -1044,28 +1345,6 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
         return;
     }
 
-    // Resolve slave id by datapoint
-    const ModbusDevice *dpDevice = nullptr;
-    const ModbusDatapoint *dpMeta = mb->findDatapointById(dpId, &dpDevice);
-    uint8_t slave = 0;
-    if (slaveOverrideValid) {
-        slave = static_cast<uint8_t>(slaveOverride);
-    } else if (dpDevice) {
-        slave = dpDevice->slaveId;
-    } else {
-        const ConfigurationRoot &cfg = mb->getConfiguration();
-        for (const auto &dev: cfg.devices) {
-            if (dev.id == devId) {
-                slave = dev.slaveId;
-                break;
-            }
-        }
-    }
-    if (slave == 0) slave = MODBUS_SLAVE_ID;
-
-    uint16_t outBuf[16]{};
-    uint16_t outCount = 0;
-    String rxDump;
     uint16_t writeVal = 0;
     bool hasWriteVal = false;
     if (sValue.length()) {
@@ -1079,38 +1358,59 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
         len = 1; // single write workaround even for FC16
     }
 
-    const uint8_t status = mb->executeCommand(slave, (int) func, (uint16_t) addr, (uint16_t) len,
-                                              writeVal, hasWriteVal,
-                                              outBuf, 16, outCount, rxDump);
+    ModbusCommandRequest command;
+    command.deviceId = devId;
+    command.datapointId = dpId;
+    command.slaveId = slaveOverrideValid ? static_cast<uint8_t>(slaveOverride) : 0U;
+    command.hasSlaveOverride = slaveOverrideValid;
+    command.function = static_cast<int>(func);
+    command.address = static_cast<uint16_t>(addr);
+    command.length = static_cast<uint16_t>(len);
+    command.writeValue = writeVal;
+    command.hasWriteValue = hasWriteVal;
+    if (!scheduleRuntimeJob(req,
+            [mb, command, devId, dpId, sValue, func, addr, len]
+            (RuntimeResponse &runtimeResponse) {
+                const ModbusCommandResult result = mb->executeCommand(command);
+                JsonDocument response;
+                if (result.operation != ModbusOperationResult::Success) {
+                    response["ok"] = false;
+                    response["error"] = "modbus_command_failed";
+                    response["reason"] = modbusOperationResultToString(result.operation);
+                    setRuntimeJsonResponse(runtimeResponse, response, HttpResponseCodes::SERVICE_UNAVAILABLE);
+                    return;
+                }
 
-    doc["ok"] = (status == 0);
-    doc["code"] = status;
-    doc["state"] = ModbusManager::statusToString(status);
-    doc["devId"] = devId;
-    doc["dpId"] = dpId;
-    doc["request"]["func_code"] = func;
-    doc["request"]["addr"] = addr;
-    doc["request"]["len"] = len;
-    if (sValue.length()) doc["request"]["value"] = sValue;
-    if (rxDump.length()) doc["rx_dump"] = rxDump;
-    if (outCount > 0) {
-        JsonArray raw = doc["result"]["raw"].to<JsonArray>();
-        for (uint16_t i = 0; i < outCount; ++i) {
-            (void) raw.add(outBuf[i]);
-        }
-        if (dpMeta && dpMeta->dataType == TEXT) {
-            doc["result"]["value"] = ModbusManager::registersToAscii(outBuf, outCount);
-        } else if (dpMeta) {
-            const uint16_t rawWord = outCount > 0 ? outBuf[0] : 0;
-            const uint16_t sliced = ModbusManager::sliceRegister(rawWord, dpMeta->registerSlice);
-            const float value = static_cast<float>(sliced) * dpMeta->scale;
-            doc["result"]["value"] = value;
-        } else {
-            doc["result"]["value"] = outBuf[0];
-        }
+                response["ok"] = result.busStatus == 0;
+                response["code"] = result.busStatus;
+                response["state"] = ModbusManager::statusToString(result.busStatus);
+                response["devId"] = devId;
+                response["dpId"] = dpId;
+                response["request"]["func_code"] = func;
+                response["request"]["addr"] = addr;
+                response["request"]["len"] = len;
+                if (sValue.length()) response["request"]["value"] = sValue;
+                if (result.rxDump.length()) response["rx_dump"] = result.rxDump;
+                if (result.count > 0U) {
+                    JsonArray raw = response["result"]["raw"].to<JsonArray>();
+                    for (uint16_t i = 0; i < result.count; ++i) (void)raw.add(result.words[i]);
+                    if (result.hasDatapointMetadata && result.dataType == TEXT) {
+                        response["result"]["value"] =
+                            ModbusManager::registersToAscii(result.words.data(), result.count);
+                    } else if (result.hasDatapointMetadata) {
+                        const uint16_t sliced = ModbusManager::sliceRegister(
+                            result.words[0], result.registerSlice);
+                        response["result"]["value"] = static_cast<float>(sliced) * result.scale;
+                    } else {
+                        response["result"]["value"] = result.words[0];
+                    }
+                }
+                setRuntimeJsonResponse(runtimeResponse, response);
+            })) {
+        doc["ok"] = false;
+        doc["error"] = "runtime_queue_full";
+        sendJson(req, doc);
     }
-
-    sendJson(req, doc);
 }
 
 void MBXServerHandlers::handleDeviceReset(const Logger *logger) {

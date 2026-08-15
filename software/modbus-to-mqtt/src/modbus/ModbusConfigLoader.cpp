@@ -37,8 +37,14 @@ bool ModbusConfigLoader::loadConfiguration(Logger *logger, const char *path, Con
     String json = f.readString();
     f.close();
 
+    return parseConfiguration(logger, json.c_str(), json.length(), outConfig);
+}
+
+bool ModbusConfigLoader::parseConfiguration(Logger *logger, const char *json,
+                                            const size_t length,
+                                            ConfigurationRoot &outConfig) {
     JsonDocument doc;
-    const DeserializationError err = deserializeJson(doc, json);
+    const DeserializationError err = deserializeJson(doc, json, length);
     if (err) {
         if (logger) logger->logError((String("ModbusConfigLoader::loadConfiguration - JSON parse error: ") + err.c_str()).c_str());
         return false;

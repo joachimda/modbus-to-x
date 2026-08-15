@@ -1,10 +1,11 @@
 #include "modbus/ModbusMqttBridge.h"
 
-#include "mqtt/MqttManager.h"
+#include <ArduinoJson.h>
+
 #include "modbus/ModbusFunctionUtils.h"
 #include "modbus/ModbusManager.h"
 #include "modbus/ModbusTopicBuilder.h"
-#include <ArduinoJson.h>
+#include "mqtt/MqttManager.h"
 
 ModbusMqttBridge::ModbusMqttBridge(Logger *logger, ModbusManager *modbus)
     : _logger(logger), _modbus(modbus) {
@@ -14,395 +15,433 @@ void ModbusMqttBridge::setMqttManager(MqttManager *mqtt) {
     _mqtt = mqtt;
 }
 
-void ModbusMqttBridge::onConfigurationLoaded(ConfigurationRoot &root) {
+MqttBridgePlan ModbusMqttBridge::buildBridgePlan(const ConfigurationRoot &root,
+                                                 const uint32_t modbusGeneration) const {
+    MqttBridgePlan plan;
+    plan.modbusGeneration = modbusGeneration;
+    const ModbusTopicBuilder relativeBuilder("");
+
+    bool hasWill = false;
+    for (const auto &device : root.devices) {
+        if (!device.mqttEnabled) continue;
+        if (device.homeassistantDiscoveryEnabled && !hasWill) {
+            plan.will.configured = true;
+            plan.will.topic = {relativeBuilder.availabilityTopic(device), true};
+            plan.will.payload = "offline";
+            plan.will.qos = 1U;
+            plan.will.retain = true;
+            hasWill = true;
+        }
+
+        for (const auto &datapoint : device.datapoints) {
+            if (isReadOnlyFunction(datapoint.function)) continue;
+
+            String explicitTopic = datapoint.topic;
+            explicitTopic.trim();
+            MqttTopicSpec topic;
+            topic.relativeToRoot = !explicitTopic.length();
+            topic.topic = topic.relativeToRoot
+                              ? relativeBuilder.datapointTopic(device, datapoint)
+                              : explicitTopic;
+
+            const uint8_t slaveId = device.slaveId;
+            const auto function = datapoint.function;
+            const uint16_t address = datapoint.address;
+            const uint8_t registerCount = datapoint.numOfRegisters ? datapoint.numOfRegisters : 1U;
+            const float scale = datapoint.scale;
+            const String topicLabel = topic.topic;
+            plan.subscriptions.push_back({topic,
+                [this, topicLabel, slaveId, function, address, registerCount, scale, modbusGeneration]
+                (const String &payload) {
+                    handleWriteCommand(topicLabel, slaveId, function, address, registerCount, scale,
+                                       modbusGeneration, payload);
+                }});
+        }
+    }
+    return plan;
+}
+
+MqttOperationResult ModbusMqttBridge::stageConfiguration(const ConfigurationRoot &root,
+                                                         const uint32_t modbusGeneration) {
+    if (_mqtt == nullptr) return MqttOperationResult::Unavailable;
+    return _mqtt->stageBridgePlan(buildBridgePlan(root, modbusGeneration));
+}
+
+void ModbusMqttBridge::commitConfiguration(const uint32_t modbusGeneration) {
+    if (_mqtt != nullptr) _mqtt->approveBridgePlan(modbusGeneration);
+}
+
+void ModbusMqttBridge::onConfigurationActivated(ConfigurationRoot &root) {
     for (auto &device : root.devices) {
         device.haAvailabilityOnlinePublished = false;
         device.haDiscoveryPublished = false;
+        device.haAvailabilityPublishPending = false;
+        device.haAvailabilityPublishAttempt.invalidate();
+        device.haDiscoveryPublishPending = 0U;
+        device.haDiscoveryPublishAttempt.invalidate();
+        device.haDiscoveryPublishFailed = false;
+        device.haDiscoveryPublishCursor = 0U;
+        device.haDiscoveryPublishSchedulingComplete = false;
     }
-
-    if (_mqtt) {
-        String willTopic;
-        bool multipleDiscovery = false;
-        for (auto &device: root.devices) {
-            if (device.mqttEnabled && device.homeassistantDiscoveryEnabled) {
-                if (willTopic.isEmpty()) {
-                    willTopic = buildAvailabilityTopic(device);
-                } else {
-                    multipleDiscovery = true;
-                }
-            }
-        }
-        if (willTopic.length()) {
-            _mqtt->configureWill(willTopic, "offline", 1, true);
-            _logger->logDebug((String("[MQTT][HA] Set LWT topic to ") + willTopic).c_str());
-        } else {
-            _mqtt->clearWill();
-        }
-        if (multipleDiscovery) {
-            _logger->logWarning(
-                "[MQTT][HA] Multiple devices requested Home Assistant discovery; LWT uses the first matched device");
-        }
-    }
-
-    rebuildWriteSubscriptions(root);
+    _lastConnectionEpoch = 0U;
 }
 
-void ModbusMqttBridge::onConnectionState(const bool connectedNow,
-                                        const bool connectedLast,
-                                        ConfigurationRoot &root) {
-    if (connectedNow && !connectedLast) {
-        handleMqttConnected(root);
-    } else if (!connectedNow && connectedLast) {
+void ModbusMqttBridge::onConnectionState(const MqttStatusSnapshot &mqttStatus,
+                                         ConfigurationRoot &root,
+                                         const uint32_t modbusGeneration) {
+    const bool matchingGeneration = mqttStatus.modbusGeneration == modbusGeneration;
+    if (mqttStatus.connected && matchingGeneration
+        && mqttStatus.connectionEpoch != _lastConnectionEpoch) {
         handleMqttDisconnected(root);
+        _lastConnectionEpoch = mqttStatus.connectionEpoch;
+    } else if ((!mqttStatus.connected || !matchingGeneration) && _lastConnectionEpoch != 0U) {
+        handleMqttDisconnected(root);
+        _lastConnectionEpoch = 0U;
+    }
+    if (mqttStatus.connected && matchingGeneration) {
+        handleMqttConnected(root, modbusGeneration);
     }
 }
 
-void ModbusMqttBridge::handleMqttConnected(ConfigurationRoot &root) {
-    if (!MqttManager::isMQTTEnabled()) {
-        return;
-    }
+void ModbusMqttBridge::handleMqttConnected(ConfigurationRoot &root, const uint32_t modbusGeneration) {
+    if (_mqtt == nullptr) return;
+    const MqttStatusSnapshot status = _mqtt->getStatusSnapshot();
+    if (!status.enabled || !status.connected || status.modbusGeneration != modbusGeneration) return;
 
-    rebuildWriteSubscriptions(root);
-
-    for (auto &device: root.devices) {
-        if (!device.mqttEnabled) {
-            continue;
-        }
-        if (device.homeassistantDiscoveryEnabled) {
-            publishAvailabilityOnline(device);
-            publishHomeAssistantDiscovery(device);
-        }
+    for (size_t deviceIndex = 0U; deviceIndex < root.devices.size(); ++deviceIndex) {
+        auto &device = root.devices[deviceIndex];
+        if (!device.mqttEnabled || !device.homeassistantDiscoveryEnabled) continue;
+        publishAvailabilityOnline(device, deviceIndex, status, modbusGeneration);
+        publishHomeAssistantDiscovery(device, deviceIndex, status, modbusGeneration);
     }
 }
 
 void ModbusMqttBridge::handleMqttDisconnected(ConfigurationRoot &root) {
-    for (auto &device: root.devices) {
+    for (auto &device : root.devices) {
         device.haAvailabilityOnlinePublished = false;
         device.haDiscoveryPublished = false;
+        device.haAvailabilityPublishPending = false;
+        device.haAvailabilityPublishAttempt.invalidate();
+        device.haDiscoveryPublishPending = 0U;
+        device.haDiscoveryPublishAttempt.invalidate();
+        device.haDiscoveryPublishFailed = false;
+        device.haDiscoveryPublishCursor = 0U;
+        device.haDiscoveryPublishSchedulingComplete = false;
     }
 }
 
-String ModbusMqttBridge::buildDatapointTopic(const ModbusDevice &device, const ModbusDatapoint &dp) const {
-    const String rootTopic = _mqtt->getRootTopic();
-    const ModbusTopicBuilder builder(rootTopic);
-    return builder.datapointTopic(device, dp);
+String ModbusMqttBridge::buildDatapointTopic(const ModbusDevice &device,
+                                             const ModbusDatapoint &datapoint,
+                                             const String &rootTopic) const {
+    return ModbusTopicBuilder(rootTopic).datapointTopic(device, datapoint);
 }
 
-String ModbusMqttBridge::buildAvailabilityTopic(const ModbusDevice &device) const {
-    const String rootTopic = _mqtt->getRootTopic();
-    const ModbusTopicBuilder builder(rootTopic);
-    return builder.availabilityTopic(device);
+String ModbusMqttBridge::buildAvailabilityTopic(const ModbusDevice &device,
+                                                const String &rootTopic) const {
+    return ModbusTopicBuilder(rootTopic).availabilityTopic(device);
 }
 
 void ModbusMqttBridge::publishDatapoint(ModbusDevice &device,
-                                       const ModbusDatapoint &dp,
-                                       const String &payload) const {
-    if (!device.mqttEnabled || !_mqtt) {
-        return;
-    }
-    if (!MqttManager::isMQTTEnabled()) {
-        return;
-    }
-    if (dp.id.isEmpty()) {
-        return;
-    }
+                                        const ModbusDatapoint &datapoint,
+                                        const String &payload,
+                                        const uint32_t modbusGeneration) const {
+    if (!device.mqttEnabled || _mqtt == nullptr || datapoint.id.isEmpty()) return;
+    const MqttStatusSnapshot status = _mqtt->getStatusSnapshot();
+    if (!status.enabled || !status.connected || status.modbusGeneration != modbusGeneration) return;
 
-    if (device.homeassistantDiscoveryEnabled) {
-        if (!device.haAvailabilityOnlinePublished) {
-            publishAvailabilityOnline(device);
-        }
-        if (!device.haDiscoveryPublished) {
-            publishHomeAssistantDiscovery(device);
-        }
-        if (!device.haAvailabilityOnlinePublished || !device.haDiscoveryPublished) {
-            return;
-        }
-    }
-
-    String topic = buildDatapointTopic(device, dp);
+    String topic = buildDatapointTopic(device, datapoint, status.rootTopic);
     topic.trim();
-    if (!topic.length()) {
-        _logger->logWarning("ModbusMqttBridge::publishDatapoint - empty topic, skipping publish");
-        return;
-    }
+    if (!topic.length()) return;
 
-    if (!_mqtt->mqttPublish(topic.c_str(), payload.c_str())) {
-        _logger->logWarning((String("MQTT publish failed for topic ") + topic).c_str());
-    } else {
-        _logger->logDebug((String("MQTT publish ") + topic + " <= " + payload).c_str());
-    }
-}
-
-void ModbusMqttBridge::rebuildWriteSubscriptions(const ConfigurationRoot &root) {
-    if (!_mqtt || !MqttManager::isMQTTEnabled()) return;
-
-    if (!_writeTopics.empty()) {
-        _mqtt->removeSubscriptionHandlers(_writeTopics);
-        _writeTopics.clear();
-    }
-
-    for (const auto &device: root.devices) {
-        if (!device.mqttEnabled) continue;
-
-        for (const auto &dp: device.datapoints) {
-            if (isReadOnlyFunction(dp.function)) continue;
-
-            String topic = buildDatapointTopic(device, dp);
-            topic.trim();
-            if (!topic.length()) {
-                _logger->logWarning("ModbusMqttBridge::rebuildWriteSubscriptions - empty topic for write datapoint, skipping");
-                continue;
-            }
-
-            const uint8_t slaveId = device.slaveId;
-            const auto fn = dp.function;
-            const uint16_t addr = dp.address;
-            const uint8_t numRegs = dp.numOfRegisters ? dp.numOfRegisters : 1;
-            const float scale = dp.scale;
-
-            _mqtt->addSubscriptionHandler(topic, [this, topic, slaveId, fn, addr, numRegs, scale](const String &payload) {
-                handleWriteCommand(topic, slaveId, fn, addr, numRegs, scale, payload);
-            });
-            _writeTopics.push_back(topic);
-        }
+    const MqttAdmissionResult admission = _mqtt->publishAsync(
+        {topic, payload, false, status.generation, modbusGeneration, status.connectionEpoch});
+    if (admission != MqttAdmissionResult::Accepted) {
+        _logger->logWarning((String("MQTT publish was not admitted for topic ") + topic + ": "
+                             + mqttAdmissionResultToString(admission)).c_str());
     }
 }
 
 void ModbusMqttBridge::handleWriteCommand(const String &topic,
-                                         const uint8_t slaveId,
-                                         const ModbusFunctionType fn,
-                                         const uint16_t addr,
-                                         const uint8_t numRegs,
-                                         const float scale,
-                                         const String &payload) const {
-    if (!_modbus) {
-        _logger->logError("ModbusMqttBridge::handleWriteCommand - no ModbusManager assigned");
-        return;
-    }
+                                          const uint8_t slaveId,
+                                          const ModbusFunctionType function,
+                                          const uint16_t address,
+                                          const uint8_t registerCount,
+                                          const float scale,
+                                          const uint32_t modbusGeneration,
+                                          const String &payload) const {
+    if (_modbus == nullptr) return;
 
     String trimmed = payload;
     trimmed.trim();
-
-    uint16_t writeValue = 0;
+    uint16_t writeValue = 0U;
     bool hasWriteValue = false;
-
-    if (fn == WRITE_COIL) {
+    if (function == WRITE_COIL) {
         if (trimmed.equalsIgnoreCase("true") || trimmed == "1") {
-            writeValue = 1;
+            writeValue = 1U;
             hasWriteValue = true;
         } else if (trimmed.equalsIgnoreCase("false") || trimmed == "0") {
-            writeValue = 0;
+            writeValue = 0U;
             hasWriteValue = true;
         } else if (trimmed.length()) {
-            writeValue = static_cast<uint16_t>(trimmed.toInt());
-            writeValue = writeValue ? 1 : 0;
+            writeValue = trimmed.toInt() ? 1U : 0U;
             hasWriteValue = true;
         }
-    } else if (fn == WRITE_HOLDING || fn == WRITE_MULTIPLE_HOLDING) {
-        if (!trimmed.length()) {
-            _logger->logWarning("ModbusMqttBridge::handleWriteCommand - empty payload for holding register write");
-            return;
-        }
-        const float denom = (scale == 0.0f) ? 1.0f : scale;
-        const float requested = trimmed.toFloat();
-        const float raw = requested / denom;
-        float rounded = (raw >= 0.0f) ? (raw + 0.5f) : (raw - 0.5f);
-        if (rounded < 0.0f) rounded = 0.0f;
-        if (rounded > 65535.0f) rounded = 65535.0f;
+    } else if (function == WRITE_HOLDING || function == WRITE_MULTIPLE_HOLDING) {
+        if (!trimmed.length()) return;
+        const float denominator = scale == 0.0F ? 1.0F : scale;
+        const float raw = trimmed.toFloat() / denominator;
+        float rounded = raw >= 0.0F ? raw + 0.5F : raw - 0.5F;
+        if (rounded < 0.0F) rounded = 0.0F;
+        if (rounded > 65535.0F) rounded = 65535.0F;
         writeValue = static_cast<uint16_t>(rounded);
         hasWriteValue = true;
-    } else {
-        _logger->logWarning("ModbusMqttBridge::handleWriteCommand - unsupported function");
-        return;
     }
-
     if (!hasWriteValue) {
-        _logger->logWarning(
-            (String("ModbusMqttBridge::handleWriteCommand - Unable to parse payload for topic [") + topic + "]").c_str());
+        _logger->logWarning((String("Unable to parse MQTT write payload for ") + topic).c_str());
         return;
     }
 
-    uint16_t outBuf[1]{};
-    uint16_t outCount = 0;
-    String rxDump;
-    const uint8_t effectiveLen = (fn == WRITE_MULTIPLE_HOLDING) ? 1 : numRegs;
-    const uint8_t status = _modbus->executeCommand(slaveId,
-                                                   static_cast<int>(fn),
-                                                   addr,
-                                                   effectiveLen,
-                                                   writeValue,
-                                                   true,
-                                                   outBuf,
-                                                   0,
-                                                   outCount,
-                                                   rxDump);
-
-    if (status == ModbusMaster::ku8MBSuccess) {
-        _logger->logDebug(
-            (String("Modbus write OK - topic=") + topic + ", addr=" + String(addr) + ", value=" +
-             String(writeValue)).c_str());
-    } else {
-        _logger->logError(
-            (String("Modbus write ERR - topic=") + topic + ", addr=" + String(addr) +
-             ", code=" + String(status) + " (" + ModbusManager::statusToString(status) + ")" +
-             (rxDump.length() ? String(", rx=") + rxDump : String(""))).c_str());
+    ModbusCommandRequest request;
+    request.sourceTopic = topic;
+    request.slaveId = slaveId;
+    request.hasSlaveOverride = true;
+    request.function = static_cast<int>(function);
+    request.address = address;
+    request.length = function == WRITE_MULTIPLE_HOLDING ? 1U : registerCount;
+    request.writeValue = writeValue;
+    request.hasWriteValue = true;
+    request.expectedGeneration = modbusGeneration;
+    const ModbusOperationResult result = _modbus->submitWriteCommand(request);
+    if (result != ModbusOperationResult::Success) {
+        _logger->logWarning((String("Modbus MQTT write was not admitted: ")
+                             + modbusOperationResultToString(result)).c_str());
     }
 }
 
-void ModbusMqttBridge::publishAvailabilityOnline(ModbusDevice &device) const {
-    if (!device.homeassistantDiscoveryEnabled || !device.mqttEnabled) {
-        return;
-    }
-    if (!MqttManager::isMQTTEnabled() || !_mqtt || !_mqtt->isConnected()) {
-        return;
-    }
+MqttPublishCallback ModbusMqttBridge::buildPublishCallback(
+    const size_t deviceIndex,
+    const ModbusPublicationKind kind,
+    const uint32_t modbusGeneration,
+    const uint32_t connectionEpoch,
+    const uint32_t attempt) const {
+    return [this, deviceIndex, kind, modbusGeneration, connectionEpoch, attempt]
+        (const MqttOperationResult result) {
+            if (_modbus == nullptr) return;
+            ModbusPublicationCompletion completion;
+            completion.deviceIndex = deviceIndex;
+            completion.kind = kind;
+            completion.result = result;
+            completion.modbusGeneration = modbusGeneration;
+            completion.connectionEpoch = connectionEpoch;
+            completion.attempt = attempt;
+            if (_modbus->submitPublicationCompletion(completion) != ModbusOperationResult::Success) {
+                _publicationCompletionLost.store(true, std::memory_order_release);
+            }
+        };
+}
 
-    String topic = buildAvailabilityTopic(device);
+void ModbusMqttBridge::publishAvailabilityOnline(ModbusDevice &device,
+                                                 const size_t deviceIndex,
+                                                 const MqttStatusSnapshot &mqttStatus,
+                                                 const uint32_t modbusGeneration) const {
+    if (!device.homeassistantDiscoveryEnabled || !device.mqttEnabled || _mqtt == nullptr
+        || !mqttStatus.enabled || !mqttStatus.connected
+        || device.haAvailabilityOnlinePublished || device.haAvailabilityPublishPending) return;
+
+    String topic = buildAvailabilityTopic(device, mqttStatus.rootTopic);
     topic.trim();
-    if (!topic.length()) {
-        _logger->logWarning("[MQTT][HA] Availability topic empty, skipping publish");
-        return;
-    }
-
-    if (_mqtt->mqttPublish(topic.c_str(), "online", true)) {
-        device.haAvailabilityOnlinePublished = true;
-        _logger->logDebug((String("[MQTT][HA] Availability -> ") + topic + " <= online").c_str());
+    if (!topic.length()) return;
+    const uint32_t attempt = device.haAvailabilityPublishAttempt.begin();
+    const MqttAdmissionResult admission = _mqtt->publishAsync(
+        {topic, "online", true, mqttStatus.generation, modbusGeneration,
+         mqttStatus.connectionEpoch},
+        buildPublishCallback(deviceIndex, ModbusPublicationKind::Availability,
+                             modbusGeneration, mqttStatus.connectionEpoch, attempt));
+    if (admission == MqttAdmissionResult::Accepted) {
+        device.haAvailabilityPublishPending = true;
     } else {
-        _logger->logWarning((String("[MQTT][HA] Failed to publish availability topic ") + topic).c_str());
+        _logger->logWarning((String("[MQTT][HA] Availability publish was not admitted: ")
+                             + mqttAdmissionResultToString(admission)).c_str());
     }
 }
 
-void ModbusMqttBridge::publishHomeAssistantDiscovery(ModbusDevice &device) const {
-    _logger->logDebug((String("[MQTT][HA] Publishing discovery for device ") + device.id).c_str());
-    if (!device.homeassistantDiscoveryEnabled || !device.mqttEnabled) {
-        return;
-    }
-
-    if (!MqttManager::isMQTTEnabled() || !_mqtt || !_mqtt->isConnected()) {
-        return;
-    }
+void ModbusMqttBridge::publishHomeAssistantDiscovery(ModbusDevice &device,
+                                                     const size_t deviceIndex,
+                                                     const MqttStatusSnapshot &mqttStatus,
+                                                     const uint32_t modbusGeneration) const {
+    if (!device.homeassistantDiscoveryEnabled || !device.mqttEnabled || _mqtt == nullptr
+        || !mqttStatus.enabled || !mqttStatus.connected || device.haDiscoveryPublished
+        || device.haDiscoveryPublishPending != 0U) return;
 
     const String deviceSegment = ModbusTopicBuilder::deviceSegment(device);
-    const String availabilityTopic = buildAvailabilityTopic(device);
+    const String availabilityTopic = buildAvailabilityTopic(device, mqttStatus.rootTopic);
     String deviceIdentifier = device.id;
     deviceIdentifier.trim();
-    if (!deviceIdentifier.length()) {
-        deviceIdentifier = deviceSegment;
-    }
+    if (!deviceIdentifier.length()) deviceIdentifier = deviceSegment;
 
     bool anyEligible = false;
-    bool anyPublished = false;
-
+    for (const auto &datapoint : device.datapoints) {
+        anyEligible = anyEligible || isReadOnlyFunction(datapoint.function)
+                      || isWriteFunction(datapoint.function);
+    }
+    if (!anyEligible) {
+        device.haDiscoveryPublished = true;
+        return;
+    }
+    if (device.haDiscoveryPublishCursor == 0U) {
+        device.haDiscoveryPublishFailed = false;
+        device.haDiscoveryPublishSchedulingComplete = false;
+        device.haDiscoveryPublishAttempt.begin();
+    }
+    const uint32_t attempt = device.haDiscoveryPublishAttempt.current();
     auto findStateTopicForCommand = [&](const String &commandTopic) -> String {
-        for (const auto &candidate: device.datapoints) {
-            if (!isReadOnlyFunction(candidate.function)) {
-                continue;
-            }
-            String candidateTopic = buildDatapointTopic(device, candidate);
+        for (const auto &candidate : device.datapoints) {
+            if (!isReadOnlyFunction(candidate.function)) continue;
+            String candidateTopic = buildDatapointTopic(device, candidate, mqttStatus.rootTopic);
             candidateTopic.trim();
-            if (candidateTopic == commandTopic) {
-                return candidateTopic;
-            }
+            if (candidateTopic == commandTopic) return candidateTopic;
         }
         return {};
     };
 
-    for (const auto &dp: device.datapoints) {
-        const bool readable = isReadOnlyFunction(dp.function);
-        const bool writeable = isWriteFunction(dp.function);
+    for (size_t datapointIndex = device.haDiscoveryPublishCursor;
+         datapointIndex < device.datapoints.size(); ++datapointIndex) {
+        const auto &datapoint = device.datapoints[datapointIndex];
+        const bool readable = isReadOnlyFunction(datapoint.function);
+        const bool writeable = isWriteFunction(datapoint.function);
         if (!readable && !writeable) {
+            device.haDiscoveryPublishCursor = datapointIndex + 1U;
             continue;
         }
-        anyEligible = true;
 
-        String datapointTopic = buildDatapointTopic(device, dp);
+        String datapointTopic = buildDatapointTopic(device, datapoint, mqttStatus.rootTopic);
         datapointTopic.trim();
         if (!datapointTopic.length()) {
+            device.haDiscoveryPublishFailed = true;
+            device.haDiscoveryPublishCursor = datapointIndex + 1U;
             continue;
         }
 
-        const String datapointSegment = ModbusTopicBuilder::datapointSegment(dp);
+        const String datapointSegment = ModbusTopicBuilder::datapointSegment(datapoint);
         const String baseUniqueId = deviceSegment + "_" + datapointSegment;
+        const String uniqueId = writeable ? baseUniqueId + "_cmd" : baseUniqueId;
+        const String component = readable ? "sensor" : datapoint.function == WRITE_COIL ? "switch" : "number";
         String discoveryTopic;
 
-        JsonDocument doc;
-        const String friendlyName = ModbusTopicBuilder::friendlyName(device, dp);
-        const String uniqueId = writeable ? baseUniqueId + "_cmd" : baseUniqueId;
-
-        const String component = readable ? "sensor"
-                                : (dp.function == WRITE_COIL) ? "switch"
-                                : "number";
-
-        doc["name"] = friendlyName;
-        doc["unique_id"] = uniqueId;
-        doc["default_entity_id"] = component + "." + uniqueId;
-        doc["availability_topic"] = availabilityTopic;
-        doc["payload_available"] = "online";
-        doc["payload_not_available"] = "offline";
-
-        auto deviceObj = doc["device"].to<JsonObject>();
-        auto identifiers = deviceObj["identifiers"].to<JsonArray>();
-        identifiers.add(deviceIdentifier);
-        deviceObj["name"] = device.name.length() ? device.name : deviceSegment;
+        JsonDocument document;
+        document["name"] = ModbusTopicBuilder::friendlyName(device, datapoint);
+        document["unique_id"] = uniqueId;
+        document["default_entity_id"] = component + "." + uniqueId;
+        document["availability_topic"] = availabilityTopic;
+        document["payload_available"] = "online";
+        document["payload_not_available"] = "offline";
+        auto deviceObject = document["device"].to<JsonObject>();
+        deviceObject["identifiers"].to<JsonArray>().add(deviceIdentifier);
+        deviceObject["name"] = device.name.length() ? device.name : deviceSegment;
 
         if (readable) {
-            discoveryTopic =
-                String("homeassistant/sensor/") + deviceSegment + "/" + datapointSegment + "/config";
-            doc["state_topic"] = datapointTopic;
-            if (dp.unit.length()) {
-                doc["unit_of_measurement"] = dp.unit;
-            }
-            if (dp.function == READ_HOLDING) {
-                doc["state_class"] = "measurement";
-            }
-        } else if (dp.function == WRITE_COIL) {
-            discoveryTopic =
-                String("homeassistant/switch/") + deviceSegment + "/" + datapointSegment + "/config";
-            doc["command_topic"] = datapointTopic;
-            doc["payload_on"] = "1";
-            doc["payload_off"] = "0";
+            discoveryTopic = String("homeassistant/sensor/") + deviceSegment + "/" + datapointSegment + "/config";
+            document["state_topic"] = datapointTopic;
+            if (datapoint.unit.length()) document["unit_of_measurement"] = datapoint.unit;
+            if (datapoint.function == READ_HOLDING) document["state_class"] = "measurement";
+        } else if (datapoint.function == WRITE_COIL) {
+            discoveryTopic = String("homeassistant/switch/") + deviceSegment + "/" + datapointSegment + "/config";
+            document["command_topic"] = datapointTopic;
+            document["payload_on"] = "1";
+            document["payload_off"] = "0";
             const String stateTopic = findStateTopicForCommand(datapointTopic);
-            if (stateTopic.length()) {
-                doc["state_topic"] = stateTopic;
-            } else {
-                doc["optimistic"] = true;
-            }
-        } else if (dp.function == WRITE_HOLDING || dp.function == WRITE_MULTIPLE_HOLDING) {
-            discoveryTopic =
-                String("homeassistant/number/") + deviceSegment + "/" + datapointSegment + "/config";
-            doc["command_topic"] = datapointTopic;
-            const String stateTopic = findStateTopicForCommand(datapointTopic);
-            if (stateTopic.length()) {
-                doc["state_topic"] = stateTopic;
-            } else {
-                doc["optimistic"] = true;
-            }
-            if (dp.unit.length()) {
-                doc["unit_of_measurement"] = dp.unit;
-            }
-            const float effectiveScale = (dp.scale == 0.0f) ? 1.0f : dp.scale;
-            const float step = (effectiveScale > 0.0f) ? effectiveScale : 1.0f;
-            const float maxValue = 65535.0f * ((effectiveScale > 0.0f) ? effectiveScale : 1.0f);
-            doc["min"] = 0;
-            doc["max"] = maxValue;
-            doc["step"] = step;
-            doc["mode"] = "box";
+            if (stateTopic.length()) document["state_topic"] = stateTopic;
+            else document["optimistic"] = true;
         } else {
-            continue;
+            discoveryTopic = String("homeassistant/number/") + deviceSegment + "/" + datapointSegment + "/config";
+            document["command_topic"] = datapointTopic;
+            const String stateTopic = findStateTopicForCommand(datapointTopic);
+            if (stateTopic.length()) document["state_topic"] = stateTopic;
+            else document["optimistic"] = true;
+            if (datapoint.unit.length()) document["unit_of_measurement"] = datapoint.unit;
+            const float effectiveScale = datapoint.scale == 0.0F ? 1.0F : datapoint.scale;
+            document["min"] = 0;
+            document["max"] = 65535.0F * (effectiveScale > 0.0F ? effectiveScale : 1.0F);
+            document["step"] = effectiveScale > 0.0F ? effectiveScale : 1.0F;
+            document["mode"] = "box";
         }
 
         String payload;
-        serializeJson(doc, payload);
-        if (_mqtt->mqttPublish(discoveryTopic.c_str(), payload.c_str(), true)) {
-            anyPublished = true;
-            _logger->logDebug((String("[MQTT][HA] Discovery -> ") + discoveryTopic).c_str());
+        serializeJson(document, payload);
+        const MqttAdmissionResult admission = _mqtt->publishAsync(
+            {discoveryTopic, payload, true, mqttStatus.generation, modbusGeneration,
+             mqttStatus.connectionEpoch},
+            buildPublishCallback(deviceIndex, ModbusPublicationKind::Discovery,
+                                 modbusGeneration, mqttStatus.connectionEpoch, attempt));
+        if (admission == MqttAdmissionResult::Accepted) {
+            ++device.haDiscoveryPublishPending;
+            device.haDiscoveryPublishCursor = datapointIndex + 1U;
         } else {
-            _logger->logWarning((String("[MQTT][HA] Failed to publish discovery topic ") + discoveryTopic).c_str());
+            _logger->logWarning((String("[MQTT][HA] Discovery publish was not admitted: ")
+                                 + mqttAdmissionResultToString(admission)).c_str());
+            if (admission == MqttAdmissionResult::QueueFull) return;
+            device.haDiscoveryPublishFailed = true;
+            device.haDiscoveryPublishCursor = datapointIndex + 1U;
         }
     }
 
-    if (anyPublished || !anyEligible) {
-        device.haDiscoveryPublished = true;
+    device.haDiscoveryPublishSchedulingComplete = true;
+    if (device.haDiscoveryPublishPending == 0U) {
+        device.haDiscoveryPublished = !device.haDiscoveryPublishFailed;
+        if (!device.haDiscoveryPublished) {
+            device.haDiscoveryPublishCursor = 0U;
+            device.haDiscoveryPublishSchedulingComplete = false;
+        }
     }
 }
 
+void ModbusMqttBridge::onPublicationCompletion(
+    ConfigurationRoot &root,
+    const ModbusPublicationCompletion &completion,
+    const uint32_t modbusGeneration) {
+    if (completion.modbusGeneration == 0U
+        || completion.modbusGeneration != modbusGeneration
+        || completion.connectionEpoch == 0U
+        || completion.connectionEpoch != _lastConnectionEpoch
+        || completion.deviceIndex >= root.devices.size()) return;
+
+    auto &device = root.devices[completion.deviceIndex];
+    if (completion.kind == ModbusPublicationKind::Availability) {
+        if (!device.haAvailabilityPublishPending
+            || !device.haAvailabilityPublishAttempt.accepts(completion.attempt)) return;
+        device.haAvailabilityPublishPending = false;
+        device.haAvailabilityOnlinePublished = completion.result == MqttOperationResult::Success;
+        return;
+    }
+
+    if (device.haDiscoveryPublishPending == 0U
+        || !device.haDiscoveryPublishAttempt.accepts(completion.attempt)) return;
+    --device.haDiscoveryPublishPending;
+    if (completion.result != MqttOperationResult::Success) {
+        device.haDiscoveryPublishFailed = true;
+    }
+    if (device.haDiscoveryPublishPending == 0U
+        && device.haDiscoveryPublishSchedulingComplete) {
+        device.haDiscoveryPublished = !device.haDiscoveryPublishFailed;
+        if (!device.haDiscoveryPublished) {
+            device.haDiscoveryPublishCursor = 0U;
+            device.haDiscoveryPublishSchedulingComplete = false;
+        }
+    }
+}
+
+void ModbusMqttBridge::recoverLostPublicationCompletions(ConfigurationRoot &root) {
+    if (!_publicationCompletionLost.exchange(false, std::memory_order_acq_rel)) return;
+    _logger->logWarning("[MQTT] Publication completion queue overflow; retrying pending metadata");
+    for (auto &device : root.devices) {
+        device.haAvailabilityOnlinePublished = false;
+        device.haDiscoveryPublished = false;
+        device.haAvailabilityPublishPending = false;
+        device.haAvailabilityPublishAttempt.invalidate();
+        device.haDiscoveryPublishPending = 0U;
+        device.haDiscoveryPublishAttempt.invalidate();
+        device.haDiscoveryPublishFailed = false;
+        device.haDiscoveryPublishCursor = 0U;
+        device.haDiscoveryPublishSchedulingComplete = false;
+    }
+}

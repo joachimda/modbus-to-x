@@ -47,14 +47,6 @@ public:
 
     String dumpRx() const;
 
-    static uint32_t getErrorCount();
-
-    static bool isEnabled();
-
-    static void setEnabled(bool enabled);
-
-    bool isBusy() const;
-
     void enableCapture(bool enable);
 
 private:

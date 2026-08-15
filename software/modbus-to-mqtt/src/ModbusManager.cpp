@@ -1,14 +1,38 @@
-#include "Config.h"
 #include "modbus/ModbusManager.h"
-#include "storage/ConfigFs.h"
 
 #include <cmath>
-#include <vector>
+#include <new>
+#include <utility>
 
-#include "mqtt/MqttManager.h"
-#include "services/IndicatorService.h"
+#include "concurrency/OwnerRequest.h"
 #include "modbus/ModbusConfigLoader.h"
 #include "modbus/ModbusPollScheduler.h"
+#include "mqtt/MqttManager.h"
+#include "services/IndicatorService.h"
+#include "storage/ConfigFs.h"
+
+struct ModbusManager::Command final : OwnerRequest {
+    enum class Type : uint8_t {
+        ActivateConfiguration,
+        Execute,
+        SetEnabled,
+        PublicationCompletion,
+    };
+
+    explicit Command(const Type commandType)
+        : type(commandType) {
+    }
+
+    Type type;
+    ConfigurationRoot configuration;
+    ModbusCommandRequest request;
+    ModbusCommandResult commandResult;
+    ModbusPublicationCompletion publicationCompletion;
+    ModbusOperationResult result{ModbusOperationResult::Unavailable};
+    uint32_t configurationRevision{0U};
+    bool enabled{false};
+    bool asynchronous{false};
+};
 
 ModbusManager::ModbusManager(Logger *logger)
     : _bus(logger),
@@ -17,182 +41,474 @@ ModbusManager::ModbusManager(Logger *logger)
 }
 
 bool ModbusManager::begin() {
-    if (loadConfiguration()) {
-        _bus.begin(_modbusRoot.bus);
-        _bus.setActive(_modbusRoot.bus.enabled);
-        _logger->logInformation(_modbusRoot.bus.enabled
-            ? "ModbusManager::begin - RS485 bus is ACTIVE"
-            : "ModbusManager::begin - RS485 bus is INACTIVE");
-        return _modbusRoot.bus.enabled;
-    }
-    _bus.setActive(false);
-    _logger->logInformation("ModbusManager::begin - RS485 bus is INACTIVE");
-    return false;
-}
-
-bool ModbusManager::loadConfiguration() {
-    const bool ok = ModbusConfigLoader::loadConfiguration(_logger, ConfigFs::kModbusConfigFile, _modbusRoot);
-    if (!ok) {
+    _ownerTaskHandle = xTaskGetCurrentTaskHandle();
+    _commandQueue = xQueueCreate(MODBUS_COMMAND_QUEUE_DEPTH, sizeof(Command *));
+    if (_commandQueue == nullptr) {
+        _logger->logError("[Modbus] Failed to initialize owner mailbox");
         return false;
     }
-    _mqttBridge.onConfigurationLoaded(_modbusRoot);
+    _ownerAvailable.store(true, std::memory_order_release);
 
-    _logger->logInformation((String("Loaded config: ") + String(_modbusRoot.devices.size()) + " devices; baud " +
-                             String(_modbusRoot.bus.baud) + ", format " + _modbusRoot.bus.serialFormat).c_str());
-    return true;
+    ConfigurationRoot candidate;
+    if (!loadConfigurationCandidate(candidate)) {
+        _bus.setActive(false);
+        updateRuntimeSnapshot();
+        return false;
+    }
+    const ModbusOperationResult activation = activateConfiguration(std::move(candidate));
+    if (activation != ModbusOperationResult::Success) {
+        _bus.setActive(false);
+        updateRuntimeSnapshot();
+        _logger->logError((String("[Modbus] Initial activation failed: ")
+                           + modbusOperationResultToString(activation)).c_str());
+        return false;
+    }
+    return _bus.isActive();
+}
+
+bool ModbusManager::loadConfigurationCandidate(ConfigurationRoot &candidate) const {
+    return ModbusConfigLoader::loadConfiguration(_logger, ConfigFs::kModbusConfigFile, candidate);
+}
+
+ModbusOperationResult ModbusManager::activateConfiguration(ConfigurationRoot candidate,
+                                                           const uint32_t revision) {
+    if (!inOwnerContext()) {
+        recordOwnerViolation();
+        return ModbusOperationResult::Unavailable;
+    }
+
+    if (revision != 0U && !_configurationRevisions.isLatest(revision)) {
+        return ModbusOperationResult::Superseded;
+    }
+
+    const uint32_t nextGeneration = _generation + 1U;
+    const MqttOperationResult mqttResult = _mqttBridge.stageConfiguration(candidate, nextGeneration);
+    if (mqttResult != MqttOperationResult::Success) {
+        _logger->logError((String("[Modbus] MQTT bridge plan rejected: ")
+                           + mqttOperationResultToString(mqttResult)).c_str());
+        return ModbusOperationResult::ActivationFailed;
+    }
+    if (revision != 0U && !_configurationRevisions.isLatest(revision)) {
+        return ModbusOperationResult::Superseded;
+    }
+
+    // The owner has finished every prior polling pass/command before reaching
+    // this method. Wiring initialization and the root swap therefore form one
+    // exclusive transition and invalidate no live iterator or bus user.
+    if (!_bus.begin(candidate.bus)) return ModbusOperationResult::ActivationFailed;
+    _modbusRoot = std::move(candidate);
+    _generation = nextGeneration;
+    _mqttBridge.onConfigurationActivated(_modbusRoot);
+    _bus.setActive(_modbusRoot.bus.enabled);
+    _mqttBridge.commitConfiguration(_generation);
+    updateRuntimeSnapshot();
+    _logger->logInformation((String("[Modbus] Activated generation ") + String(_generation)
+                             + " with " + String(_modbusRoot.devices.size()) + " devices").c_str());
+    return ModbusOperationResult::Success;
+}
+
+ModbusOperationResult ModbusManager::submitAndWait(Command *command, const uint32_t waitMs,
+                                                   ModbusCommandResult *result,
+                                                   LatestRevisionCore::Admission *admission) {
+    if (command == nullptr) return ModbusOperationResult::Unavailable;
+    if (!command->valid() || _commandQueue == nullptr || !_ownerAvailable.load(std::memory_order_acquire)
+        || _shuttingDown.load(std::memory_order_acquire)) {
+        command->release();
+        return _shuttingDown.load(std::memory_order_acquire)
+                   ? ModbusOperationResult::Shutdown
+                   : ModbusOperationResult::Unavailable;
+    }
+
+    command->retain();
+    command->markQueued();
+    if (xQueueSend(_commandQueue, &command, 0) != pdTRUE) {
+        _commandFailureCount.fetch_add(1U, std::memory_order_relaxed);
+        command->release();
+        command->release();
+        return ModbusOperationResult::QueueFull;
+    }
+    if (admission != nullptr) admission->commit();
+
+    const bool completed = command->wait(pdMS_TO_TICKS(waitMs));
+    const ModbusOperationResult operation = completed ? command->result : ModbusOperationResult::Timeout;
+    if (completed && result != nullptr) *result = command->commandResult;
+    if (!completed) {
+        // Configuration admission is already published once its owner command
+        // is queued. Leave that command eligible to finish after a caller
+        // timeout; a later admitted revision will still supersede it.
+        if (admission == nullptr) (void)command->cancelIfQueued();
+        _commandFailureCount.fetch_add(1U, std::memory_order_relaxed);
+    }
+    command->release();
+    return operation;
+}
+
+ModbusOperationResult ModbusManager::submitAsync(Command *command) {
+    if (command == nullptr) return ModbusOperationResult::Unavailable;
+    if (!command->valid() || _commandQueue == nullptr || !_ownerAvailable.load(std::memory_order_acquire)
+        || _shuttingDown.load(std::memory_order_acquire)) {
+        command->release();
+        return ModbusOperationResult::Unavailable;
+    }
+
+    command->asynchronous = true;
+    command->retain();
+    command->markQueued();
+    if (xQueueSend(_commandQueue, &command, 0) != pdTRUE) {
+        _commandFailureCount.fetch_add(1U, std::memory_order_relaxed);
+        command->release();
+        command->release();
+        return ModbusOperationResult::QueueFull;
+    }
+    command->release();
+    return ModbusOperationResult::Success;
+}
+
+ModbusCommandResult ModbusManager::executeCommand(const ModbusCommandRequest &request) {
+    ModbusCommandResult result;
+    auto *command = new (std::nothrow) Command(Command::Type::Execute);
+    if (command == nullptr) return result;
+    command->request = request;
+    result.operation = submitAndWait(command, MODBUS_COMMAND_WAIT_MS, &result);
+    return result;
+}
+
+ModbusOperationResult ModbusManager::submitWriteCommand(const ModbusCommandRequest &request) {
+    auto *command = new (std::nothrow) Command(Command::Type::Execute);
+    if (command == nullptr) return ModbusOperationResult::Unavailable;
+    command->request = request;
+    return submitAsync(command);
+}
+
+ModbusOperationResult ModbusManager::requestReconfigureFromFile() {
+    ConfigurationRoot candidate;
+    if (!loadConfigurationCandidate(candidate)) return ModbusOperationResult::ActivationFailed;
+
+    auto *command = new (std::nothrow) Command(Command::Type::ActivateConfiguration);
+    if (command == nullptr) return ModbusOperationResult::Unavailable;
+    const uint32_t revision = issueConfigurationRevision();
+    command->configuration = std::move(candidate);
+    command->configurationRevision = revision;
+    auto admission = _configurationRevisions.beginAdmission(revision);
+    return submitAndWait(command, MODBUS_COMMAND_WAIT_MS, nullptr, &admission);
+}
+
+ModbusOperationResult ModbusManager::requestReconfigure(const String &configurationJson,
+                                                        const uint32_t revision) {
+    if (isConfigurationRevisionObsolete(revision)) return ModbusOperationResult::Superseded;
+    ConfigurationRoot candidate;
+    if (!ModbusConfigLoader::parseConfiguration(_logger, configurationJson.c_str(),
+                                                configurationJson.length(), candidate)) {
+        return ModbusOperationResult::ActivationFailed;
+    }
+
+    auto *command = new (std::nothrow) Command(Command::Type::ActivateConfiguration);
+    if (command == nullptr) return ModbusOperationResult::Unavailable;
+    command->configuration = std::move(candidate);
+    command->configurationRevision = revision;
+    auto admission = _configurationRevisions.beginAdmission(revision);
+    return submitAndWait(command, MODBUS_COMMAND_WAIT_MS, nullptr, &admission);
+}
+
+uint32_t ModbusManager::issueConfigurationRevision() {
+    return _configurationRevisions.issue();
+}
+
+bool ModbusManager::isConfigurationRevisionObsolete(const uint32_t revision) const {
+    return _configurationRevisions.isObsolete(revision);
+}
+
+bool ModbusManager::reconfigureFromFile() {
+    return requestReconfigureFromFile() == ModbusOperationResult::Success;
+}
+
+ModbusOperationResult ModbusManager::setEnabled(const bool enabled) {
+    auto *command = new (std::nothrow) Command(Command::Type::SetEnabled);
+    if (command == nullptr) return ModbusOperationResult::Unavailable;
+    command->enabled = enabled;
+    return submitAndWait(command);
+}
+
+ModbusOperationResult ModbusManager::submitPublicationCompletion(
+    const ModbusPublicationCompletion &completion) {
+    auto *command = new (std::nothrow) Command(Command::Type::PublicationCompletion);
+    if (command == nullptr) return ModbusOperationResult::Unavailable;
+    command->publicationCompletion = completion;
+    return submitAsync(command);
+}
+
+void ModbusManager::drainCommands() {
+    for (size_t i = 0; i < MODBUS_COMMANDS_PER_CYCLE; ++i) {
+        Command *command = nullptr;
+        if (xQueueReceive(_commandQueue, &command, 0) != pdTRUE) break;
+        if (command != nullptr && command->tryStart()) {
+            processCommand(*command);
+            command->complete();
+        }
+        if (command != nullptr) command->release();
+    }
+}
+
+void ModbusManager::processCommand(Command &command) {
+    switch (command.type) {
+        case Command::Type::ActivateConfiguration:
+            command.result = activateConfiguration(std::move(command.configuration),
+                                                   command.configurationRevision);
+            break;
+        case Command::Type::Execute:
+            command.commandResult = executeOwned(command.request);
+            command.result = command.commandResult.operation;
+            if (command.asynchronous) {
+                const String prefix = command.request.sourceTopic.length()
+                                          ? String("[Modbus][MQTT] ") + command.request.sourceTopic + ": "
+                                          : String("[Modbus][Async] ");
+                if (command.commandResult.operation == ModbusOperationResult::Success
+                    && command.commandResult.busStatus == ModbusMaster::ku8MBSuccess) {
+                    _logger->logDebug((prefix + "command completed").c_str());
+                } else {
+                    _logger->logError((prefix + modbusOperationResultToString(command.commandResult.operation)
+                                       + ", bus=" + statusToString(command.commandResult.busStatus)).c_str());
+                }
+            }
+            break;
+        case Command::Type::SetEnabled:
+            _bus.setActive(command.enabled);
+            command.result = ModbusOperationResult::Success;
+            break;
+        case Command::Type::PublicationCompletion:
+            _mqttBridge.onPublicationCompletion(_modbusRoot, command.publicationCompletion,
+                                               _generation);
+            command.result = ModbusOperationResult::Success;
+            break;
+    }
+    if (command.result != ModbusOperationResult::Success
+        && command.result != ModbusOperationResult::Superseded
+        && command.result != ModbusOperationResult::StaleGeneration) {
+        _commandFailureCount.fetch_add(1U, std::memory_order_relaxed);
+    }
+    updateRuntimeSnapshot();
 }
 
 void ModbusManager::loop() {
-    const bool mqttConnectedNow = (_mqtt != nullptr) && _mqtt->isConnected();
-    _mqttBridge.onConnectionState(mqttConnectedNow, _mqttConnectedLastLoop, _modbusRoot);
-    _mqttConnectedLastLoop = mqttConnectedNow;
+    if (!inOwnerContext()) {
+        recordOwnerViolation();
+        return;
+    }
+
+    // This is the only activation/command boundary. Once polling begins below,
+    // no queued request is observed until every device/datapoint in the pass is
+    // complete and all local pointers have gone out of scope.
+    drainCommands();
+
+    _mqttBridge.recoverLostPublicationCompletions(_modbusRoot);
+
+    if (_mqtt != nullptr) {
+        const MqttStatusSnapshot mqttStatus = _mqtt->getStatusSnapshot();
+        _mqttBridge.onConnectionState(mqttStatus, _modbusRoot, _generation);
+    }
 
     if (!_bus.isActive()) {
         IndicatorService::instance().setModbusConnected(false);
+        updateRuntimeSnapshot();
         return;
     }
 
     bool anySuccess = false;
     bool anyAttempted = false;
-
     const uint32_t now = millis();
-    for (auto &dev: _modbusRoot.devices) {
+    for (auto &device : _modbusRoot.devices) {
         _dueScratch.clear();
-        const size_t dueCount = ModbusPollScheduler::collectDueReadDatapoints(dev, now, _dueScratch);
-        if (dueCount == 0) continue;
+        const size_t dueCount = ModbusPollScheduler::collectDueReadDatapoints(device, now, _dueScratch);
+        if (dueCount == 0U) continue;
         anyAttempted = true;
-        anySuccess = readModbusDevice(dev, _dueScratch, now) || anySuccess;
+        anySuccess = readModbusDevice(device, _dueScratch, now) || anySuccess;
     }
-    if (anyAttempted) {
-        IndicatorService::instance().setModbusConnected(anySuccess);
-    }
-    if (!anySuccess) {
-    }
+    if (anyAttempted) IndicatorService::instance().setModbusConnected(anySuccess);
+    updateRuntimeSnapshot();
 }
 
-bool ModbusManager::readModbusDevice(ModbusDevice &dev,
+bool ModbusManager::readModbusDevice(ModbusDevice &device,
                                      const std::vector<ModbusDatapoint *> &dueDatapoints,
                                      const uint32_t now) {
     auto guard = _bus.acquire();
-    if (!guard) {
-        return false;
-    }
+    if (!guard) return false;
 
     ModbusMaster &node = _bus.node();
-    Stream &busStream = _bus.stream();
-    node.begin(dev.slaveId, busStream);
-
-    uint8_t result;
-    bool successOnThisDevice = false;
-    for (auto *dpPtr: dueDatapoints) {
-        if (!dpPtr) continue;
-        auto &dp = *dpPtr;
-        _logger->logDebug((String("ModbusManager::readModbusDevice - Sending Command - Func: ") +
-                           String(functionToString(dp.function)) + ", Name: " + String(dp.name) +
-                           ", Addr: " + String(dp.address) + ", Regs: " + String(dp.numOfRegisters) +
-                           ", Slave: " + String(dev.slaveId) + ", Bus: " + String(_modbusRoot.bus.baud) +
-                           "," + _modbusRoot.bus.serialFormat).c_str());
-        switch (dp.function) {
-            case READ_COIL:
-                result = node.readCoils(dp.address, dp.numOfRegisters);
-                break;
-            case READ_DISCRETE:
-                result = node.readDiscreteInputs(dp.address, dp.numOfRegisters);
-                break;
-            case READ_HOLDING:
-                result = node.readHoldingRegisters(dp.address, dp.numOfRegisters);
-                break;
-            case READ_INPUT:
-                result = node.readInputRegisters(dp.address, dp.numOfRegisters);
-                break;
+    node.begin(device.slaveId, _bus.stream());
+    bool successOnDevice = false;
+    for (auto *datapointPointer : dueDatapoints) {
+        if (datapointPointer == nullptr) continue;
+        auto &datapoint = *datapointPointer;
+        uint8_t result = ModbusMaster::ku8MBIllegalFunction;
+        switch (datapoint.function) {
+            case READ_COIL: result = node.readCoils(datapoint.address, datapoint.numOfRegisters); break;
+            case READ_DISCRETE: result = node.readDiscreteInputs(datapoint.address, datapoint.numOfRegisters); break;
+            case READ_HOLDING: result = node.readHoldingRegisters(datapoint.address, datapoint.numOfRegisters); break;
+            case READ_INPUT: result = node.readInputRegisters(datapoint.address, datapoint.numOfRegisters); break;
             case WRITE_COIL:
             case WRITE_HOLDING:
-                ModbusPollScheduler::scheduleNext(dp, now);
+            case WRITE_MULTIPLE_HOLDING:
+                ModbusPollScheduler::scheduleNext(datapoint, now);
                 continue;
-            default:
-                result = -1;
-                _logger->logError(
-                    ("ModbusManager::readRegisters - Function: " + String(dp.function) + " is not valid in this scope.")
-                    .c_str());
         }
+
         if (result == ModbusMaster::ku8MBSuccess) {
-            successOnThisDevice = true;
-
-            const uint8_t wordsToRead = dp.numOfRegisters ? dp.numOfRegisters : 1;
-            std::vector<uint16_t> words(wordsToRead);
-            for (uint8_t i = 0; i < wordsToRead; ++i) {
-                words[i] = node.getResponseBuffer(i);
-            }
-
+            successOnDevice = true;
+            const uint8_t wordCount = datapoint.numOfRegisters ? datapoint.numOfRegisters : 1U;
+            std::vector<uint16_t> words(wordCount);
+            for (uint8_t i = 0; i < wordCount; ++i) words[i] = node.getResponseBuffer(i);
             String payload;
-            if (dp.dataType == TEXT) {
-                payload = registersToAscii(words.data(), wordsToRead);
+            if (datapoint.dataType == TEXT) {
+                payload = registersToAscii(words.data(), wordCount);
             } else {
-                const uint16_t primary = wordsToRead > 0 ? words[0] : 0;
-                const uint16_t sliced = sliceRegister(primary, dp.registerSlice);
-                const float value = static_cast<float>(sliced) * dp.scale;
-                payload = String(value);
+                const uint16_t primary = wordCount > 0U ? words[0] : 0U;
+                payload = String(static_cast<float>(sliceRegister(primary, datapoint.registerSlice))
+                                 * datapoint.scale);
             }
-
-            String rawSummary;
-            if (dp.dataType == TEXT) {
-                rawSummary.reserve(wordsToRead * 7);
-                for (uint8_t i = 0; i < wordsToRead; ++i) {
-                    if (i > 0) rawSummary += ' ';
-                    char buf[7];
-                    snprintf(buf, sizeof(buf), "0x%04X", words[i]);
-                    rawSummary += buf;
-                }
-            } else {
-                const uint16_t primary = wordsToRead > 0 ? words[0] : 0;
-                rawSummary = String(primary);
-            }
-
-            _logger->logDebug(("Modbus OK - " + String(dev.name) + ": " + String(dp.name) +
-                               " = " + payload + " (raw=" + rawSummary + ")").c_str());
-            _mqttBridge.publishDatapoint(dev, dp, payload);
+            _mqttBridge.publishDatapoint(device, datapoint, payload, _generation);
         } else {
-            // Dump captured RX bytes for diagnostics
-            const String rxDump = _bus.dumpRx();
-            _logger->logError((String("Modbus ERR - ") + String(dev.name) +
-                               ": func=" + functionToString(dp.function) +
-                               ", addr=" + String(dp.address) +
-                               ", regs=" + String(dp.numOfRegisters) +
-                               ", slave=" + String(dev.slaveId) +
-                               ", bus=" + String(_modbusRoot.bus.baud) + "," + _modbusRoot.bus.serialFormat +
-                               ", code=" + String(result) + " (" + statusToString(result) + ")" + rxDump).c_str());
             incrementBusErrorCount();
+            _logger->logError((String("Modbus ERR - ") + device.name + ": func="
+                               + functionToString(datapoint.function) + ", addr=" + String(datapoint.address)
+                               + ", code=" + String(result) + " (" + statusToString(result) + ")"
+                               + _bus.dumpRx()).c_str());
         }
-        ModbusPollScheduler::scheduleNext(dp, now);
+        ModbusPollScheduler::scheduleNext(datapoint, now);
     }
-    return successOnThisDevice;
+    return successOnDevice;
 }
 
-bool ModbusManager::reconfigureFromFile() {
-    _logger->logInformation("ModbusManager::reconfigureFromFile - begin");
-    // Stop regular loop polling
-    _bus.setActive(false);
-    // Wait briefly if a read is in progress
-    for (int i = 0; i < 50; ++i) {
-        if (!_bus.isBusy()) break;
-        delay(5);
+ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &request) {
+    ModbusCommandResult result;
+    result.generation = _generation;
+    if (!inOwnerContext()) {
+        recordOwnerViolation();
+        return result;
+    }
+    if (request.expectedGeneration != 0U && request.expectedGeneration != _generation) {
+        result.operation = ModbusOperationResult::StaleGeneration;
+        return result;
     }
 
-    const bool ok = loadConfiguration();
-    if (ok) {
-        _bus.begin(_modbusRoot.bus);
-        _bus.setActive(_modbusRoot.bus.enabled);
-        _logger->logInformation(_modbusRoot.bus.enabled
-            ? "ModbusManager::reconfigureFromFile - applied and active"
-            : "ModbusManager::reconfigureFromFile - applied and inactive");
-    } else {
-        _bus.setActive(false);
-        _logger->logError("ModbusManager::reconfigureFromFile - failed to load config; bus inactive");
+    const ModbusDatapoint *metadata = nullptr;
+    const ModbusDevice *metadataDevice = nullptr;
+    for (const auto &device : _modbusRoot.devices) {
+        if (metadataDevice == nullptr && device.id == request.deviceId) metadataDevice = &device;
+        for (const auto &datapoint : device.datapoints) {
+            if (datapoint.id == request.datapointId) {
+                metadata = &datapoint;
+                metadataDevice = &device;
+                break;
+            }
+        }
+        if (metadata != nullptr) break;
     }
-    return ok;
+    if (metadata != nullptr) {
+        result.hasDatapointMetadata = true;
+        result.dataType = metadata->dataType;
+        result.registerSlice = metadata->registerSlice;
+        result.scale = metadata->scale;
+    }
+
+    result.slaveId = request.hasSlaveOverride ? request.slaveId
+                     : metadataDevice != nullptr ? metadataDevice->slaveId
+                                                 : MODBUS_SLAVE_ID;
+    const bool expectedWrite = request.function == 5 || request.function == 6 || request.function == 16;
+    const bool expectedRead = request.function >= 1 && request.function <= 4;
+    if ((expectedWrite && !request.hasWriteValue) || (!expectedRead && !expectedWrite)) {
+        result.operation = ModbusOperationResult::Success;
+        result.busStatus = expectedWrite
+                               ? ModbusMaster::ku8MBIllegalDataValue
+                               : ModbusMaster::ku8MBIllegalFunction;
+        return result;
+    }
+
+    auto guard = _bus.acquire();
+    if (!guard) {
+        result.operation = ModbusOperationResult::Success;
+        result.busStatus = 0xE4U;
+        return result;
+    }
+    _bus.enableCapture(true);
+    ModbusMaster &node = _bus.node();
+    node.begin(result.slaveId, _bus.stream());
+    const uint16_t effectiveLength = request.function == 16 ? 1U : request.length;
+    switch (request.function) {
+        case 1: result.busStatus = node.readCoils(request.address, effectiveLength); break;
+        case 2: result.busStatus = node.readDiscreteInputs(request.address, effectiveLength); break;
+        case 3: result.busStatus = node.readHoldingRegisters(request.address, effectiveLength); break;
+        case 4: result.busStatus = node.readInputRegisters(request.address, effectiveLength); break;
+        case 5: {
+            const uint16_t value = request.writeValue ? 0xFF00U : 0x0000U;
+            node.beginTransmission(request.address);
+            node.send(value);
+            result.busStatus = node.writeSingleCoil(request.address, value);
+            break;
+        }
+        case 6:
+            node.beginTransmission(request.address);
+            node.send(request.writeValue);
+            result.busStatus = node.writeSingleRegister(request.address, request.writeValue);
+            break;
+        case 16:
+            node.setTransmitBuffer(0, request.writeValue);
+            result.busStatus = node.writeMultipleRegisters(request.address, effectiveLength);
+            break;
+        default:
+            result.busStatus = ModbusMaster::ku8MBIllegalFunction;
+            break;
+    }
+
+    if (result.busStatus == ModbusMaster::ku8MBSuccess && expectedRead) {
+        result.count = effectiveLength < result.words.size()
+                           ? effectiveLength
+                           : static_cast<uint16_t>(result.words.size());
+        for (uint16_t i = 0; i < result.count; ++i) result.words[i] = node.getResponseBuffer(i);
+    }
+    result.rxDump = _bus.dumpRx();
+    result.operation = ModbusOperationResult::Success;
+    if (result.busStatus != ModbusMaster::ku8MBSuccess) incrementBusErrorCount();
+    return result;
 }
 
-auto ModbusManager::statusToString(const uint8_t code) -> const char * {
+void ModbusManager::setMqttManager(MqttManager *mqtt) {
+    _mqtt = mqtt;
+    _mqttBridge.setMqttManager(mqtt);
+}
+
+ModbusRuntimeSnapshot ModbusManager::getRuntimeSnapshot() const {
+    return _runtimeSnapshot.read();
+}
+
+void ModbusManager::updateRuntimeSnapshot() {
+    ModbusRuntimeSnapshot snapshot;
+    snapshot.available = _ownerAvailable.load(std::memory_order_acquire);
+    snapshot.enabled = _bus.isActive();
+    snapshot.generation = _generation;
+    snapshot.deviceCount = _modbusRoot.devices.size();
+    size_t datapointCount = 0U;
+    for (const auto &device : _modbusRoot.devices) datapointCount += device.datapoints.size();
+    snapshot.datapointCount = datapointCount;
+    snapshot.errorCount = _bus.errorCount();
+    snapshot.ownerViolationCount = _ownerViolationCount.load(std::memory_order_relaxed);
+    snapshot.commandFailureCount = _commandFailureCount.load(std::memory_order_relaxed);
+    _runtimeSnapshot.write(std::move(snapshot));
+}
+
+bool ModbusManager::inOwnerContext() const {
+    return _ownerTaskHandle == nullptr || xTaskGetCurrentTaskHandle() == _ownerTaskHandle;
+}
+
+void ModbusManager::recordOwnerViolation() {
+    _ownerViolationCount.fetch_add(1U, std::memory_order_relaxed);
+    _logger->logError("[Modbus] Owner-context violation blocked");
+}
+
+void ModbusManager::incrementBusErrorCount() {
+    _bus.incrementError();
+}
+
+const char *ModbusManager::statusToString(const uint8_t code) {
     switch (code) {
         case 0x00: return "Success";
         case 0x01: return "IllegalFunction(0x01)";
@@ -208,8 +524,8 @@ auto ModbusManager::statusToString(const uint8_t code) -> const char * {
     }
 }
 
-auto ModbusManager::functionToString(const ModbusFunctionType fn) -> const char * {
-    switch (fn) {
+const char *ModbusManager::functionToString(const ModbusFunctionType function) {
+    switch (function) {
         case READ_COIL: return "FC01-READ_COIL";
         case READ_DISCRETE: return "FC02-READ_DISCRETE";
         case READ_HOLDING: return "FC03-READ_HOLDING";
@@ -217,182 +533,28 @@ auto ModbusManager::functionToString(const ModbusFunctionType fn) -> const char 
         case WRITE_COIL: return "FC05-WRITE_COIL";
         case WRITE_HOLDING: return "FC06-WRITE_HOLDING";
         case WRITE_MULTIPLE_HOLDING: return "FC16-WRITE_MULTIPLE_HOLDING";
-        default: return "FC-UNKNOWN";
     }
+    return "FC-UNKNOWN";
 }
 
-auto ModbusManager::sliceRegister(const uint16_t word, const RegisterSlice slice) -> uint16_t {
+uint16_t ModbusManager::sliceRegister(const uint16_t word, const RegisterSlice slice) {
     switch (slice) {
-        case RegisterSlice::LowByte:
-            return static_cast<uint16_t>(word & 0x00FFU);
-        case RegisterSlice::HighByte:
-            return static_cast<uint16_t>((word >> 8U) & 0x00FFU);
-        case RegisterSlice::Full:
-        default:
-            return word;
+        case RegisterSlice::LowByte: return static_cast<uint16_t>(word & 0x00FFU);
+        case RegisterSlice::HighByte: return static_cast<uint16_t>((word >> 8U) & 0x00FFU);
+        case RegisterSlice::Full: return word;
     }
+    return word;
 }
 
-const ConfigurationRoot &ModbusManager::getConfiguration() const {
-    return _modbusRoot;
-}
-
-uint8_t ModbusManager::executeCommand(const uint8_t slaveId,
-                                      const int function,
-                                      const uint16_t addr,
-                                      const uint16_t len,
-                                      const uint16_t writeValue,
-                                      const bool hasWriteValue,
-                                      uint16_t *outBuf,
-                                      const uint16_t outBufCap,
-                                      uint16_t &outCount,
-                                      String &rxDump) {
-
-    _logger->logDebug("Execute called");
-    outCount = 0;
-    rxDump = "";
-    const bool expectedWrite = (function == 5 || function == 6 || function == 16);
-    if (expectedWrite && !hasWriteValue) {
-        _logger->logError("hasWriteValue is false");
-        return ModbusMaster::ku8MBIllegalDataValue;
-    }
-    const bool expectedRead = (function >= 1 && function <= 4);
-    if (!expectedRead && !expectedWrite) {
-        _logger->logError("function out of range");
-        return ModbusMaster::ku8MBIllegalFunction;
-    }
-    const uint16_t effectiveLen = (function == 16) ? 1 : len;
-
-    if (!_bus.isInitialized()) {
-        if (_modbusRoot.bus.baud == 0) {
-            _modbusRoot.bus.baud = DEFAULT_MODBUS_BAUD_RATE;
-            _modbusRoot.bus.serialFormat = DEFAULT_MODBUS_MODE;
-        }
-        _bus.begin(_modbusRoot.bus);
-    }
-
-    auto guard = _bus.acquire();
-    if (!guard) {
-        return 0xE4; // busy
-    }
-
-    _bus.enableCapture(true);
-
-    ModbusMaster &node = _bus.node();
-    Stream &busStream = _bus.stream();
-    node.begin(slaveId, busStream);
-
-    uint8_t status;
-    switch (function) {
-        case 1: status = node.readCoils(addr, effectiveLen);
-            break;
-        case 2: status = node.readDiscreteInputs(addr, effectiveLen);
-            break;
-        case 3: status = node.readHoldingRegisters(addr, effectiveLen);
-            break;
-        case 4: status = node.readInputRegisters(addr, effectiveLen);
-            break;
-        case 5: {
-            const uint16_t v = writeValue ? 0xFF00 : 0x0000;
-            node.beginTransmission(addr);
-            node.send(v);
-            status = node.writeSingleCoil(addr, v);
-            break;
-        }
-        case 6: {
-            node.beginTransmission(addr);
-            node.send(writeValue);
-            status = node.writeSingleRegister(addr, writeValue);
-            break;
-        }
-        case 16: {
-            _logger->logDebug(("Execute F16 on addr: " + String(addr) + " with Data: " + String(writeValue)).c_str());
-            node.setTransmitBuffer(0, writeValue);
-            status = node.writeMultipleRegisters(addr, effectiveLen);
-            break;
-        }
-        default:
-            status = ModbusMaster::ku8MBIllegalFunction;
-            break;
-    }
-
-    if (status == ModbusMaster::ku8MBSuccess && expectedRead && outBuf && outBufCap > 0) {
-        const uint16_t n = (effectiveLen < outBufCap) ? effectiveLen : outBufCap;
-        for (uint16_t i = 0; i < n; ++i) {
-            outBuf[i] = node.getResponseBuffer(i);
-        }
-        outCount = n;
-    }
-
-    rxDump = _bus.dumpRx();
-
-    if (status != ModbusMaster::ku8MBSuccess) {
-        incrementBusErrorCount();
-    }
-
-    return status;
-}
-
-void ModbusManager::setMqttManager(MqttManager *mqtt) {
-    _mqtt = mqtt;
-    _mqttBridge.setMqttManager(mqtt);
-}
-
-uint8_t ModbusManager::findSlaveIdByDatapointId(const String &dpId) const {
-    const ModbusDevice *device = nullptr;
-    const ModbusDatapoint *dp = findDatapointById(dpId, &device);
-    if (dp && device) {
-        return device->slaveId;
-    }
-    return 0;
-}
-
-const ModbusDatapoint *ModbusManager::findDatapointById(const String &dpId, const ModbusDevice **outDevice) const {
-    for (const auto &dev: _modbusRoot.devices) {
-        for (const auto &dp: dev.datapoints) {
-            if (dp.id == dpId) {
-                if (outDevice) {
-                    *outDevice = &dev;
-                }
-                return &dp;
-            }
-        }
-    }
-    if (outDevice) {
-        *outDevice = nullptr;
-    }
-    return nullptr;
-}
-
-String ModbusManager::registersToAscii(const uint16_t *buf, const uint16_t count) {
-    String out;
-    if (!buf || count == 0) {
-        return out;
-    }
-    out.reserve(count * 2);
+String ModbusManager::registersToAscii(const uint16_t *buffer, const uint16_t count) {
+    String output;
+    if (buffer == nullptr || count == 0U) return output;
+    output.reserve(count * 2U);
     for (uint16_t i = 0; i < count; ++i) {
-        const uint16_t word = buf[i];
-        const char high = static_cast<char>((word >> 8) & 0xFF);
-        const char low = static_cast<char>(word & 0xFF);
-        if (high != '\0') out += high;
-        if (low != '\0') out += low;
+        const char high = static_cast<char>((buffer[i] >> 8U) & 0xFFU);
+        const char low = static_cast<char>(buffer[i] & 0xFFU);
+        if (high != '\0') output += high;
+        if (low != '\0') output += low;
     }
-    return out;
-}
-
-void ModbusManager::incrementBusErrorCount() {
-    _bus.incrementError();
-    _logger->logDebug(("Total errors: " + String(getBusErrorCount())).c_str());
-}
-
-uint32_t ModbusManager::getBusErrorCount() {
-    return ModbusBus::getErrorCount();
-}
-
-void ModbusManager::setModbusEnabled(const bool enabled) {
-    ModbusBus::setEnabled(enabled);
-}
-
-bool ModbusManager::getBusState() {
-    return ModbusBus::isEnabled();
+    return output;
 }

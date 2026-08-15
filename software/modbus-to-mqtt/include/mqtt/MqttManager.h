@@ -2,80 +2,138 @@
 #define MQTT_MANAGER_H
 
 #include <PubSubClient.h>
+#include <atomic>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <freertos/semphr.h>
 #include <mqtt/MqttSubscriptionHandler.h>
-#include "mqtt/MqttConfigCore.h"
 
+#include "Config.h"
+#include "concurrency/LatestRevisionCore.h"
+#include "concurrency/StagedCommitCore.h"
+#include "mqtt/MqttRuntimeTypes.h"
+
+// Ownership contract:
+// - setup() may initialize the client before startMqttTask() returns.
+// - after that point processMQTTAsync is the sole owner of PubSubClient, the
+//   active MQTT configuration and the subscription registry.
+// - every other task submits an owned command or reads a copied snapshot.
 class MqttManager {
 public:
     explicit MqttManager(MqttSubscriptionHandler *subscriptionHandler, PubSubClient *mqttClient, Logger *logger);
 
     static void handleMqttMessage(char *topic, const byte *payload, unsigned int length);
 
-    void addSystemSubscriptionHandlers(const String &rootTopic) const;
+    bool begin();
 
-    auto begin() -> bool;
+    MqttOperationResult publish(const MqttPublishRequest &request);
 
-    auto ensureMQTTConnection() -> bool;
+    MqttAdmissionResult publishAsync(const MqttPublishRequest &request,
+                                     MqttPublishCallback callback = {});
 
-    auto mqttPublish(const char *topic, const char *payload, bool retain = false) const -> bool;
+    MqttOperationResult stageBridgePlan(MqttBridgePlan plan);
 
-    void configureWill(const String &topic, const String &payload, uint8_t qos, bool retain);
+    void approveBridgePlan(uint32_t modbusGeneration);
 
-    void clearWill();
+    MqttOperationResult setEnabled(bool enabled);
 
-    auto isConnected() const -> bool;
+    MqttStatusSnapshot getStatusSnapshot() const;
 
-    void addSubscriptionHandler(const String &topic, MqttSubscriptionHandler::TopicHandlerFunc handler) const;
-
-    void removeSubscriptionHandlers(const std::vector<String> &topics) const;
-
-    void onMqttMessage(const String &topic, const uint8_t *payload, size_t length) const;
-
-    auto startMqttTask() -> bool;
-
-    auto getMqttBroker() -> char *;
-
-    auto getMQTTState() const -> int;
-
-    auto getMQTTUser() -> char *;
-
-    auto getRootTopic() const -> const String &;
-
-    static void setMQTTEnabled(bool enabled);
-
-    static auto isMQTTEnabled() -> bool;
-
-    auto testConnectOnce() -> bool;
+    bool isConnected() const;
 
     bool reconfigureFromFile();
 
-    String getClientId();
+    MqttOperationResult requestReconfigureFromFile();
+
+    MqttOperationResult requestReconfigure(const String &configurationJson,
+                                           uint32_t revision);
+
+    uint32_t issueConfigurationRevision();
+
+    bool isConfigurationRevisionObsolete(uint32_t revision) const;
+
+    MqttTestResult testConnectOnce();
+
+    static void setMQTTEnabled(bool enabled);
+
+    static bool isMQTTEnabled();
 
 private:
+    struct Command;
+
     [[noreturn]] static void processMQTTAsync(void *parameter);
 
-    bool loadMQTTConfig();
+    bool startMqttTask();
 
-    bool applyServerConfiguration();
+    bool loadMQTTConfig(MqttRuntimeConfiguration &candidate) const;
 
-    void clearLoadedConfiguration();
+    bool parseMQTTConfig(const char *json, size_t length,
+                         MqttRuntimeConfiguration &candidate) const;
 
-    void setClientId(String clientId);
+    MqttOperationResult submitAndWait(Command *command, uint32_t waitMs = MQTT_COMMAND_WAIT_MS,
+                                      MqttTestResult *testResult = nullptr,
+                                      LatestRevisionCore::Admission *admission = nullptr);
 
-    MqttConfigCore::PreparedConnection _mqttConnection;
-    String _mqttRootTopic = "";
-    String _clientId = "";
+    MqttAdmissionResult submitAsync(Command *command);
+
+    void processCommand(Command &command);
+
+    void applyConfiguration(MqttRuntimeConfiguration configuration, uint32_t revision,
+                            MqttOperationResult &result);
+
+    void stageBridgePlanOwned(MqttBridgePlan plan, MqttOperationResult &result);
+
+    void commitApprovedBridgePlan();
+
+    void applyEnabled(bool enabled, MqttOperationResult &result);
+
+    void executePublish(Command &command);
+
+    void executeConnectionTest(Command &command);
+
+    bool ensureMQTTConnection();
+
+    bool connectWithConfiguration(const MqttRuntimeConfiguration &configuration,
+                                  const MqttWillSpec &will,
+                                  bool subscribeAfterConnect);
+
+    void disconnectOwned();
+
+    void rebuildOwnedSubscriptions(bool reconcileBroker);
+
+    std::vector<MqttSubscriptionHandler::HandlerEntry> buildHandlerEntries() const;
+
+    String resolveTopic(const MqttTopicSpec &topic) const;
+
+    static String resolveTopicForRoot(const MqttTopicSpec &topic, const String &rootTopic);
+
+    void onMqttMessage(const String &topic, const uint8_t *payload, size_t length) const;
+
+    void updateStatusSnapshot();
+
+    bool inOwnerContext() const;
+
+    void recordOwnerViolation();
+
+    MqttRuntimeConfiguration _activeConfiguration;
+    MqttBridgePlan _bridgePlan;
+    StagedCommitCore<MqttBridgePlan> _stagedBridgePlan;
+    LatestRevisionCore _configurationRevisions;
+    bool _runtimeEnabled{true};
+    uint32_t _generation{0U};
+    uint32_t _connectionEpoch{0U};
 
     PubSubClient *_mqttClient;
     Logger *_logger;
-    TaskHandle_t _mqttTaskHandle;
+    TaskHandle_t _mqttTaskHandle{nullptr};
+    QueueHandle_t _commandQueue{nullptr};
+    mutable SemaphoreHandle_t _statusMutex{nullptr};
+    MqttStatusSnapshot _statusSnapshot;
     MqttSubscriptionHandler *_subscriptionHandler;
-    bool _hasWill{false};
-    String _willTopic;
-    String _willMessage;
-    uint8_t _willQos{0};
-    bool _willRetain{false};
-    bool _mqttEnabledConfigured{false};
+    std::atomic<bool> _taskRunning{false};
+    std::atomic<bool> _shuttingDown{false};
+    std::atomic<uint32_t> _ownerViolationCount{0U};
+    std::atomic<uint32_t> _commandFailureCount{0U};
 };
 
 #endif

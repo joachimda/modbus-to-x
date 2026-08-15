@@ -8,6 +8,14 @@
 #include "../src/mqtt/MqttConfigCore.cpp"
 #include "../src/mqtt/MqttConfigDocument.cpp"
 #include "../src/mqtt/MqttConfigMutationCore.cpp"
+#include "../include/concurrency/OwnerCompletionCore.h"
+#include "../include/concurrency/OwnerMailboxCore.h"
+#include "../include/concurrency/LatestRevisionCore.h"
+#include "../include/concurrency/PublicationAttemptCore.h"
+#include "../include/concurrency/StagedCommitCore.h"
+#include "../include/concurrency/CoherentSnapshotCore.h"
+#include "../include/mqtt/MqttOwnerCore.h"
+#include "../include/modbus/ModbusOwnerCore.h"
 #include "../include/network/mbx_server/MutationRequestGuardCore.h"
 #include "../include/network/mbx_server/MutationRouteRegistration.h"
 #include "../include/network/mbx_server/OtaRouteRegistration.h"
@@ -21,7 +29,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <atomic>
 #include <string>
+#include <thread>
 #include <vector>
 #include <Preferences.h>
 #include <unity.h>
@@ -1489,6 +1499,507 @@ void test_invalid_persisted_mqtt_fields_clear_state_and_gate_client_calls(void) 
     }
 }
 
+struct RecordingMqttOwnerClient {
+    std::vector<std::string> calls;
+    bool connectResult = true;
+    bool publishResult = true;
+
+    void setServer(const std::string &server) { calls.push_back("server:" + server); }
+    bool connect() {
+        calls.push_back("connect");
+        return connectResult;
+    }
+    void disconnect() { calls.push_back("disconnect"); }
+    bool loop() {
+        calls.push_back("loop");
+        return true;
+    }
+    bool publish(const std::string &topic, const std::string &payload) {
+        calls.push_back("publish:" + topic + "=" + payload);
+        return publishResult;
+    }
+    void subscribe(const std::string &topic) { calls.push_back("subscribe:" + topic); }
+    void unsubscribe(const std::string &topic) { calls.push_back("unsubscribe:" + topic); }
+};
+
+void test_owner_mailbox_is_bounded_fifo_and_owns_value_payloads(void) {
+    struct Payload {
+        int id = 0;
+        std::string text;
+    };
+    OwnerMailboxCore<Payload, 2U> mailbox;
+    Payload first{1, "first"};
+    Payload second{2, "second"};
+    TEST_ASSERT_TRUE(mailbox.tryPush(first));
+    TEST_ASSERT_TRUE(mailbox.tryPush(second));
+    TEST_ASSERT_FALSE(mailbox.tryPush(Payload{3, "overflow"}));
+    first.text = "mutated-after-admission";
+
+    Payload output;
+    TEST_ASSERT_TRUE(mailbox.tryPop(output));
+    TEST_ASSERT_EQUAL_INT(1, output.id);
+    TEST_ASSERT_EQUAL_STRING("first", output.text.c_str());
+    TEST_ASSERT_TRUE(mailbox.tryPop(output));
+    TEST_ASSERT_EQUAL_INT(2, output.id);
+    TEST_ASSERT_FALSE(mailbox.tryPop(output));
+}
+
+void test_owner_completion_is_exactly_once_and_cancels_only_before_start(void) {
+    OwnerCompletionCore completed;
+    TEST_ASSERT_TRUE(completed.markQueued());
+    TEST_ASSERT_FALSE(completed.markQueued());
+    TEST_ASSERT_TRUE(completed.tryStart());
+    TEST_ASSERT_FALSE(completed.cancelIfQueued());
+    TEST_ASSERT_TRUE(completed.complete());
+    TEST_ASSERT_FALSE(completed.complete());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(OwnerCompletionCore::State::Completed),
+                          static_cast<int>(completed.state()));
+
+    OwnerCompletionCore cancelled;
+    TEST_ASSERT_TRUE(cancelled.markQueued());
+    TEST_ASSERT_TRUE(cancelled.cancelIfQueued());
+    TEST_ASSERT_FALSE(cancelled.tryStart());
+    TEST_ASSERT_FALSE(cancelled.complete());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(OwnerCompletionCore::State::Cancelled),
+                          static_cast<int>(cancelled.state()));
+}
+
+void test_owner_mailbox_reports_overload_unavailable_shutdown_and_fifo_replacement(void) {
+    using Mailbox = OwnerMailboxCore<int, 2U>;
+    Mailbox mailbox;
+    mailbox.setAvailable(false);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Mailbox::Admission::Unavailable),
+                          static_cast<int>(mailbox.admit(1)));
+    mailbox.setAvailable(true);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Mailbox::Admission::Accepted),
+                          static_cast<int>(mailbox.admit(1)));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Mailbox::Admission::Accepted),
+                          static_cast<int>(mailbox.admit(2)));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Mailbox::Admission::Full),
+                          static_cast<int>(mailbox.admit(3)));
+
+    int appliedGeneration = 0;
+    int candidate = 0;
+    while (mailbox.tryPop(candidate)) appliedGeneration = candidate;
+    TEST_ASSERT_EQUAL_INT(2, appliedGeneration);  // FIFO; the later complete config wins.
+
+    mailbox.shutdown();
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Mailbox::Admission::Shutdown),
+                          static_cast<int>(mailbox.admit(4)));
+}
+
+void test_mqtt_owner_core_enforces_context_generation_and_client_order(void) {
+    constexpr uintptr_t OWNER = 41U;
+    RecordingMqttOwnerClient client;
+    MqttOwnerCore<RecordingMqttOwnerClient> owner(client, OWNER);
+
+    TEST_ASSERT_TRUE(owner.applyConfiguration(OWNER, "broker-a", true));
+    std::vector<MqttOwnerCore<RecordingMqttOwnerClient>::Subscription> subscriptions;
+    subscriptions.push_back({"root/write", [](const std::string &) {}});
+    TEST_ASSERT_TRUE(owner.replaceSubscriptions(OWNER, subscriptions, 7U));
+    TEST_ASSERT_TRUE(owner.connect(OWNER));
+    TEST_ASSERT_TRUE(owner.loop(OWNER));
+    std::vector<MqttOwnerCore<RecordingMqttOwnerClient>::Subscription> replacement;
+    replacement.push_back({"root/new-write", [](const std::string &) {}});
+    TEST_ASSERT_TRUE(owner.replaceSubscriptions(OWNER, replacement, 8U));
+    TEST_ASSERT_TRUE(owner.applyConfiguration(OWNER, "broker-b", true));
+    TEST_ASSERT_TRUE(owner.connect(OWNER));
+    TEST_ASSERT_TRUE(owner.publish(OWNER, "root/state", "12", owner.generation(), 8U));
+    TEST_ASSERT_FALSE(owner.publish(OWNER, "root/state", "stale", owner.generation() - 1U, 8U));
+    TEST_ASSERT_FALSE(owner.publish(999U, "root/state", "wrong-context", owner.generation(), 7U));
+    TEST_ASSERT_EQUAL_UINT32(1U, owner.ownerViolations());
+    TEST_ASSERT_TRUE(owner.disable(OWNER));
+
+    const char *expected[] = {
+        "server:broker-a",
+        "connect",
+        "subscribe:root/write",
+        "loop",
+        "unsubscribe:root/write",
+        "subscribe:root/new-write",
+        "disconnect",
+        "server:broker-b",
+        "connect",
+        "subscribe:root/new-write",
+        "publish:root/state=12",
+        "disconnect",
+    };
+    TEST_ASSERT_EQUAL_UINT(sizeof(expected) / sizeof(expected[0]), client.calls.size());
+    for (size_t i = 0; i < client.calls.size(); ++i) {
+        TEST_ASSERT_EQUAL_STRING(expected[i], client.calls[i].c_str());
+    }
+}
+
+void test_mqtt_owner_queues_replacement_submitted_during_callback_dispatch(void) {
+    constexpr uintptr_t OWNER = 12U;
+    RecordingMqttOwnerClient client;
+    MqttOwnerCore<RecordingMqttOwnerClient> owner(client, OWNER);
+    OwnerMailboxCore<int, 1U> commands;
+    int invocations = 0;
+    std::vector<MqttOwnerCore<RecordingMqttOwnerClient>::Subscription> initial;
+    initial.push_back({"old", [&](const std::string &) {
+        ++invocations;
+        TEST_ASSERT_TRUE(commands.tryPush(1));
+    }});
+    TEST_ASSERT_TRUE(owner.replaceSubscriptions(OWNER, std::move(initial), 1U));
+    TEST_ASSERT_TRUE(owner.dispatch(OWNER, "old", "payload"));
+
+    int command = 0;
+    TEST_ASSERT_TRUE(commands.tryPop(command));
+    std::vector<MqttOwnerCore<RecordingMqttOwnerClient>::Subscription> replacement;
+    replacement.push_back({"new", [&](const std::string &) { ++invocations; }});
+    TEST_ASSERT_TRUE(owner.replaceSubscriptions(OWNER, std::move(replacement), 2U));
+    TEST_ASSERT_FALSE(owner.dispatch(OWNER, "old", "stale"));
+    TEST_ASSERT_TRUE(owner.dispatch(OWNER, "new", "current"));
+    TEST_ASSERT_EQUAL_INT(2, invocations);
+}
+
+void test_mqtt_owner_core_removal_during_dispatch_has_no_stale_invocation(void) {
+    constexpr uintptr_t OWNER = 9U;
+    RecordingMqttOwnerClient client;
+    MqttOwnerCore<RecordingMqttOwnerClient> owner(client, OWNER);
+    int oldCalls = 0;
+    int newCalls = 0;
+
+    std::vector<MqttOwnerCore<RecordingMqttOwnerClient>::Subscription> initial;
+    initial.push_back({"old", [&](const std::string &) {
+        ++oldCalls;
+        std::vector<MqttOwnerCore<RecordingMqttOwnerClient>::Subscription> replacement;
+        replacement.push_back({"new", [&](const std::string &) { ++newCalls; }});
+        TEST_ASSERT_TRUE(owner.replaceSubscriptions(OWNER, std::move(replacement), 2U));
+    }});
+    TEST_ASSERT_TRUE(owner.replaceSubscriptions(OWNER, std::move(initial), 1U));
+    TEST_ASSERT_TRUE(owner.dispatch(OWNER, "old", "first"));
+    TEST_ASSERT_EQUAL_INT(1, oldCalls);
+    TEST_ASSERT_FALSE(owner.dispatch(OWNER, "old", "stale"));
+    TEST_ASSERT_TRUE(owner.dispatch(OWNER, "new", "current"));
+    TEST_ASSERT_EQUAL_INT(1, newCalls);
+}
+
+void test_mqtt_owner_core_replacement_deduplicates_reconnect_subscriptions(void) {
+    constexpr uintptr_t OWNER = 5U;
+    RecordingMqttOwnerClient client;
+    MqttOwnerCore<RecordingMqttOwnerClient> owner(client, OWNER);
+    TEST_ASSERT_TRUE(owner.applyConfiguration(OWNER, "broker-a", true));
+    std::vector<MqttOwnerCore<RecordingMqttOwnerClient>::Subscription> initial;
+    initial.push_back({"same", [](const std::string &) {}});
+    TEST_ASSERT_TRUE(owner.replaceSubscriptions(OWNER, initial, 1U));
+    TEST_ASSERT_TRUE(owner.connect(OWNER));
+    TEST_ASSERT_TRUE(owner.replaceSubscriptions(OWNER, initial, 1U));
+
+    size_t subscribeCount = 0U;
+    for (const auto &call : client.calls) {
+        if (call == "subscribe:same") ++subscribeCount;
+    }
+    TEST_ASSERT_EQUAL_UINT(1U, subscribeCount);
+}
+
+struct ModbusOwnerTestConfiguration {
+    int identity = 0;
+    int busValue = 0;
+    size_t deviceCount = 0U;
+    size_t datapointCount = 0U;
+};
+
+struct RecordingModbusOwnerBus {
+    std::vector<int> initializedValues;
+    void initialize(const int value) { initializedValues.push_back(value); }
+};
+
+void test_modbus_owner_activates_only_after_complete_polling_pass(void) {
+    RecordingModbusOwnerBus bus;
+    ModbusOwnerCore<ModbusOwnerTestConfiguration, RecordingModbusOwnerBus> owner(bus);
+    owner.requestActivation({1, 9600, 3U, 6U});
+    TEST_ASSERT_TRUE(owner.processBoundary());
+
+    std::vector<int> observedIdentities;
+    owner.runPollingPass([&](const ModbusOwnerTestConfiguration &active, const size_t deviceIndex) {
+        observedIdentities.push_back(active.identity);
+        if (deviceIndex == 1U) {
+            owner.requestActivation({2, 19200, 2U, 4U});
+            TEST_ASSERT_FALSE(owner.processBoundary());
+        }
+    });
+    TEST_ASSERT_EQUAL_UINT(3U, observedIdentities.size());
+    for (const int identity : observedIdentities) TEST_ASSERT_EQUAL_INT(1, identity);
+    TEST_ASSERT_EQUAL_INT(1, owner.active().identity);
+    TEST_ASSERT_TRUE(owner.processBoundary());
+    TEST_ASSERT_EQUAL_INT(2, owner.active().identity);
+    TEST_ASSERT_EQUAL_INT(19200, bus.initializedValues.back());
+}
+
+void test_modbus_owner_defers_activation_during_adhoc_command(void) {
+    RecordingModbusOwnerBus bus;
+    ModbusOwnerCore<ModbusOwnerTestConfiguration, RecordingModbusOwnerBus> owner(bus);
+    owner.requestActivation({1, 9600, 1U, 1U});
+    TEST_ASSERT_TRUE(owner.processBoundary());
+    owner.runCommand([&](const ModbusOwnerTestConfiguration &active) {
+        TEST_ASSERT_EQUAL_INT(1, active.identity);
+        owner.requestActivation({2, 38400, 4U, 8U});
+        TEST_ASSERT_FALSE(owner.processBoundary());
+        TEST_ASSERT_EQUAL_INT(1, owner.active().identity);
+    });
+    TEST_ASSERT_TRUE(owner.processBoundary());
+    TEST_ASSERT_EQUAL_INT(2, owner.active().identity);
+}
+
+void test_modbus_owner_snapshots_remain_values_across_replacement(void) {
+    RecordingModbusOwnerBus bus;
+    ModbusOwnerCore<ModbusOwnerTestConfiguration, RecordingModbusOwnerBus> owner(bus);
+    owner.requestActivation({1, 9600, 2U, 10U});
+    TEST_ASSERT_TRUE(owner.processBoundary());
+    const auto oldSnapshot = owner.snapshot();
+
+    for (int identity = 2; identity < 50; ++identity) {
+        owner.requestActivation({identity, identity * 100, static_cast<size_t>(identity),
+                                 static_cast<size_t>(identity * 3)});
+        TEST_ASSERT_TRUE(owner.processBoundary());
+    }
+    TEST_ASSERT_EQUAL_UINT32(1U, oldSnapshot.generation);
+    TEST_ASSERT_EQUAL_UINT(2U, oldSnapshot.deviceCount);
+    TEST_ASSERT_EQUAL_UINT(10U, oldSnapshot.datapointCount);
+    TEST_ASSERT_EQUAL_UINT32(49U, owner.snapshot().generation);
+}
+
+void test_mqtt_owner_snapshots_remain_values_across_replacement(void) {
+    constexpr uintptr_t OWNER = 23U;
+    RecordingMqttOwnerClient client;
+    MqttOwnerCore<RecordingMqttOwnerClient> owner(client, OWNER);
+    TEST_ASSERT_TRUE(owner.applyConfiguration(OWNER, "broker-a", true));
+    std::vector<MqttOwnerCore<RecordingMqttOwnerClient>::Subscription> initial;
+    initial.push_back({"root/old", [](const std::string &) {}});
+    TEST_ASSERT_TRUE(owner.replaceSubscriptions(OWNER, std::move(initial), 4U));
+    const auto oldSnapshot = owner.snapshot();
+
+    TEST_ASSERT_TRUE(owner.applyConfiguration(OWNER, "broker-b", false));
+    std::vector<MqttOwnerCore<RecordingMqttOwnerClient>::Subscription> replacement;
+    replacement.push_back({"root/new", [](const std::string &) {}});
+    TEST_ASSERT_TRUE(owner.replaceSubscriptions(OWNER, std::move(replacement), 9U));
+
+    TEST_ASSERT_EQUAL_STRING("broker-a", oldSnapshot.server.c_str());
+    TEST_ASSERT_TRUE(oldSnapshot.enabled);
+    TEST_ASSERT_EQUAL_UINT32(2U, oldSnapshot.generation);
+    TEST_ASSERT_EQUAL_UINT32(4U, oldSnapshot.modbusGeneration);
+    TEST_ASSERT_EQUAL_UINT(1U, oldSnapshot.topics.size());
+    TEST_ASSERT_EQUAL_STRING("root/old", oldSnapshot.topics[0].c_str());
+    const auto current = owner.snapshot();
+    TEST_ASSERT_EQUAL_STRING("broker-b", current.server.c_str());
+    TEST_ASSERT_FALSE(current.enabled);
+    TEST_ASSERT_EQUAL_STRING("root/new", current.topics[0].c_str());
+}
+
+void test_latest_revision_preserves_exact_candidate_across_overlapping_workers(void) {
+    struct Candidate {
+        uint32_t revision;
+        std::string exactBody;
+    };
+
+    LatestRevisionCore revisions;
+    const Candidate first{revisions.issue(), R"({"root_topic":"first"})"};
+    auto firstAdmission = revisions.beginAdmission(first.revision);
+    firstAdmission.commit();
+    const Candidate second{revisions.issue(), R"({"root_topic":"second"})"};
+    auto secondAdmission = revisions.beginAdmission(second.revision);
+    secondAdmission.commit();
+    std::string active = "original";
+
+    const auto apply = [&revisions, &active](const Candidate &candidate) {
+        if (!revisions.isLatest(candidate.revision)) return false;
+        active = candidate.exactBody;
+        return true;
+    };
+
+    // The later request's worker finishes first. The delayed older worker must
+    // report superseded instead of rereading or replacing the newer body.
+    TEST_ASSERT_TRUE(apply(second));
+    TEST_ASSERT_FALSE(apply(first));
+    TEST_ASSERT_EQUAL_STRING(second.exactBody.c_str(), active.c_str());
+    TEST_ASSERT_EQUAL_UINT32(2U, revisions.latest());
+}
+
+void test_configuration_revision_failure_is_inert_during_concurrent_worker_check(void) {
+    LatestRevisionCore revisions;
+    const uint32_t acceptedRevision = revisions.issue();
+    auto acceptedAdmission = revisions.beginAdmission(acceptedRevision);
+    acceptedAdmission.commit();
+
+    // A parsed-file or HTTP-job failure only consumes an inert ticket.
+    const uint32_t rejectedBeforeAdmission = revisions.issue();
+    TEST_ASSERT_FALSE(revisions.isObsolete(acceptedRevision));
+    TEST_ASSERT_EQUAL_UINT32(acceptedRevision, revisions.latest());
+
+    // Reproduce an owner-queue admission attempt while an already admitted
+    // worker checks its revision. The reader blocks on the production guard;
+    // dropping the admission without commit leaves the older candidate valid.
+    std::atomic<bool> observerStarted{false};
+    std::atomic<bool> observerFinished{false};
+    bool acceptedWorkerMayApply = false;
+    std::thread observer;
+    bool finishedWhileAdmissionWasPending = false;
+    {
+        auto rejectedAdmission = revisions.beginAdmission(rejectedBeforeAdmission);
+        observer = std::thread([&]() {
+            observerStarted.store(true, std::memory_order_release);
+            acceptedWorkerMayApply = revisions.isLatest(acceptedRevision);
+            observerFinished.store(true, std::memory_order_release);
+        });
+        while (!observerStarted.load(std::memory_order_acquire)) std::this_thread::yield();
+        for (size_t i = 0U; i < 1000U; ++i) std::this_thread::yield();
+        finishedWhileAdmissionWasPending = observerFinished.load(std::memory_order_acquire);
+        // Simulated queue rejection: no commit.
+    }
+    observer.join();
+
+    TEST_ASSERT_FALSE(finishedWhileAdmissionWasPending);
+    TEST_ASSERT_TRUE(acceptedWorkerMayApply);
+    TEST_ASSERT_EQUAL_UINT32(acceptedRevision, revisions.latest());
+
+    const uint32_t replacementRevision = revisions.issue();
+    auto replacementAdmission = revisions.beginAdmission(replacementRevision);
+    replacementAdmission.commit();
+    TEST_ASSERT_TRUE(revisions.isObsolete(acceptedRevision));
+    TEST_ASSERT_TRUE(revisions.isLatest(replacementRevision));
+}
+
+void test_publication_attempt_tokens_ignore_stale_completions_after_retry(void) {
+    PublicationAttemptCore availabilityAttempts;
+    bool availabilityPending = true;
+    bool availabilityPublished = false;
+    const uint32_t abandonedAvailability = availabilityAttempts.begin();
+
+    // Completion admission overflow abandons the first attempt before retry.
+    availabilityAttempts.invalidate();
+    availabilityPending = false;
+    const uint32_t retriedAvailability = availabilityAttempts.begin();
+    availabilityPending = true;
+
+    const auto completeAvailability = [&](const uint32_t attempt, const bool success) {
+        if (!availabilityPending || !availabilityAttempts.accepts(attempt)) return;
+        availabilityPending = false;
+        availabilityPublished = success;
+    };
+    completeAvailability(abandonedAvailability, true);
+    TEST_ASSERT_TRUE(availabilityPending);
+    TEST_ASSERT_FALSE(availabilityPublished);
+    completeAvailability(retriedAvailability, true);
+    TEST_ASSERT_FALSE(availabilityPending);
+    TEST_ASSERT_TRUE(availabilityPublished);
+
+    PublicationAttemptCore discoveryAttempts;
+    uint16_t discoveryPending = 2U;
+    bool discoveryFailed = false;
+    bool discoveryPublished = false;
+    const uint32_t abandonedDiscovery = discoveryAttempts.begin();
+
+    // Reset after one lost completion, then enqueue a complete retry batch.
+    discoveryAttempts.invalidate();
+    discoveryPending = 0U;
+    discoveryFailed = false;
+    const uint32_t retriedDiscovery = discoveryAttempts.begin();
+    discoveryPending = 2U;
+
+    const auto completeDiscovery = [&](const uint32_t attempt, const bool success) {
+        if (discoveryPending == 0U || !discoveryAttempts.accepts(attempt)) return;
+        --discoveryPending;
+        discoveryFailed = discoveryFailed || !success;
+        if (discoveryPending == 0U) discoveryPublished = !discoveryFailed;
+    };
+    completeDiscovery(abandonedDiscovery, true);
+    completeDiscovery(retriedDiscovery, true);
+    completeDiscovery(abandonedDiscovery, false);
+    TEST_ASSERT_EQUAL_UINT16(1U, discoveryPending);
+    TEST_ASSERT_FALSE(discoveryFailed);
+    TEST_ASSERT_FALSE(discoveryPublished);
+    completeDiscovery(retriedDiscovery, true);
+    TEST_ASSERT_EQUAL_UINT16(0U, discoveryPending);
+    TEST_ASSERT_TRUE(discoveryPublished);
+}
+
+void test_staged_bridge_plan_never_commits_after_running_timeout(void) {
+    StagedCommitCore<std::string> bridgePlans;
+    OwnerCompletionCore runningRequest;
+    TEST_ASSERT_TRUE(runningRequest.markQueued());
+    TEST_ASSERT_TRUE(runningRequest.tryStart());
+
+    // Staging may finish after the caller's wait expires, but cancellation can
+    // no longer succeed and no approval is published by the Modbus owner.
+    bridgePlans.stage("candidate-after-timeout", 8U);
+    TEST_ASSERT_FALSE(runningRequest.cancelIfQueued());
+    std::string committed;
+    uint32_t token = 0U;
+    TEST_ASSERT_FALSE(bridgePlans.takeApproved(committed, token));
+    TEST_ASSERT_TRUE(committed.empty());
+
+    bridgePlans.stage("coordinated-candidate", 9U);
+    bridgePlans.approve(9U);
+    TEST_ASSERT_TRUE(bridgePlans.takeApproved(committed, token));
+    TEST_ASSERT_EQUAL_UINT32(9U, token);
+    TEST_ASSERT_EQUAL_STRING("coordinated-candidate", committed.c_str());
+}
+
+void test_async_publications_do_not_wait_for_a_stalled_owner(void) {
+    struct Publication {
+        std::string payload;
+        std::function<void(bool)> completion;
+    };
+
+    OwnerMailboxCore<Publication, 4U> publications;
+    int callerProgress = 0;
+    int completions = 0;
+    for (int i = 0; i < 4; ++i) {
+        Publication publication;
+        publication.payload = "value-" + std::to_string(i);
+        publication.completion = [&completions](const bool) { ++completions; };
+        TEST_ASSERT_EQUAL_INT(
+            static_cast<int>(OwnerMailboxCore<Publication, 4U>::Admission::Accepted),
+            static_cast<int>(publications.admit(std::move(publication))));
+        ++callerProgress;
+    }
+
+    // No owner work has run: all polling-side submissions returned and the
+    // bounded fifth submission is rejected immediately.
+    TEST_ASSERT_EQUAL_INT(4, callerProgress);
+    TEST_ASSERT_EQUAL_INT(0, completions);
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(OwnerMailboxCore<Publication, 4U>::Admission::Full),
+        static_cast<int>(publications.admit(Publication{"overflow", {}})));
+
+    Publication publication;
+    while (publications.tryPop(publication)) publication.completion(true);
+    TEST_ASSERT_EQUAL_INT(4, completions);
+}
+
+void test_production_snapshot_core_never_returns_mixed_runtime_fields(void) {
+    struct RuntimeFields {
+        uint32_t generation = 0U;
+        size_t deviceCount = 0U;
+        size_t datapointCount = 0U;
+        bool enabled = false;
+    };
+
+    CoherentSnapshotCore<RuntimeFields> snapshot;
+    std::atomic<bool> finished{false};
+    std::atomic<bool> mixed{false};
+    std::thread writer([&]() {
+        for (uint32_t generation = 1U; generation <= 50000U; ++generation) {
+            snapshot.write({generation, generation * 2U, generation * 3U,
+                            (generation & 1U) != 0U});
+        }
+        finished.store(true, std::memory_order_release);
+    });
+
+    do {
+        const RuntimeFields fields = snapshot.read();
+        if (fields.deviceCount != fields.generation * 2U
+            || fields.datapointCount != fields.generation * 3U
+            || fields.enabled != ((fields.generation & 1U) != 0U)) {
+            mixed.store(true, std::memory_order_relaxed);
+        }
+    } while (!finished.load(std::memory_order_acquire));
+    writer.join();
+    TEST_ASSERT_FALSE(mixed.load(std::memory_order_relaxed));
+}
+
 int main(int /*argc*/, char ** /*argv*/) {
     UNITY_BEGIN();
     RUN_TEST(test_single_chunk_returns_full_buffer);
@@ -1521,5 +2032,22 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_mqtt_document_defaults_only_a_missing_port);
     RUN_TEST(test_mqtt_one_shot_test_restores_enabled_state_after_valid_load);
     RUN_TEST(test_invalid_persisted_mqtt_fields_clear_state_and_gate_client_calls);
+    RUN_TEST(test_owner_mailbox_is_bounded_fifo_and_owns_value_payloads);
+    RUN_TEST(test_owner_completion_is_exactly_once_and_cancels_only_before_start);
+    RUN_TEST(test_owner_mailbox_reports_overload_unavailable_shutdown_and_fifo_replacement);
+    RUN_TEST(test_mqtt_owner_core_enforces_context_generation_and_client_order);
+    RUN_TEST(test_mqtt_owner_core_removal_during_dispatch_has_no_stale_invocation);
+    RUN_TEST(test_mqtt_owner_queues_replacement_submitted_during_callback_dispatch);
+    RUN_TEST(test_mqtt_owner_core_replacement_deduplicates_reconnect_subscriptions);
+    RUN_TEST(test_modbus_owner_activates_only_after_complete_polling_pass);
+    RUN_TEST(test_modbus_owner_defers_activation_during_adhoc_command);
+    RUN_TEST(test_modbus_owner_snapshots_remain_values_across_replacement);
+    RUN_TEST(test_mqtt_owner_snapshots_remain_values_across_replacement);
+    RUN_TEST(test_latest_revision_preserves_exact_candidate_across_overlapping_workers);
+    RUN_TEST(test_configuration_revision_failure_is_inert_during_concurrent_worker_check);
+    RUN_TEST(test_publication_attempt_tokens_ignore_stale_completions_after_retry);
+    RUN_TEST(test_staged_bridge_plan_never_commits_after_running_timeout);
+    RUN_TEST(test_async_publications_do_not_wait_for_a_stalled_owner);
+    RUN_TEST(test_production_snapshot_core_never_returns_mixed_runtime_fields);
     return UNITY_END();
 }

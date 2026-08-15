@@ -2,6 +2,7 @@
 
 #include <SPIFFS.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 #include "storage/ConfigFs.h"
 
 #include "modbus/ModbusManager.h"
@@ -53,6 +54,7 @@ JsonDocument StatService::appendSystemStats(JsonDocument &document, const Logger
     document["uptimeMs"] = static_cast<uint32_t>(millis());
     document["heapFree"] = ESP.getFreeHeap();
     document["heapMin"] = ESP.getMinFreeHeap();
+    document["heapLargest"] = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     document["resetReason"] = resetReasonToString(esp_reset_reason());
     return document;
 }
@@ -78,11 +80,13 @@ JsonDocument StatService::appendHealthStats(JsonDocument &document) {
 
 JsonDocument StatService::appendMQTTStats(JsonDocument &document) {
     MqttManager *link = MBXServerHandlers::getMqttManager();
-    const bool connected = (link && link->getMQTTState() == 0);
-    document["mqttConnected"] = connected;
-    document["broker"] = link ? String(link->getMqttBroker()) : "N/A";
-    document["clientId"] = link ? link->getClientId() : "N/A";
-    document["mqttErrorCount"] = 0;
+    const MqttStatusSnapshot snapshot = link ? link->getStatusSnapshot() : MqttStatusSnapshot();
+    document["mqttConnected"] = snapshot.connected;
+    document["broker"] = snapshot.available ? snapshot.broker : "N/A";
+    document["clientId"] = snapshot.available ? snapshot.clientId : "N/A";
+    document["mqttErrorCount"] = snapshot.commandFailureCount;
+    document["mqttGeneration"] = snapshot.generation;
+    document["mqttOwnerViolations"] = snapshot.ownerViolationCount;
     return document;
 }
 
@@ -93,20 +97,15 @@ JsonDocument StatService::appendModbusStats(JsonDocument &document) {
         return document;
     }
 
-    const auto config = modbusManager->getConfiguration();
-
+    const ModbusRuntimeSnapshot snapshot = modbusManager->getRuntimeSnapshot();
     document["buses"] = 1;
-    document["devices"] =  config.devices.size();
-    size_t totalDatapoints = 0;
-    for (const auto &dev : config.devices) {
-        totalDatapoints += dev.datapoints.size();
-    }
-
-    const bool enabled = ModbusManager::getBusState();
-
-    document["mbusEnabled"] = enabled;
-    document["datapoints"] = totalDatapoints;
-    document["modbusErrorCount"] = ModbusManager::getBusErrorCount();
+    document["devices"] = snapshot.deviceCount;
+    document["mbusEnabled"] = snapshot.enabled;
+    document["datapoints"] = snapshot.datapointCount;
+    document["modbusErrorCount"] = snapshot.errorCount;
+    document["modbusGeneration"] = snapshot.generation;
+    document["modbusOwnerViolations"] = snapshot.ownerViolationCount;
+    document["modbusCommandFailures"] = snapshot.commandFailureCount;
     return document;
 }
 

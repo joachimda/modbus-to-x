@@ -60,6 +60,7 @@ void MBXServer::begin() const {
 }
 
 void MBXServer::loop() {
+    MBXServerHandlers::pumpRuntimeResponses();
     g_wifi.loop();
     MBXServerHandlers::pumpEventStream();
     TimeService::loop();

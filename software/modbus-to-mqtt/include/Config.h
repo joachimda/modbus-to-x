@@ -67,6 +67,45 @@
 #define MQTT_BUFFER_SIZE 4096
 #endif
 
+#ifndef MQTT_COMMAND_QUEUE_DEPTH
+#define MQTT_COMMAND_QUEUE_DEPTH 12
+#endif
+
+#ifndef MQTT_COMMAND_WAIT_MS
+#define MQTT_COMMAND_WAIT_MS 3000
+#endif
+
+#ifndef MQTT_COMMANDS_PER_CYCLE
+#define MQTT_COMMANDS_PER_CYCLE 6
+#endif
+
+#ifndef MODBUS_COMMAND_QUEUE_DEPTH
+#define MODBUS_COMMAND_QUEUE_DEPTH 8
+#endif
+
+#ifndef MODBUS_COMMAND_WAIT_MS
+#define MODBUS_COMMAND_WAIT_MS 5000
+#endif
+
+#ifndef MODBUS_COMMANDS_PER_CYCLE
+#define MODBUS_COMMANDS_PER_CYCLE 8
+#endif
+
+#ifndef RUNTIME_HTTP_JOB_QUEUE_DEPTH
+#define RUNTIME_HTTP_JOB_QUEUE_DEPTH 8
+#endif
+
+#ifndef RUNTIME_HTTP_WORKER_COUNT
+#define RUNTIME_HTTP_WORKER_COUNT 3
+#endif
+
+// A job can be either queued or owned by one worker. Keeping one completion
+// slot for every such job lets workers hand responses to the Arduino loop
+// without waiting or touching AsyncTCP from their own task contexts.
+#ifndef RUNTIME_HTTP_RESPONSE_QUEUE_DEPTH
+#define RUNTIME_HTTP_RESPONSE_QUEUE_DEPTH (RUNTIME_HTTP_JOB_QUEUE_DEPTH + RUNTIME_HTTP_WORKER_COUNT)
+#endif
+
 /****************************************************
  * OTA
  ****************************************************/

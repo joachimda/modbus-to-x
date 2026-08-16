@@ -69,12 +69,21 @@ export async function reboot() {
     if (!confirm("Reboot the device now?")) return;
     try {
         const r = await mbxFetch(API.POST_SYSTEM_RESET, { method: "POST" });
-        if (r.ok) {
+        const contentType = (r.headers.get('Content-Type') || '').split(';', 1)[0].trim().toLowerCase();
+        let body = null;
+        if (contentType === 'application/json') {
+            try {
+                body = await r.json();
+            } catch (_) {
+                // The response is rejected below when the expected body is absent.
+            }
+        }
+        if (r.status === 202 && body?.ok === true && body?.rebooting === true) {
             alert("Rebooting… The page will try to reconnect automatically.");
-            // Optional: try to reload after a short pause
             setTimeout(() => location.reload(), 5000);
         } else {
-            alert("Reboot request failed.");
+            const detail = body?.error || `unexpected response (${r.status})`;
+            throw new Error(detail);
         }
     } catch (e) {
         alert("Reboot request failed: " + e.message);

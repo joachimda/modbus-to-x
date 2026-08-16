@@ -20,6 +20,7 @@
 #include "../include/network/mbx_server/MutationRouteRegistration.h"
 #include "../include/network/mbx_server/OtaRouteRegistration.h"
 #include "../include/services/FactoryResetCore.h"
+#include "../include/services/RebootSchedulerCore.h"
 #include "../src/services/ota/OtaCredentialCore.cpp"
 #include "../src/services/ota/OtaAuthorizationCore.cpp"
 #include "../src/services/ota/OtaCredentialService.cpp"
@@ -49,6 +50,47 @@ struct FactoryResetFake {
     int formatCalls = 0;
     int eraseCalls = 0;
 };
+
+struct RebootSchedulerFake {
+    bool scheduleResult = true;
+    int scheduleCalls = 0;
+    int waitCalls = 0;
+    int restartCalls = 0;
+    uint32_t waitedMs = 0U;
+    RebootSchedulerCore::Task task = nullptr;
+    void *taskContext = nullptr;
+};
+
+bool fakeScheduleRebootTask(const RebootSchedulerCore::Task task, void *taskContext,
+                            void *scheduleContext) {
+    auto *fake = static_cast<RebootSchedulerFake *>(scheduleContext);
+    ++fake->scheduleCalls;
+    fake->task = task;
+    fake->taskContext = taskContext;
+    return fake->scheduleResult;
+}
+
+void fakeWaitForReboot(const uint32_t delayMs, void *executionContext) {
+    auto *fake = static_cast<RebootSchedulerFake *>(executionContext);
+    ++fake->waitCalls;
+    fake->waitedMs = delayMs;
+}
+
+void fakeRestartDevice(void *executionContext) {
+    auto *fake = static_cast<RebootSchedulerFake *>(executionContext);
+    ++fake->restartCalls;
+}
+
+RebootSchedulerCore::Operations fakeRebootOperations(RebootSchedulerFake &fake) {
+    return {
+        fakeScheduleRebootTask,
+        &fake,
+        fakeWaitForReboot,
+        fakeRestartDevice,
+        &fake,
+        1000U,
+    };
+}
 
 bool fakeScheduleResetTask(void *context) {
     auto *fake = static_cast<FactoryResetFake *>(context);
@@ -120,6 +162,7 @@ struct RouteTestState {
     int factoryResetFormatCalls = 0;
     int factoryResetEraseCalls = 0;
     int mutationSideEffectCalls = 0;
+    int rebootScheduleCalls = 0;
 };
 
 struct RouteTestRequest {
@@ -386,7 +429,10 @@ struct RouteTestCallbacks {
     void handleMqttTestConnection(RouteTestRequest *) const { ++state->mutationSideEffectCalls; }
     void handleModbusExecute(RouteTestRequest *) const { ++state->mutationSideEffectCalls; }
     void handleModbusDisable(RouteTestRequest *, bool) const { ++state->mutationSideEffectCalls; }
-    void handleDeviceReset(RouteTestRequest *) const { ++state->mutationSideEffectCalls; }
+    void handleDeviceReset(RouteTestRequest *) const {
+        ++state->mutationSideEffectCalls;
+        ++state->rebootScheduleCalls;
+    }
 
     void handleWifiConnectBody(RouteTestRequest *, const uint8_t *, const size_t,
                                const size_t, const size_t) const {
@@ -683,6 +729,52 @@ void test_ota_credential_service_persists_and_clears_record(void) {
     TEST_ASSERT_FALSE(OtaCredentialService::verify(String("route-password")));
 }
 
+void test_reboot_scheduler_admits_once_and_executes_after_grace_period(void) {
+    RebootSchedulerCore::Scheduler scheduler;
+    RebootSchedulerFake fake;
+    const RebootSchedulerCore::Operations operations = fakeRebootOperations(fake);
+
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(RebootSchedulerCore::ScheduleResult::Accepted),
+        static_cast<int>(scheduler.schedule(operations)));
+    TEST_ASSERT_TRUE(scheduler.isPending());
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(RebootSchedulerCore::ScheduleResult::Pending),
+        static_cast<int>(scheduler.schedule(operations)));
+    TEST_ASSERT_EQUAL_INT(1, fake.scheduleCalls);
+    TEST_ASSERT_EQUAL_INT(0, fake.waitCalls);
+    TEST_ASSERT_EQUAL_INT(0, fake.restartCalls);
+    TEST_ASSERT_NOT_NULL(fake.task);
+    TEST_ASSERT_NOT_NULL(fake.taskContext);
+
+    fake.task(fake.taskContext);
+
+    TEST_ASSERT_EQUAL_INT(1, fake.waitCalls);
+    TEST_ASSERT_EQUAL_UINT32(1000U, fake.waitedMs);
+    TEST_ASSERT_EQUAL_INT(1, fake.restartCalls);
+}
+
+void test_reboot_scheduler_rolls_back_failed_task_admission(void) {
+    RebootSchedulerCore::Scheduler scheduler;
+    RebootSchedulerFake fake;
+    fake.scheduleResult = false;
+
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(RebootSchedulerCore::ScheduleResult::Unavailable),
+        static_cast<int>(scheduler.schedule(fakeRebootOperations(fake))));
+    TEST_ASSERT_FALSE(scheduler.isPending());
+    TEST_ASSERT_EQUAL_INT(1, fake.scheduleCalls);
+    TEST_ASSERT_EQUAL_INT(0, fake.waitCalls);
+    TEST_ASSERT_EQUAL_INT(0, fake.restartCalls);
+
+    fake.scheduleResult = true;
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(RebootSchedulerCore::ScheduleResult::Accepted),
+        static_cast<int>(scheduler.schedule(fakeRebootOperations(fake))));
+    TEST_ASSERT_TRUE(scheduler.isPending());
+    TEST_ASSERT_EQUAL_INT(2, fake.scheduleCalls);
+}
+
 void test_factory_reset_reports_success_only_after_all_steps_succeed(void) {
     FactoryResetFake fake;
 
@@ -946,6 +1038,7 @@ void test_registered_mutation_matrix_fails_closed_before_dispatch(void) {
         {Routes::POST_WIFI_AP_OFF, ROUTE_TEST_POST, false},
         {Routes::POST_WIFI_CANCEL, ROUTE_TEST_POST, false},
         {Routes::POST_WIFI_RESET, ROUTE_TEST_POST, false},
+        {Routes::DEVICE_RESET, ROUTE_TEST_POST, false},
     };
 
     for (int modeIndex = 0; modeIndex < 2; ++modeIndex) {
@@ -999,10 +1092,10 @@ void test_registered_mutation_matrix_fails_closed_before_dispatch(void) {
         TEST_ASSERT_EQUAL_UINT(0U, server.count("/reset", ROUTE_TEST_GET));
         TEST_ASSERT_EQUAL_UINT(0U, server.count(Routes::POST_WIFI_RESET, ROUTE_TEST_GET));
         TEST_ASSERT_EQUAL_UINT(0U, server.count(Routes::POST_WIFI_RESET, ROUTE_TEST_HEAD));
+        TEST_ASSERT_EQUAL_INT(1, state.rebootScheduleCalls);
         if (station) {
             TEST_ASSERT_EQUAL_UINT(0U, server.count(Routes::POST_WIFI_CONNECT, ROUTE_TEST_POST));
         } else {
-            TEST_ASSERT_EQUAL_UINT(0U, server.count(Routes::DEVICE_RESET, ROUTE_TEST_POST));
             TEST_ASSERT_EQUAL_UINT(0U, server.count(Routes::PUT_MODBUS_CONFIG, ROUTE_TEST_PUT));
         }
     }
@@ -2014,6 +2107,8 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_ota_password_supported_iteration_bounds);
     RUN_TEST(test_ota_password_unsupported_legacy_cost_fails_without_deriving);
     RUN_TEST(test_ota_credential_service_persists_and_clears_record);
+    RUN_TEST(test_reboot_scheduler_admits_once_and_executes_after_grace_period);
+    RUN_TEST(test_reboot_scheduler_rolls_back_failed_task_admission);
     RUN_TEST(test_factory_reset_reports_success_only_after_all_steps_succeed);
     RUN_TEST(test_factory_reset_task_creation_failure_prevents_erasure);
     RUN_TEST(test_factory_reset_config_format_failure_is_reported);

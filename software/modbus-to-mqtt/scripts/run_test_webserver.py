@@ -39,6 +39,8 @@ mimetypes.add_type("text/html; charset=utf-8", ".html")
 class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
     ota_password = None
     mqtt_constraints = None
+    reboot_pending = False
+    reboot_lock = threading.Lock()
     mutation_routes = {
         ("POST", "/api/wifi/connect"),
         ("POST", "/api/wifi/cancel"),
@@ -87,6 +89,11 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
     def _read_body(self):
         length = int(self.headers.get("Content-Length", "0"))
         return self.rfile.read(length) if length else b""
+
+    @classmethod
+    def _complete_mock_reboot(cls):
+        with cls.reboot_lock:
+            cls.reboot_pending = False
 
     def _normalized_host(self):
         value = self.headers.get("Host", "")
@@ -303,7 +310,21 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
         if not self._require_mutation_context():
             return
         if self.path == "/api/system/reboot":
-            self._send_json({"ok": True})
+            handler_type = type(self)
+            with handler_type.reboot_lock:
+                if handler_type.reboot_pending:
+                    self._send_json({"ok": False, "error": "reboot_pending"}, 409)
+                    return
+                handler_type.reboot_pending = True
+                timer = threading.Timer(1.0, handler_type._complete_mock_reboot)
+                timer.daemon = True
+                try:
+                    timer.start()
+                except RuntimeError:
+                    handler_type.reboot_pending = False
+                    self._send_json({"ok": False, "error": "reboot_unavailable"}, 503)
+                    return
+            self._send_json({"ok": True, "rebooting": True}, 202)
             return
         if self.path == "/api/wifi/reset":
             self._send_json({"ok": True, "resetting": True}, 202)

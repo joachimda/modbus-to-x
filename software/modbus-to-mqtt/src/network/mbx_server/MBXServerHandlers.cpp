@@ -25,6 +25,7 @@
 #include "network/mbx_server/MutationRequestGuardCore.h"
 #include "services/StatService.h"
 #include "services/FactoryResetCore.h"
+#include "services/RebootScheduler.h"
 #include "services/OtaService.h"
 #include "services/ota/HttpOtaService.h"
 #include "services/ota/OtaAuthorizationCore.h"
@@ -51,6 +52,9 @@ auto constexpr FACTORY_RESET_NVS_RESP = R"({"error":"factory_reset_nvs_failed"})
 auto constexpr WIFI_HANDLER_OK_RESP = "{\"ok\":true}";
 auto constexpr WIFI_ALREADY_CONNECTING_RESP = R"({"error":"already_connecting"})";
 auto constexpr NETWORK_RESET_ACCEPTED_RESP = R"({"ok":true,"resetting":true})";
+auto constexpr REBOOT_ACCEPTED_RESP = R"({"ok":true,"rebooting":true})";
+auto constexpr REBOOT_PENDING_RESP = R"({"ok":false,"error":"reboot_pending"})";
+auto constexpr REBOOT_UNAVAILABLE_RESP = R"({"ok":false,"error":"reboot_unavailable"})";
 
 auto constexpr NETWORK_RESET_DELAY_MS = 5000;
 
@@ -1413,10 +1417,22 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
     }
 }
 
-void MBXServerHandlers::handleDeviceReset(const Logger *logger) {
-    logger->logInformation("Device reset requested. Will reset in 5 sec");
-    delay(5000);
-    ESP.restart();
+void MBXServerHandlers::handleDeviceReset(AsyncWebServerRequest *req, const Logger *logger) {
+    if (req == nullptr) return;
+
+    switch (RebootScheduler::schedule()) {
+        case RebootScheduler::ScheduleResult::Accepted:
+            if (logger) logger->logInformation("Device reboot scheduled");
+            req->send(HttpResponseCodes::ACCEPTED, HttpMediaTypes::JSON, REBOOT_ACCEPTED_RESP);
+            return;
+        case RebootScheduler::ScheduleResult::Pending:
+            req->send(HttpResponseCodes::CONFLICT, HttpMediaTypes::JSON, REBOOT_PENDING_RESP);
+            return;
+        case RebootScheduler::ScheduleResult::Unavailable:
+            if (logger) logger->logError("Device reboot scheduling failed: task unavailable");
+            req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::JSON, REBOOT_UNAVAILABLE_RESP);
+            return;
+    }
 }
 
 bool MBXServerHandlers::isOtaRequestAuthorized(const AsyncWebServerRequest *req) {

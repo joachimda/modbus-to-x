@@ -58,7 +58,7 @@ public:
 
     static void getLogs(AsyncWebServerRequest *req);
 
-    static void handleDeviceReset(const Logger *logger);
+    static void handleDeviceReset(AsyncWebServerRequest *req, const Logger *logger);
 
     static bool isOtaRequestAuthorized(const AsyncWebServerRequest *req);
 

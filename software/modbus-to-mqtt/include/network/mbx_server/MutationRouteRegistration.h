@@ -75,9 +75,6 @@ void configure(Server *server, const Callbacks callbacks, const Mode mode,
         addRequest<Request>(server, callbacks, Routes::POST_MBUS_ENABLE, post, [](const Callbacks &cb, Request *request) {
             cb.handleModbusDisable(request, true);
         });
-        addRequest<Request>(server, callbacks, Routes::DEVICE_RESET, post, [](const Callbacks &cb, Request *request) {
-            cb.handleDeviceReset(request);
-        });
     } else {
         addBody<Request>(server, callbacks, Routes::POST_WIFI_CONNECT, post, [](const Callbacks &cb, Request *request, const uint8_t *data,
                                                     const size_t length, const size_t index, const size_t total) {
@@ -93,6 +90,9 @@ void configure(Server *server, const Callbacks callbacks, const Mode mode,
 
     addRequest<Request>(server, callbacks, Routes::POST_WIFI_RESET, post, [](const Callbacks &cb, Request *request) {
         cb.handleNetworkReset(request);
+    });
+    addRequest<Request>(server, callbacks, Routes::DEVICE_RESET, post, [](const Callbacks &cb, Request *request) {
+        cb.handleDeviceReset(request);
     });
 }
 

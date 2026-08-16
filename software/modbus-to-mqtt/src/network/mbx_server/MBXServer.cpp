@@ -189,8 +189,8 @@ void MBXServer::configureMutationRoutes(const MutationRouteRegistration::Mode mo
             MBXServerHandlers::handleModbusDisable(request, state);
         }
 
-        void handleDeviceReset(AsyncWebServerRequest *) const {
-            MBXServerHandlers::handleDeviceReset(owner->_logger);
+        void handleDeviceReset(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::handleDeviceReset(request, owner->_logger);
         }
 
         void handleWifiConnectBody(AsyncWebServerRequest *request, const uint8_t *data, const size_t length,

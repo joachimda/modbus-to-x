@@ -1,5 +1,13 @@
 import {API, mbxFetch, reboot, rssiBadge, rssiToBars} from 'app';
 import {ProvisioningHandoff} from './handoff.mjs';
+import {
+    connectionFieldsForSelection,
+    filterScanResults,
+    isSameAccessPoint,
+    reconcileScanRefresh,
+    selectScanResult,
+    shouldInvalidateScanSelection,
+} from './wifi_selection.mjs';
 
 window.initCaptivePortal = async function initCaptivePortal() {
     document.querySelector('#btn-reboot').onclick = reboot;
@@ -51,7 +59,7 @@ const showHiddenPw = el('showHiddenPw');
 const showPw = el('showPw');
 
 let networks = [];
-let selectedIndex = -1;
+let selectedNetwork = null;
 const handoff = new ProvisioningHandoff({
     fetchFn: (...args) => fetch(...args),
     mutationFetchFn: (...args) => mbxFetch(...args),
@@ -205,29 +213,39 @@ function renderHandoffState(state) {
     }
 }
 
-function setSelected(idx) {
-    selectedIndex = idx;
-    for (const item of list.querySelectorAll('.network')) item.classList.remove('selected');
-    if (idx >= 0) list.querySelector(`[data-idx="${idx}"]`)?.classList.add('selected');
-    const n = idx >= 0 ? networks[idx] : null;
-    if (n) {
-        ssid.value = n.ssid;
-        bssid.value = n.bssid || '';
-        if (n.secure) password.focus(); else password.value = '';
-    }
+function setSelected(network) {
+    const result = selectScanResult(selectedNetwork, network);
+    selectedNetwork = result.selection;
+    if (result.clearPassword) password.value = '';
+    ssid.value = network.ssid;
+    bssid.value = network.bssid || '';
+    renderList();
+    if (network.secure) password.focus(); else password.value = '';
     finalBadge.innerHTML = '';
 }
 
+function clearScanSelection() {
+    selectedNetwork = null;
+    renderList();
+    finalBadge.innerHTML = '';
+}
+
+function invalidateEditedSelection() {
+    if (!shouldInvalidateScanSelection(selectedNetwork, ssid.value, bssid.value)) return;
+    selectedNetwork = null;
+    renderList();
+}
+
 function renderList() {
-    const q = filter.value.trim().toLowerCase();
-    const items = networks
-        .filter(n => !q || (n.ssid || '').toLowerCase().includes(q))
-        .map((n, i) => {
+    const visibleNetworks = filterScanResults(networks, filter.value);
+    const items = visibleNetworks
+        .map(n => {
             const secureHtml = n.secure
                 ? `<span class="pill secure" title="${n.auth || 'Secured'}">🔒 ${n.auth || 'Secured'}</span>`
                 : `<span class="pill" title="Open network">Open</span>`;
+            const selectedClass = isSameAccessPoint(selectedNetwork, n) ? ' selected' : '';
             return `
-            <div class="network" role="listitem" data-idx="${i}">
+            <div class="network${selectedClass}" role="listitem">
               <div class="nw-main">
                 <div class="ssid">${n.ssid || '<hidden>'} ${secureHtml}</div>
                 <div class="meta">ch ${n.channel ?? '?'} • BSSID ${n.bssid || 'n/a'}</div>
@@ -236,8 +254,9 @@ function renderList() {
             </div>`;
         }).join('');
     list.innerHTML = items || `<div class="muted">No networks found. Try <strong>Refresh</strong> or add a hidden SSID.</div>`;
-    list.querySelectorAll('.network').forEach(div => {
-        div.addEventListener('click', () => setSelected(+div.dataset.idx));
+    list.querySelectorAll('.network').forEach((div, index) => {
+        const network = visibleNetworks[index];
+        div.addEventListener('click', () => setSelected(network));
     });
 }
 
@@ -249,7 +268,7 @@ async function fetchSSIDs() {
             throw new Error('Scan failed');
         }
         const data = await res.json();
-        networks = (data || []).map(m => ({
+        const nextNetworks = (data || []).map(m => ({
             ssid: m.ssid ?? m.SSID ?? '',
             rssi: m.rssi ?? m.RSSI ?? -100,
             secure: (m.secure ?? (m.auth && m.auth !== 'OPEN')) ?? false,
@@ -257,7 +276,16 @@ async function fetchSSIDs() {
             bssid: m.bssid ?? m.BSSID ?? '',
             channel: m.channel ?? m.chan ?? null
         }));
-        networks.sort((a,b) => (b.rssi - a.rssi) || ((b.secure?1:0) - (a.secure?1:0)));
+        nextNetworks.sort((a,b) => (b.rssi - a.rssi) || ((b.secure?1:0) - (a.secure?1:0)));
+        const reconciliation = reconcileScanRefresh(selectedNetwork, nextNetworks);
+        networks = nextNetworks;
+        selectedNetwork = reconciliation.selection;
+        if (reconciliation.outcome === 'rebound') {
+            ssid.value = selectedNetwork.ssid;
+            bssid.value = selectedNetwork.bssid || '';
+        }
+        if (reconciliation.clearBssid) bssid.value = '';
+        if (reconciliation.clearPassword) password.value = '';
         renderList();
         scanState.textContent = `Found ${networks.length} network${networks.length===1?'':'s'}.`;
     } catch (e) {
@@ -298,11 +326,12 @@ async function connect() {
     cancelBtn.disabled = false;
     log('Starting connection…');
 
+    const selectionFields = connectionFieldsForSelection(selectedNetwork, bssid.value);
     const payload = {
         ssid: ssid.value.trim(),
         password: password.value,
-        bssid: bssid.value.trim() || undefined,
-        channel: networks[selectedIndex]?.channel || 0,
+        bssid: selectionFields.bssid,
+        channel: selectionFields.channel,
         save: (save.value === 'true')
     };
     if (!payload.ssid) {
@@ -358,6 +387,8 @@ async function cancel() {
 
 refreshBtn.addEventListener('click', fetchSSIDs);
 filter.addEventListener('input', renderList);
+ssid.addEventListener('input', invalidateEditedSelection);
+bssid.addEventListener('input', invalidateEditedSelection);
 connectBtn.addEventListener('click', connect);
 cancelBtn.addEventListener('click', cancel);
 retryCompletionBtn.addEventListener('click', async () => {
@@ -386,7 +417,7 @@ selectHidden.addEventListener('click', () => {
     ssid.value = hiddenSsid.value.trim();
     password.value = hiddenPass.value;
     bssid.value = '';
-    setSelected(-1);
+    clearScanSelection();
     hiddenDetails.open = false;
     log('Using hidden SSID: ' + ssid.value);
 });

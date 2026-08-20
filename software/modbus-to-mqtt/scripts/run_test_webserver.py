@@ -48,6 +48,9 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
     provisioning_ready = False
     provisioning_ip = "127.0.0.1"
     station_ready_at = 0.0
+    wifi_scan_scenario = "default"
+    wifi_scan_request_count = 0
+    wifi_scan_lock = threading.Lock()
     mutation_routes = {
         ("POST", "/api/wifi/connect"),
         ("POST", "/api/wifi/cancel"),
@@ -176,12 +179,44 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_api_get(self, path: str) -> bool:
         if path == "/api/ssids":
-            self._send_json([
-                {"ssid": "TestNet", "rssi": -52, "secure": True, "auth": "WPA2",
-                 "bssid": "02:00:00:00:00:01", "channel": 6},
-                {"ssid": "Workshop", "rssi": -71, "secure": True, "auth": "WPA2",
-                 "bssid": "02:00:00:00:00:02", "channel": 11},
-            ])
+            handler_type = type(self)
+            with handler_type.wifi_scan_lock:
+                scan_number = handler_type.wifi_scan_request_count
+                handler_type.wifi_scan_request_count += 1
+            if handler_type.wifi_scan_scenario == "selection":
+                if scan_number == 0:
+                    results = [
+                        {"ssid": "Filtered lead", "rssi": -40, "secure": True, "auth": "WPA2",
+                         "bssid": "02:00:00:00:00:01", "channel": 1},
+                        {"ssid": "Mesh network", "rssi": -52, "secure": True, "auth": "WPA2",
+                         "bssid": "02:00:00:00:00:0A", "channel": 6},
+                        {"ssid": "Mesh network", "rssi": -67, "secure": True, "auth": "WPA2",
+                         "bssid": "02:00:00:00:00:0B", "channel": 11},
+                    ]
+                elif scan_number == 1:
+                    results = [
+                        {"ssid": "Mesh network", "rssi": -42, "secure": True, "auth": "WPA2",
+                         "bssid": "02:00:00:00:00:0B", "channel": 11},
+                        {"ssid": "Filtered lead", "rssi": -58, "secure": True, "auth": "WPA2",
+                         "bssid": "02:00:00:00:00:01", "channel": 1},
+                        {"ssid": "Mesh network", "rssi": -70, "secure": True, "auth": "WPA2",
+                         "bssid": "02:00:00:00:00:0a", "channel": 13},
+                    ]
+                else:
+                    results = [
+                        {"ssid": "Mesh network", "rssi": -42, "secure": True, "auth": "WPA2",
+                         "bssid": "02:00:00:00:00:0B", "channel": 11},
+                        {"ssid": "Filtered lead", "rssi": -58, "secure": True, "auth": "WPA2",
+                         "bssid": "02:00:00:00:00:01", "channel": 1},
+                    ]
+            else:
+                results = [
+                    {"ssid": "TestNet", "rssi": -52, "secure": True, "auth": "WPA2",
+                     "bssid": "02:00:00:00:00:01", "channel": 6},
+                    {"ssid": "Workshop", "rssi": -71, "secure": True, "auth": "WPA2",
+                     "bssid": "02:00:00:00:00:02", "channel": 11},
+                ]
+            self._send_json(results)
             return True
 
         if path == "/api/wifi/status":
@@ -606,6 +641,12 @@ def main():
         "--station-ip", default="127.0.0.1",
         help="Station IP returned by the provisioning acknowledgment (use --port 80 for full local handoff)",
     )
+    parser.add_argument(
+        "--wifi-scan-scenario",
+        default="default",
+        choices=("default", "selection"),
+        help="Wi-Fi scan fixture sequence used by the captive portal",
+    )
     args = parser.parse_args()
 
     script_path = Path(__file__).resolve()
@@ -617,6 +658,8 @@ def main():
     NoCacheRequestHandler.provisioning_state = "idle"
     NoCacheRequestHandler.provisioning_ready = False
     NoCacheRequestHandler.reboot_pending = False
+    NoCacheRequestHandler.wifi_scan_scenario = args.wifi_scan_scenario
+    NoCacheRequestHandler.wifi_scan_request_count = 0
 
     if not data_dir.is_dir():
         print(f"[ERR] Data directory not found: {data_dir}", file=sys.stderr)

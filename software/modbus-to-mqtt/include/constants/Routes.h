@@ -36,6 +36,7 @@ public:
     constexpr static auto OTA_PASSWORD = "/api/system/ota/password";
     constexpr static auto FACTORY_RESET = "/api/system/factory-reset";
     constexpr static auto DEVICE_RESET = "/api/system/reboot";
+    constexpr static auto SYSTEM_READY = "/api/system/ready";
     constexpr static auto SYSTEM_STATS = "/api/stats/system";
     constexpr static auto LOGS = "/api/logs";
     constexpr static auto EVENTS = "/api/events";

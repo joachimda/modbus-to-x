@@ -19,11 +19,16 @@
 #include "../include/network/mbx_server/MutationRequestGuardCore.h"
 #include "../include/network/mbx_server/MutationRouteRegistration.h"
 #include "../include/network/mbx_server/OtaRouteRegistration.h"
+#include "../include/network/wifi/ProvisioningAttemptCore.h"
+#include "../include/network/wifi/ProvisioningCompletionCore.h"
+#include "../include/network/wifi/ProvisioningEventGate.h"
+#include "../include/network/wifi/WifiCredentialFieldCore.h"
 #include "../include/services/FactoryResetCore.h"
 #include "../include/services/RebootSchedulerCore.h"
 #include "../src/services/ota/OtaCredentialCore.cpp"
 #include "../src/services/ota/OtaAuthorizationCore.cpp"
 #include "../src/services/ota/OtaCredentialService.cpp"
+#include "../src/network/wifi/WifiConfigurationStorage.cpp"
 #include "../include/services/ota/OtaUploadGuardCore.h"
 
 #include <cstdio>
@@ -773,6 +778,334 @@ void test_reboot_scheduler_rolls_back_failed_task_admission(void) {
         static_cast<int>(scheduler.schedule(fakeRebootOperations(fake))));
     TEST_ASSERT_TRUE(scheduler.isPending());
     TEST_ASSERT_EQUAL_INT(2, fake.scheduleCalls);
+}
+
+struct TestNetworkConfiguration {
+    std::string ip;
+};
+
+using TestProvisioningCore = ProvisioningAttemptCore::Controller<std::string, TestNetworkConfiguration>;
+
+TestProvisioningCore::CandidateValue provisioningCandidate(const char *ssid, const bool save,
+                                                           const char *ip = "") {
+    TestProvisioningCore::CandidateValue candidate;
+    candidate.ssid = ssid;
+    candidate.password = "test-password";
+    candidate.networkConfiguration.ip = ip;
+    candidate.save = save;
+    return candidate;
+}
+
+void test_provisioning_attempt_saved_and_temporary_success_publish_coherent_status(void) {
+    TestProvisioningCore core;
+    TestProvisioningCore::CandidateValue claimed;
+
+    const auto savedToken = core.start(provisioningCandidate("saved-network", true, "192.168.1.50"));
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(ProvisioningAttemptCore::GotIpResult::PersistenceRequired),
+        static_cast<int>(core.gotIp(savedToken, "192.168.1.50", claimed)));
+    TEST_ASSERT_EQUAL_STRING("saved-network", claimed.ssid.c_str());
+    TEST_ASSERT_EQUAL_STRING("test-password", claimed.password.c_str());
+    TEST_ASSERT_TRUE(core.completePersistence(
+        savedToken, ProvisioningAttemptCore::PersistenceResult::Succeeded));
+    auto snapshot = core.snapshot();
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningAttemptCore::State::Connected),
+                          static_cast<int>(snapshot.state));
+    TEST_ASSERT_TRUE(snapshot.hasIp);
+    TEST_ASSERT_TRUE(snapshot.provisioningReady);
+    TEST_ASSERT_EQUAL_STRING("192.168.1.50", snapshot.ip.c_str());
+    TEST_ASSERT_TRUE(snapshot.reason.empty());
+
+    const auto temporaryToken = core.start(provisioningCandidate("temporary-network", false));
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(ProvisioningAttemptCore::GotIpResult::Temporary),
+        static_cast<int>(core.gotIp(temporaryToken, "10.0.0.20", claimed)));
+    snapshot = core.snapshot();
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningAttemptCore::State::Connected),
+                          static_cast<int>(snapshot.state));
+    TEST_ASSERT_TRUE(snapshot.hasIp);
+    TEST_ASSERT_FALSE(snapshot.provisioningReady);
+    TEST_ASSERT_EQUAL_STRING("PERSISTENCE_REQUIRED", snapshot.reason.c_str());
+}
+
+void test_provisioning_attempt_persistence_failures_never_become_ready(void) {
+    TestProvisioningCore core;
+    TestProvisioningCore::CandidateValue claimed;
+
+    auto token = core.start(provisioningCandidate("credential-failure", true));
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(ProvisioningAttemptCore::GotIpResult::PersistenceRequired),
+        static_cast<int>(core.gotIp(token, "10.0.0.21", claimed)));
+    TEST_ASSERT_TRUE(core.completePersistence(
+        token, ProvisioningAttemptCore::PersistenceResult::CredentialFailed));
+    auto snapshot = core.snapshot();
+    TEST_ASSERT_FALSE(snapshot.provisioningReady);
+    TEST_ASSERT_EQUAL_STRING("CREDENTIAL_PERSIST_FAILED", snapshot.reason.c_str());
+
+    token = core.start(provisioningCandidate("network-failure", true));
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(ProvisioningAttemptCore::GotIpResult::PersistenceRequired),
+        static_cast<int>(core.gotIp(token, "10.0.0.22", claimed)));
+    TEST_ASSERT_TRUE(core.completePersistence(
+        token, ProvisioningAttemptCore::PersistenceResult::NetworkConfigurationFailed));
+    snapshot = core.snapshot();
+    TEST_ASSERT_FALSE(snapshot.provisioningReady);
+    TEST_ASSERT_EQUAL_STRING("NETWORK_CONFIG_PERSIST_FAILED", snapshot.reason.c_str());
+}
+
+void test_provisioning_attempt_tokens_ignore_stale_and_out_of_order_events(void) {
+    TestProvisioningCore core;
+    TestProvisioningCore::CandidateValue claimed;
+    const auto oldToken = core.start(provisioningCandidate("old-network", true));
+    TEST_ASSERT_TRUE(core.fail(oldToken, "TIMEOUT"));
+    const auto currentToken = core.start(provisioningCandidate("current-network", true));
+
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningAttemptCore::GotIpResult::Stale),
+                          static_cast<int>(core.gotIp(oldToken, "10.0.0.90", claimed)));
+    TEST_ASSERT_FALSE(core.disconnect(oldToken, "DISCONNECTED"));
+    TEST_ASSERT_FALSE(core.completePersistence(
+        oldToken, ProvisioningAttemptCore::PersistenceResult::Succeeded));
+    auto snapshot = core.snapshot();
+    TEST_ASSERT_EQUAL_STRING("current-network", snapshot.ssid.c_str());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningAttemptCore::State::Connecting),
+                          static_cast<int>(snapshot.state));
+    TEST_ASSERT_FALSE(snapshot.hasIp);
+    TEST_ASSERT_FALSE(snapshot.provisioningReady);
+
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(ProvisioningAttemptCore::GotIpResult::PersistenceRequired),
+        static_cast<int>(core.gotIp(currentToken, "10.0.0.23", claimed)));
+    TEST_ASSERT_TRUE(core.completePersistence(
+        currentToken, ProvisioningAttemptCore::PersistenceResult::Succeeded));
+    snapshot = core.snapshot();
+    TEST_ASSERT_TRUE(snapshot.provisioningReady);
+    TEST_ASSERT_EQUAL_STRING("current-network", snapshot.ssid.c_str());
+}
+
+void test_provisioning_event_barrier_drains_queued_old_events_before_replacement(void) {
+    using Event = ProvisioningEventGate::Event;
+    using Action = ProvisioningEventGate::Action;
+    ProvisioningEventGate::Gate<uint32_t> gate;
+
+    gate.awaitStationStop(41U);
+    auto decision = gate.onEvent(Event::StationStopped);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Action::StartConnection), static_cast<int>(decision.action));
+    TEST_ASSERT_EQUAL_UINT32(41U, decision.token);
+
+    // This old GOT_IP is queued while attempt 41 is active. Replacement 42
+    // disarms delivery before that queued event reaches the stable callback.
+    std::vector<Event> eventQueue{Event::StationGotIp};
+    gate.awaitStationStop(42U);
+    decision = gate.onEvent(eventQueue.front());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Action::Ignore), static_cast<int>(decision.action));
+    TEST_ASSERT_EQUAL_UINT32(0U, decision.token);
+
+    decision = gate.onEvent(Event::StationDisconnected);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Action::Ignore), static_cast<int>(decision.action));
+    decision = gate.onEvent(Event::StationStopped);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Action::StartConnection), static_cast<int>(decision.action));
+    TEST_ASSERT_EQUAL_UINT32(42U, decision.token);
+    decision = gate.onEvent(Event::StationGotIp);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Action::Deliver), static_cast<int>(decision.action));
+    TEST_ASSERT_EQUAL_UINT32(42U, decision.token);
+}
+
+void test_provisioning_attempt_rejects_zero_and_malformed_station_addresses(void) {
+    TestProvisioningCore core;
+    TestProvisioningCore::CandidateValue claimed;
+    const auto token = core.start(provisioningCandidate("address-validation", true));
+    const char *invalidAddresses[] = {
+        "", "0.0.0.0", "192.168.1", "192.168.1.1.2", "192.168.1.256",
+        "192.168.01.2", "192.168.-1.2", "not-an-address",
+    };
+    for (const char *address : invalidAddresses) {
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningAttemptCore::GotIpResult::Stale),
+                              static_cast<int>(core.gotIp(token, address, claimed)));
+        const auto snapshot = core.snapshot();
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningAttemptCore::State::Connecting),
+                              static_cast<int>(snapshot.state));
+        TEST_ASSERT_FALSE(snapshot.hasIp);
+        TEST_ASSERT_FALSE(snapshot.provisioningReady);
+        TEST_ASSERT_TRUE(snapshot.ip.empty());
+    }
+
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningAttemptCore::GotIpResult::PersistenceRequired),
+                          static_cast<int>(core.gotIp(token, "192.168.1.2", claimed)));
+}
+
+void test_wifi_credential_fields_accept_full_width_ssid_and_password(void) {
+    const std::string ssid(32U, 's');
+    const std::string password(64U, 'p');
+    uint8_t ssidField[32]{};
+    uint8_t passwordField[64]{};
+
+    TEST_ASSERT_TRUE(WifiCredentialFieldCore::copy(
+        ssidField, sizeof(ssidField), ssid.c_str(), ssid.length()));
+    TEST_ASSERT_TRUE(WifiCredentialFieldCore::copy(
+        passwordField, sizeof(passwordField), password.c_str(), password.length()));
+    TEST_ASSERT_TRUE(WifiCredentialFieldCore::equals(
+        ssidField, sizeof(ssidField), ssid.c_str(), ssid.length()));
+    TEST_ASSERT_TRUE(WifiCredentialFieldCore::equals(
+        passwordField, sizeof(passwordField), password.c_str(), password.length()));
+
+    const std::string oversizedSsid(33U, 's');
+    const std::string oversizedPassword(65U, 'p');
+    TEST_ASSERT_FALSE(WifiCredentialFieldCore::copy(
+        ssidField, sizeof(ssidField), oversizedSsid.c_str(), oversizedSsid.length()));
+    TEST_ASSERT_FALSE(WifiCredentialFieldCore::copy(
+        passwordField, sizeof(passwordField), oversizedPassword.c_str(), oversizedPassword.length()));
+
+    passwordField[63] = 'x';
+    TEST_ASSERT_FALSE(WifiCredentialFieldCore::equals(
+        passwordField, sizeof(passwordField), password.c_str(), password.length()));
+}
+
+void test_provisioning_attempt_cancel_and_failure_can_be_followed_by_success(void) {
+    TestProvisioningCore core;
+    TestProvisioningCore::CandidateValue claimed;
+    auto token = core.start(provisioningCandidate("cancelled-network", true));
+    TEST_ASSERT_TRUE(core.cancel(token));
+    auto snapshot = core.snapshot();
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningAttemptCore::State::Failed),
+                          static_cast<int>(snapshot.state));
+    TEST_ASSERT_EQUAL_STRING("CANCELLED", snapshot.reason.c_str());
+
+    token = core.start(provisioningCandidate("failed-network", true));
+    TEST_ASSERT_TRUE(core.disconnect(token, "WRONG_PASSWORD"));
+    snapshot = core.snapshot();
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningAttemptCore::State::Failed),
+                          static_cast<int>(snapshot.state));
+
+    token = core.start(provisioningCandidate("working-network", true));
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(ProvisioningAttemptCore::GotIpResult::PersistenceRequired),
+        static_cast<int>(core.gotIp(token, "10.0.0.24", claimed)));
+    TEST_ASSERT_TRUE(core.completePersistence(
+        token, ProvisioningAttemptCore::PersistenceResult::Succeeded));
+    snapshot = core.snapshot();
+    TEST_ASSERT_TRUE(snapshot.provisioningReady);
+    TEST_ASSERT_EQUAL_STRING("working-network", snapshot.ssid.c_str());
+}
+
+void test_wifi_configuration_storage_round_trips_static_dhcp_and_clear(void) {
+    Preferences::resetTestStorage();
+    WifiStaticConfig saved;
+    saved.ip = "192.168.20.72";
+    saved.gateway = "192.168.20.1";
+    saved.subnet = "255.255.255.0";
+    saved.dns1 = "1.1.1.1";
+    saved.dns2 = "8.8.8.8";
+    TEST_ASSERT_TRUE(WifiConfigurationStorage::save(saved));
+
+    WifiStaticConfig loaded;
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(WifiConfigurationStorage::LoadResult::Static),
+                          static_cast<int>(WifiConfigurationStorage::load(loaded)));
+    TEST_ASSERT_EQUAL_STRING(saved.ip.c_str(), loaded.ip.c_str());
+    TEST_ASSERT_EQUAL_STRING(saved.gateway.c_str(), loaded.gateway.c_str());
+    TEST_ASSERT_EQUAL_STRING(saved.subnet.c_str(), loaded.subnet.c_str());
+    TEST_ASSERT_EQUAL_STRING(saved.dns1.c_str(), loaded.dns1.c_str());
+    TEST_ASSERT_EQUAL_STRING(saved.dns2.c_str(), loaded.dns2.c_str());
+
+    TEST_ASSERT_TRUE(WifiConfigurationStorage::save({}));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(WifiConfigurationStorage::LoadResult::Dhcp),
+                          static_cast<int>(WifiConfigurationStorage::load(loaded)));
+    TEST_ASSERT_FALSE(loaded.any());
+
+    TEST_ASSERT_TRUE(WifiConfigurationStorage::clear());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(WifiConfigurationStorage::LoadResult::NotFound),
+                          static_cast<int>(WifiConfigurationStorage::load(loaded)));
+}
+
+void test_wifi_configuration_storage_reports_write_clear_and_open_failures(void) {
+    Preferences::resetTestStorage();
+    WifiStaticConfig configuration;
+    configuration.ip = "192.168.20.72";
+    configuration.gateway = "192.168.20.1";
+    configuration.subnet = "255.255.255.0";
+
+    Preferences::setWriteFailure(true);
+    TEST_ASSERT_FALSE(WifiConfigurationStorage::save(configuration));
+    Preferences::setWriteFailure(false);
+    TEST_ASSERT_TRUE(WifiConfigurationStorage::save(configuration));
+
+    Preferences::setClearFailure(true);
+    TEST_ASSERT_FALSE(WifiConfigurationStorage::clear());
+    Preferences::setClearFailure(false);
+
+    WifiStaticConfig loaded;
+    Preferences::setBeginFailure(true);
+    TEST_ASSERT_FALSE(WifiConfigurationStorage::save(configuration));
+    TEST_ASSERT_FALSE(WifiConfigurationStorage::clear());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(WifiConfigurationStorage::LoadResult::Unavailable),
+                          static_cast<int>(WifiConfigurationStorage::load(loaded)));
+    Preferences::setBeginFailure(false);
+}
+
+struct ProvisioningCompletionFake {
+    ProvisioningCompletionCore::ScheduleResult result = ProvisioningCompletionCore::ScheduleResult::Accepted;
+    int calls = 0;
+};
+
+ProvisioningCompletionCore::ScheduleResult scheduleProvisioningCompletion(void *context) {
+    auto *fake = static_cast<ProvisioningCompletionFake *>(context);
+    ++fake->calls;
+    return fake->result;
+}
+
+void test_provisioning_completion_requires_one_fully_ready_snapshot(void) {
+    ProvisioningCompletionFake fake;
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningCompletionCore::Result::NotReady),
+                          static_cast<int>(ProvisioningCompletionCore::complete(
+                              false, std::string("192.168.20.72"), true,
+                              scheduleProvisioningCompletion, &fake)));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningCompletionCore::Result::NotReady),
+                          static_cast<int>(ProvisioningCompletionCore::complete(
+                              true, std::string(""), true,
+                              scheduleProvisioningCompletion, &fake)));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningCompletionCore::Result::NotReady),
+                          static_cast<int>(ProvisioningCompletionCore::complete(
+                              true, std::string("192.168.20.72"), false,
+                              scheduleProvisioningCompletion, &fake)));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningCompletionCore::Result::NotReady),
+                          static_cast<int>(ProvisioningCompletionCore::complete(
+                              true, std::string("0.0.0.0"), true,
+                              scheduleProvisioningCompletion, &fake)));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningCompletionCore::Result::NotReady),
+                          static_cast<int>(ProvisioningCompletionCore::complete(
+                              true, std::string("192.168.20.999"), true,
+                              scheduleProvisioningCompletion, &fake)));
+    TEST_ASSERT_EQUAL_INT(0, fake.calls);
+
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningCompletionCore::Result::Accepted),
+                          static_cast<int>(ProvisioningCompletionCore::complete(
+                              true, std::string("192.168.20.72"), true,
+                              scheduleProvisioningCompletion, &fake)));
+    TEST_ASSERT_EQUAL_INT(1, fake.calls);
+}
+
+void test_provisioning_completion_maps_pending_and_unavailable_without_retrying(void) {
+    ProvisioningCompletionFake fake;
+    fake.result = ProvisioningCompletionCore::ScheduleResult::Pending;
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningCompletionCore::Result::Pending),
+                          static_cast<int>(ProvisioningCompletionCore::complete(
+                              true, std::string("192.168.20.72"), true,
+                              scheduleProvisioningCompletion, &fake)));
+    TEST_ASSERT_EQUAL_INT(1, fake.calls);
+
+    fake.result = ProvisioningCompletionCore::ScheduleResult::Unavailable;
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ProvisioningCompletionCore::Result::Unavailable),
+                          static_cast<int>(ProvisioningCompletionCore::complete(
+                              true, std::string("192.168.20.72"), true,
+                              scheduleProvisioningCompletion, &fake)));
+    TEST_ASSERT_EQUAL_INT(2, fake.calls);
+    TEST_ASSERT_EQUAL_STRING(R"({"ok":false,"error":"provisioning_not_ready"})",
+                             ProvisioningCompletionCore::NOT_READY_BODY);
+    TEST_ASSERT_EQUAL_STRING(R"({"ok":false,"error":"reboot_pending"})",
+                             ProvisioningCompletionCore::PENDING_BODY);
+    TEST_ASSERT_EQUAL_STRING(R"({"ok":false,"error":"reboot_unavailable"})",
+                             ProvisioningCompletionCore::UNAVAILABLE_BODY);
+    const std::string accepted = ProvisioningCompletionCore::acceptedBody(std::string("192.168.20.72"));
+    TEST_ASSERT_EQUAL_STRING(R"({"ok":true,"rebooting":true,"ip":"192.168.20.72"})", accepted.c_str());
 }
 
 void test_factory_reset_reports_success_only_after_all_steps_succeed(void) {
@@ -2109,6 +2442,17 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_ota_credential_service_persists_and_clears_record);
     RUN_TEST(test_reboot_scheduler_admits_once_and_executes_after_grace_period);
     RUN_TEST(test_reboot_scheduler_rolls_back_failed_task_admission);
+    RUN_TEST(test_provisioning_attempt_saved_and_temporary_success_publish_coherent_status);
+    RUN_TEST(test_provisioning_attempt_persistence_failures_never_become_ready);
+    RUN_TEST(test_provisioning_attempt_tokens_ignore_stale_and_out_of_order_events);
+    RUN_TEST(test_provisioning_event_barrier_drains_queued_old_events_before_replacement);
+    RUN_TEST(test_provisioning_attempt_rejects_zero_and_malformed_station_addresses);
+    RUN_TEST(test_wifi_credential_fields_accept_full_width_ssid_and_password);
+    RUN_TEST(test_provisioning_attempt_cancel_and_failure_can_be_followed_by_success);
+    RUN_TEST(test_wifi_configuration_storage_round_trips_static_dhcp_and_clear);
+    RUN_TEST(test_wifi_configuration_storage_reports_write_clear_and_open_failures);
+    RUN_TEST(test_provisioning_completion_requires_one_fully_ready_snapshot);
+    RUN_TEST(test_provisioning_completion_maps_pending_and_unavailable_without_retrying);
     RUN_TEST(test_factory_reset_reports_success_only_after_all_steps_succeed);
     RUN_TEST(test_factory_reset_task_creation_failure_prevents_erasure);
     RUN_TEST(test_factory_reset_config_format_failure_is_reported);

@@ -65,7 +65,7 @@ public:
     }
 
     size_t putBytes(const char *key, const void *value, const size_t length) {
-        if (!open || readOnly || key == nullptr || value == nullptr) return 0U;
+        if (!open || readOnly || key == nullptr || value == nullptr || writeFailure) return 0U;
         auto &stored = values[namespaceName][key];
         const auto *bytes = static_cast<const uint8_t *>(value);
         stored.assign(bytes, bytes + length);
@@ -73,7 +73,7 @@ public:
     }
 
     bool clear() {
-        if (!open || readOnly) return false;
+        if (!open || readOnly || clearFailure) return false;
         values[namespaceName].clear();
         return true;
     }
@@ -81,10 +81,20 @@ public:
     static void resetTestStorage() {
         values.clear();
         beginFailure = false;
+        writeFailure = false;
+        clearFailure = false;
     }
 
     static void setBeginFailure(const bool fail) {
         beginFailure = fail;
+    }
+
+    static void setWriteFailure(const bool fail) {
+        writeFailure = fail;
+    }
+
+    static void setClearFailure(const bool fail) {
+        clearFailure = fail;
     }
 
 private:
@@ -100,6 +110,8 @@ private:
 
     inline static std::unordered_map<std::string, Namespace> values;
     inline static bool beginFailure = false;
+    inline static bool writeFailure = false;
+    inline static bool clearFailure = false;
     std::string namespaceName;
     bool readOnly = false;
     bool open = false;

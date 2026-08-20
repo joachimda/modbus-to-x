@@ -1,5 +1,6 @@
 #ifndef MODBUS_TO_MQTT_WIFICONFIGURATION_H
 #define MODBUS_TO_MQTT_WIFICONFIGURATION_H
+#include <Arduino.h>
 #include "esp_wifi_types.h"
 
 enum class WifiConnectionState : uint8_t {
@@ -29,6 +30,7 @@ struct WifiStatus {
     String ip;
     String reason;
     bool hasIp = false;
+    bool provisioningReady = false;
 };
 
 struct WifiStaticConfig {

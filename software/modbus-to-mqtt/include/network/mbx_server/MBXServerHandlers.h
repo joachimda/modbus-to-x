@@ -41,7 +41,10 @@ public:
 
     static void handleWifiCancel(AsyncWebServerRequest *req, WifiConnectionController &wifi);
 
-    static void handleWifiApOff(AsyncWebServerRequest *req);
+    static void handleWifiApOff(AsyncWebServerRequest *req, const WifiConnectionController &wifi,
+                                const Logger *logger);
+
+    static void handleSystemReady(AsyncWebServerRequest *req);
 
     static void getSystemStats(AsyncWebServerRequest *req, const Logger *logger);
 

@@ -5,6 +5,9 @@
 #include <WiFi.h>
 #include <Arduino.h>
 #include <esp_wifi.h>
+#include <mutex>
+#include "ProvisioningAttemptCore.h"
+#include "ProvisioningEventGate.h"
 #include "WifiConfiguration.h"
 
 class WifiConnectionController {
@@ -25,20 +28,49 @@ public:
     void cancel();
 
 private:
+    using AttemptCore = ProvisioningAttemptCore::Controller<String, WifiStaticConfig>;
+    using AttemptToken = AttemptCore::Token;
+
+    struct PendingConnection {
+        String ssid;
+        String password;
+        String bssid;
+        WifiStaticConfig staticConfiguration;
+        uint8_t channel = 0U;
+
+        void clear() {
+            ssid = String{};
+            password = String{};
+            bssid = String{};
+            staticConfiguration = {};
+            channel = 0U;
+        }
+    };
+
     void onEvent(WiFiEvent_t event, const WiFiEventInfo_t &info);
+
+    void startConnection(AttemptToken token);
+
+    static ProvisioningEventGate::Event toGateEvent(WiFiEvent_t event);
 
     static bool parseBssid(const String &s, uint8_t out[6]);
 
-    void fail(const String &reason);
+    void fail(AttemptToken token, const String &reason);
 
-    static void writePlainCredsToNvs(const String &ssid, const String &pass);
+    static bool persistCredentials(const String &ssid, const String &pass);
 
-    WifiStatus _status;
+    void removeEventHandler();
+
+    mutable std::mutex _operationMutex;
+    AttemptCore _attempt;
+    ProvisioningEventGate::Gate<AttemptToken> _eventGate;
+    PendingConnection _pendingConnection;
     String _hostname;
     uint32_t _timeoutMs = 35000;
     uint32_t _deadline = 0;
-    bool _persistRequested = false;
-    String _persistSsid, _persistPass;
+    AttemptToken _activeToken = 0U;
+    wifi_event_id_t _eventHandlerId = 0U;
+    bool _eventHandlerRegistered = false;
 };
 
 #endif

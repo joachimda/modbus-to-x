@@ -9,6 +9,7 @@
 #include "Config.h"
 #include "storage/ConfigFs.h"
 #include "network/NetworkPortal.h"
+#include "network/wifi/WifiConfigurationStorage.h"
 #include "network/mbx_server/MBXServerHandlers.h"
 #include "network/mbx_server/MutationRequestGuardCore.h"
 #include "network/mbx_server/OtaRouteRegistration.h"
@@ -34,10 +35,10 @@ static const char *const CAPTIVE_PORTAL_ENDPOINTS[] = {
 };
 
 MBXServer::MBXServer(AsyncWebServer *server, DNSServer *dnsServer, Logger *logger) : _logger(logger), server(server),
-    _dnsServer(dnsServer) {
+    _dnsServer(dnsServer), _portal(logger, dnsServer) {
 }
 
-void MBXServer::begin() const {
+void MBXServer::begin() {
     ensureConfigFile();
     if (tryConnectWithStoredCreds()) {
         TimeService::requestSync();
@@ -49,13 +50,14 @@ void MBXServer::begin() const {
     } else {
         g_wifi.begin(DEFAULT_HOSTNAME);
 
-        NetworkPortal portal(_logger, _dnsServer);
-        MBXServerHandlers::setPortal(&portal);
+        MBXServerHandlers::setPortal(&_portal);
         configureAccessPointRoutes();
         server->begin();
         IndicatorService::instance().setPortalMode(true);
         MqttManager::setMQTTEnabled(false);
-        portal.begin();
+        _portal.begin([] {
+            g_wifi.loop();
+        });
     }
 }
 
@@ -108,6 +110,10 @@ void MBXServer::configureRoutes() const {
     server->on(Routes::SYSTEM_STATS, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
         MBXServerHandlers::getSystemStats(req, _logger);
+    });
+
+    server->on(Routes::SYSTEM_READY, HTTP_GET, [](AsyncWebServerRequest *req) {
+        MBXServerHandlers::handleSystemReady(req);
     });
 
     configureMutationRoutes(MutationRouteRegistration::Mode::Station);
@@ -199,7 +205,7 @@ void MBXServer::configureMutationRoutes(const MutationRouteRegistration::Mode mo
         }
 
         void handleWifiApOff(AsyncWebServerRequest *request) const {
-            MBXServerHandlers::handleWifiApOff(request);
+            MBXServerHandlers::handleWifiApOff(request, g_wifi, owner->_logger);
         }
 
         void handleWifiCancel(AsyncWebServerRequest *request) const {
@@ -352,6 +358,36 @@ auto MBXServer::tryConnectWithStoredCreds() const -> bool {
 
     WiFi.persistent(false);
     WiFiClass::setHostname(DEFAULT_HOSTNAME);
+
+    WifiStaticConfig staticConfiguration;
+    const auto storedConfiguration = WifiConfigurationStorage::load(staticConfiguration);
+    if (storedConfiguration == WifiConfigurationStorage::LoadResult::Unavailable
+        || storedConfiguration == WifiConfigurationStorage::LoadResult::Invalid) {
+        _logger->logError("Stored IPv4 configuration is unavailable or invalid");
+        return false;
+    }
+
+    bool addressingConfigured = false;
+    if (storedConfiguration == WifiConfigurationStorage::LoadResult::Static) {
+        IPAddress ip;
+        IPAddress gateway;
+        IPAddress subnet;
+        IPAddress dns1;
+        IPAddress dns2;
+        const bool parsed = ip.fromString(staticConfiguration.ip)
+                            && gateway.fromString(staticConfiguration.gateway)
+                            && subnet.fromString(staticConfiguration.subnet)
+                            && (!staticConfiguration.dns1.length() || dns1.fromString(staticConfiguration.dns1))
+                            && (!staticConfiguration.dns2.length() || dns2.fromString(staticConfiguration.dns2));
+        addressingConfigured = parsed && WiFi.config(ip, gateway, subnet, dns1, dns2);
+    } else {
+        addressingConfigured = WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
+    }
+    if (!addressingConfigured) {
+        _logger->logError("Failed to apply stored IPv4 configuration");
+        return false;
+    }
+
     WiFi.begin();
 
     const unsigned long start = millis();

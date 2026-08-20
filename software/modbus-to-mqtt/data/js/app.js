@@ -4,6 +4,8 @@ export const API = {
     RESET_NETWORK: '/api/wifi/reset',
     STATUS: '/api/wifi/status',
     CANCEL: '/api/wifi/cancel',
+    COMPLETE_PROVISIONING: '/api/wifi/ap_off',
+    SYSTEM_READY: '/api/system/ready',
     SYSTEM_STATS: '/api/stats/system',
     EVENTS: '/api/events',
     GET_LOGS: '/api/logs',

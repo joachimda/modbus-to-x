@@ -1,4 +1,5 @@
 import {API, mbxFetch, reboot, rssiBadge, rssiToBars} from 'app';
+import {ProvisioningHandoff} from './handoff.mjs';
 
 window.initCaptivePortal = async function initCaptivePortal() {
     document.querySelector('#btn-reboot').onclick = reboot;
@@ -37,6 +38,10 @@ const cancelBtn = el('cancel');
 const statusLog = el('statusLog');
 const quickStatus = el('quickStatus');
 const finalBadge = el('finalBadge');
+const handoffActions = el('handoffActions');
+const retryCompletionBtn = el('retryCompletion');
+const retryReadinessBtn = el('retryReadiness');
+const dashboardLink = el('dashboardLink');
 
 const hiddenDetails = el('hiddenDetails');
 const hiddenSsid = el('hiddenSsid');
@@ -47,8 +52,158 @@ const showPw = el('showPw');
 
 let networks = [];
 let selectedIndex = -1;
-let polling = null;
-let connectDeadline = null;
+const handoff = new ProvisioningHandoff({
+    fetchFn: (...args) => fetch(...args),
+    mutationFetchFn: (...args) => mbxFetch(...args),
+    statusUrl: API.STATUS,
+    completionUrl: API.COMPLETE_PROVISIONING,
+    onState: renderHandoffState,
+});
+
+function hideHandoffActions() {
+    handoffActions.hidden = true;
+    retryCompletionBtn.hidden = true;
+    retryReadinessBtn.hidden = true;
+    dashboardLink.hidden = true;
+    dashboardLink.removeAttribute('href');
+}
+
+function showDashboardAction(dashboardUrl) {
+    handoffActions.hidden = false;
+    dashboardLink.hidden = false;
+    dashboardLink.href = dashboardUrl;
+}
+
+function friendlyReason(reason) {
+    const messages = {
+        PERSISTENCE_REQUIRED: 'This was a temporary connection. Select “Persist” to finish setup.',
+        CREDENTIAL_PERSIST_FAILED: 'The device connected, but saving the credentials failed.',
+        NETWORK_CONFIG_PERSIST_FAILED: 'The device connected, but saving the DHCP/static configuration failed.',
+    };
+    return messages[reason] || reason || 'Provisioning is not ready to finish.';
+}
+
+function stationNetworkGuidance() {
+    const targetSsid = ssid.value.trim();
+    return targetSsid
+        ? `Reconnect this browser to “${targetSsid}” if needed.`
+        : 'Reconnect this browser to the configured Wi-Fi network if needed.';
+}
+
+function renderHandoffState(state) {
+    switch (state.phase) {
+        case 'connecting':
+            quickStatus.innerHTML = `<span class="spinner"></span> Connecting…`;
+            break;
+        case 'status':
+            if (state.state) log(`status: ${state.state}${state.ip ? ` (${state.ip})` : ''}`);
+            break;
+        case 'status_warning':
+            log(`warn: ${state.error}`);
+            break;
+        case 'ready_for_completion':
+            quickStatus.textContent = 'Connected. Finishing setup…';
+            finalBadge.innerHTML = `<span class="badge ok">Connected · ${state.ip}</span>`;
+            log(`✅ Connected with persisted settings. Station IP: ${state.ip}`);
+            break;
+        case 'completion_requesting':
+            quickStatus.innerHTML = `<span class="spinner"></span> Requesting controlled reboot…`;
+            retryCompletionBtn.disabled = true;
+            log('→ POST /api/wifi/ap_off');
+            break;
+        case 'connected_not_ready':
+            connectBtn.disabled = false;
+            cancelBtn.disabled = true;
+            quickStatus.textContent = 'Connected, but setup is not ready to finish.';
+            finalBadge.innerHTML = `<span class="badge warn">Connected · not saved</span>`;
+            log(`⚠️ ${friendlyReason(state.reason)}`);
+            break;
+        case 'connection_failed':
+            connectBtn.disabled = false;
+            cancelBtn.disabled = true;
+            quickStatus.textContent = 'Connection failed.';
+            finalBadge.innerHTML = `<span class="badge bad">Failed · ${state.reason}</span>`;
+            log(`❌ Connection failed (${state.reason}). The setup portal remains available.`);
+            break;
+        case 'connection_timeout':
+            connectBtn.disabled = false;
+            cancelBtn.disabled = true;
+            quickStatus.textContent = 'Connection timed out.';
+            finalBadge.innerHTML = `<span class="badge bad">Timed out</span>`;
+            log('❌ Connection timed out. The setup portal remains available.');
+            break;
+        case 'completion_rejected':
+        case 'completion_unavailable':
+            connectBtn.disabled = false;
+            cancelBtn.disabled = true;
+            handoffActions.hidden = false;
+            retryCompletionBtn.hidden = false;
+            retryCompletionBtn.disabled = false;
+            quickStatus.textContent = state.phase === 'completion_rejected'
+                ? 'Device reports provisioning is not ready.'
+                : 'The reboot could not be scheduled.';
+            log(state.phase === 'completion_rejected'
+                ? '⚠️ Completion was rejected as not ready. Retry explicitly or start another saved attempt.'
+                : '❌ Reboot scheduling is unavailable. No reboot was scheduled.');
+            break;
+        case 'completion_invalid':
+            connectBtn.disabled = false;
+            cancelBtn.disabled = true;
+            quickStatus.textContent = 'The completion response could not be verified.';
+            log('⚠️ Completion returned an unexpected or malformed response; setup is not being reported as complete.');
+            break;
+        case 'reboot_accepted':
+            connectBtn.disabled = true;
+            cancelBtn.disabled = true;
+            quickStatus.textContent = `Reboot accepted. ${stationNetworkGuidance()}`;
+            log(`✅ Reboot accepted for station address ${state.ip}.`);
+            log(`ℹ️ ${stationNetworkGuidance()} The device cannot move this browser between Wi-Fi networks.`);
+            break;
+        case 'reboot_pending':
+            connectBtn.disabled = true;
+            cancelBtn.disabled = true;
+            quickStatus.textContent = 'A reboot is already pending. Waiting for station mode…';
+            log('ℹ️ The device reports that a reboot is already pending.');
+            break;
+        case 'waiting_for_station':
+            quickStatus.innerHTML = state.retry
+                ? `<span class="spinner"></span> Checking ${state.ip} once…`
+                : `<span class="spinner"></span> Waiting for ${state.ip}…`;
+            dashboardLink.href = state.dashboardUrl;
+            break;
+        case 'readiness_wait':
+            quickStatus.textContent = state.retry
+                ? `The captive browser has not verified ${state.ip}.`
+                : `Waiting for an exact readiness response from ${state.ip}…`;
+            break;
+        case 'readiness_timeout':
+            handoffActions.hidden = false;
+            retryReadinessBtn.hidden = false;
+            retryReadinessBtn.disabled = false;
+            showDashboardAction(state.dashboardUrl);
+            quickStatus.textContent = state.retry
+                ? 'This captive browser could not verify readiness. Use “Open dashboard”.'
+                : `${stationNetworkGuidance()} Then retry the readiness check.`;
+            finalBadge.innerHTML = `<span class="badge warn">Station not confirmed · ${state.ip}</span>`;
+            if (state.retry) {
+                log(`⚠️ The explicit readiness request to ${state.ip} did not return the exact response.`);
+                log('ℹ️ This captive browser may block cross-network requests; use “Open dashboard”.');
+            } else {
+                log(`⚠️ No exact station-readiness response was received from ${state.ip} within 90 seconds.`);
+                log(`ℹ️ ${stationNetworkGuidance()} Then use “Retry readiness check” or “Open dashboard”.`);
+            }
+            break;
+        case 'station_ready':
+            quickStatus.textContent = 'Station mode is ready. Opening dashboard…';
+            finalBadge.innerHTML = `<span class="badge ok">Ready · ${state.ip}</span>`;
+            log(`✅ Station readiness confirmed at ${state.ip}. Opening the dashboard.`);
+            window.location.assign(state.dashboardUrl);
+            break;
+        case 'cancelled':
+            quickStatus.textContent = 'Cancelled.';
+            break;
+    }
+}
 
 function setSelected(idx) {
     selectedIndex = idx;
@@ -117,9 +272,13 @@ function getStaticBlock() {
     if (![ip.value, gw.value, mask.value].every(isValidIp)) {
         throw new Error('Static IP, gateway, and subnet must be valid IPv4 addresses.');
     }
+    if ((dns1.value.trim() && !isValidIp(dns1.value.trim()))
+        || (dns2.value.trim() && !isValidIp(dns2.value.trim()))) {
+        throw new Error('DNS values must be valid IPv4 addresses when provided.');
+    }
     const obj = { ip: ip.value.trim(), gateway: gw.value.trim(), subnet: mask.value.trim() };
-    if (isValidIp(dns1.value)) obj.dns1 = dns1.value.trim();
-    if (isValidIp(dns2.value)) obj.dns2 = dns2.value.trim();
+    if (dns1.value.trim()) obj.dns1 = dns1.value.trim();
+    if (dns2.value.trim()) obj.dns2 = dns2.value.trim();
     return obj;
 }
 
@@ -130,6 +289,8 @@ function log(msg) {
 }
 
 async function connect() {
+    handoff.cancel(false);
+    hideHandoffActions();
     finalBadge.innerHTML = '';
     quickStatus.textContent = '';
     statusLog.textContent = '';
@@ -182,41 +343,11 @@ async function connect() {
         return log('❌ ' + e.message);
     }
 
-    // Poll status up to ~35s
-    connectDeadline = Date.now() + 35000;
-    if (polling) clearInterval(polling);
-    polling = setInterval(checkStatus, 1000);
-    quickStatus.innerHTML = `<span class="spinner"></span> Connecting…`;
-}
-
-async function checkStatus() {
-    try {
-        const res = await fetch(API.STATUS, { cache: 'no-store' });
-        if (!res.ok) {
-            throw new Error('status http ' + res.status);
-        }
-        const s = await res.json();
-        const state = (s.state || '').toLowerCase();
-        const ip = s.ip || '';
-        if (state) log(`status: ${state}${ip ? ' ('+ip+')':''}`);
-        if (state === 'connected') {
-            done(true, ip);
-        } else if (state === 'failed' || state === 'disconnected') {
-            done(false, null, s.reason || 'unknown');
-        } else {
-            if (Date.now() > connectDeadline) {
-                done(false, null, 'timeout');
-            }
-        }
-    }
-    catch (e) {
-        log('warn: ' + e.message);
-        if (Date.now() > connectDeadline) done(false, null, 'timeout');
-    }
+    void handoff.beginAttempt(35000);
 }
 
 async function cancel() {
-    if (polling) { clearInterval(polling); polling = null; }
+    handoff.cancel();
     connectBtn.disabled = false; cancelBtn.disabled = true;
     quickStatus.textContent = 'Cancelled.';
     try {
@@ -225,25 +356,20 @@ async function cancel() {
     log('⏹️ Connect cancelled.');
 }
 
-function done(success, ipAddr, reason) {
-    if (polling) { clearInterval(polling); polling = null; }
-    connectBtn.disabled = false; cancelBtn.disabled = true;
-    if (success) {
-        quickStatus.textContent = 'Connected.';
-        finalBadge.innerHTML = `<span class="badge ok">Connected ${ipAddr ? ' · '+ipAddr : ''}</span>`;
-        log('✅ Connected.' + (ipAddr ? ' IP: ' + ipAddr : ''));
-        setTimeout(() => { window.location.href = '/'; }, 1500);
-    } else {
-        quickStatus.textContent = 'Failed.';
-        finalBadge.innerHTML = `<span class="badge bad">Failed${reason ? ' · '+reason : ''}</span>`;
-        log('❌ Failed' + (reason ? ' ('+reason+')' : '') + '. Check password, AP proximity, or try static IP.');
-    }
-}
-
 refreshBtn.addEventListener('click', fetchSSIDs);
 filter.addEventListener('input', renderList);
 connectBtn.addEventListener('click', connect);
 cancelBtn.addEventListener('click', cancel);
+retryCompletionBtn.addEventListener('click', async () => {
+    retryCompletionBtn.disabled = true;
+    await handoff.retryCompletion();
+    retryCompletionBtn.disabled = false;
+});
+retryReadinessBtn.addEventListener('click', async () => {
+    retryReadinessBtn.disabled = true;
+    await handoff.retryReadiness();
+    retryReadinessBtn.disabled = false;
+});
 showPw.addEventListener('change', () => {
     password.type = showPw.checked ? 'text' : 'password';
 });

@@ -22,6 +22,8 @@
 #include "constants/HttpResponseCodes.h"
 #include "constants/Routes.h"
 #include "network/NetworkPortal.h"
+#include "network/wifi/ProvisioningCompletionCore.h"
+#include "network/wifi/WifiConfigurationStorage.h"
 #include "network/mbx_server/MutationRequestGuardCore.h"
 #include "services/StatService.h"
 #include "services/FactoryResetCore.h"
@@ -55,6 +57,7 @@ auto constexpr NETWORK_RESET_ACCEPTED_RESP = R"({"ok":true,"resetting":true})";
 auto constexpr REBOOT_ACCEPTED_RESP = R"({"ok":true,"rebooting":true})";
 auto constexpr REBOOT_PENDING_RESP = R"({"ok":false,"error":"reboot_pending"})";
 auto constexpr REBOOT_UNAVAILABLE_RESP = R"({"ok":false,"error":"reboot_unavailable"})";
+auto constexpr STATION_READY_RESP = R"({"ok":true,"mode":"station"})";
 
 auto constexpr NETWORK_RESET_DELAY_MS = 5000;
 
@@ -89,6 +92,18 @@ constexpr uint32_t EVENT_RETRY_MS = 5000;
 constexpr size_t LOG_CHUNK_BYTES = 2048;
 
 namespace {
+
+ProvisioningCompletionCore::ScheduleResult scheduleProvisioningReboot(void *) {
+    switch (RebootScheduler::schedule()) {
+        case RebootScheduler::ScheduleResult::Accepted:
+            return ProvisioningCompletionCore::ScheduleResult::Accepted;
+        case RebootScheduler::ScheduleResult::Pending:
+            return ProvisioningCompletionCore::ScheduleResult::Pending;
+        case RebootScheduler::ScheduleResult::Unavailable:
+            return ProvisioningCompletionCore::ScheduleResult::Unavailable;
+    }
+    return ProvisioningCompletionCore::ScheduleResult::Unavailable;
+}
 
 constexpr uint32_t OTA_UPLOAD_STATE_MAGIC = 0x4F544155U;
 constexpr const char *OTA_UPLOAD_STATE_ATTRIBUTE = "otaUploadState";
@@ -827,6 +842,9 @@ void MBXServerHandlers::handleNetworkReset(AsyncWebServerRequest *req) {
     Serial.println("MBXServerHandlers::handleNetworkReset called");
     xTaskCreatePinnedToCore([](void *) {
         delay(500);
+        const bool staticConfigurationCleared = WifiConfigurationStorage::clear();
+        Serial.printf("handleNetworkReset: WifiConfigurationStorage::clear() -> %s\n",
+                      staticConfigurationCleared ? "true" : "false");
         WiFi.persistent(true);
         WiFi.setAutoReconnect(false);
         esp_wifi_set_storage(WIFI_STORAGE_FLASH);
@@ -1213,6 +1231,7 @@ void MBXServerHandlers::handleWifiStatus(AsyncWebServerRequest *req, const WifiC
     doc["ssid"] = s.ssid;
     if (s.hasIp) doc["ip"] = s.ip;
     if (s.reason.length()) doc["reason"] = s.reason;
+    doc["provisioningReady"] = s.provisioningReady;
 
     sendJson(req, doc);
 }
@@ -1222,19 +1241,42 @@ void MBXServerHandlers::handleWifiCancel(AsyncWebServerRequest *req, WifiConnect
     req->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, WIFI_HANDLER_OK_RESP);
 }
 
-void MBXServerHandlers::handleWifiApOff(AsyncWebServerRequest *req) {
-    req->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, WIFI_HANDLER_OK_RESP);
-    if (auto *p = g_portal.load(std::memory_order_acquire)) p->stop();
-    xTaskCreatePinnedToCore([](void *) {
-        delay(800);
-        WiFiClass::mode(WIFI_MODE_STA);
-        IndicatorService::instance().setPortalMode(false);
-        // Re-evaluate MQTT preference now that portal is off, and STA is active
-        if (auto *link = getMqttManager()) {
-            link->reconfigureFromFile();
+void MBXServerHandlers::handleWifiApOff(AsyncWebServerRequest *req, const WifiConnectionController &wifi,
+                                       const Logger *logger) {
+    if (req == nullptr) return;
+    const WifiStatus status = wifi.getStatus();
+    const auto result = ProvisioningCompletionCore::complete(
+        status.state == WifiConnectionState::Connected, status.ip, status.provisioningReady,
+        scheduleProvisioningReboot, nullptr);
+    switch (result) {
+        case ProvisioningCompletionCore::Result::NotReady:
+            req->send(HttpResponseCodes::CONFLICT, HttpMediaTypes::JSON,
+                      ProvisioningCompletionCore::NOT_READY_BODY);
+            return;
+        case ProvisioningCompletionCore::Result::Accepted: {
+            if (logger) logger->logInformation("Provisioning complete; device reboot scheduled");
+            req->send(HttpResponseCodes::ACCEPTED, HttpMediaTypes::JSON,
+                      ProvisioningCompletionCore::acceptedBody(status.ip));
+            return;
         }
-        vTaskDelete(nullptr);
-    }, "apOff", 2048, nullptr, 1, nullptr, APP_CPU_NUM);
+        case ProvisioningCompletionCore::Result::Pending:
+            req->send(HttpResponseCodes::CONFLICT, HttpMediaTypes::JSON,
+                      ProvisioningCompletionCore::PENDING_BODY);
+            return;
+        case ProvisioningCompletionCore::Result::Unavailable:
+            if (logger) logger->logError("Provisioning reboot scheduling failed: task unavailable");
+            req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::JSON,
+                      ProvisioningCompletionCore::UNAVAILABLE_BODY);
+            return;
+    }
+}
+
+void MBXServerHandlers::handleSystemReady(AsyncWebServerRequest *req) {
+    if (req == nullptr) return;
+    auto *response = req->beginResponse(HttpResponseCodes::OK, HttpMediaTypes::JSON, STATION_READY_RESP);
+    response->addHeader("Cache-Control", "no-store");
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    req->send(response);
 }
 
 void MBXServerHandlers::getSystemStats(AsyncWebServerRequest *req, const Logger *logger) {

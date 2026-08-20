@@ -4,6 +4,7 @@
 #include <DNSServer.h>
 #include "ESPAsyncWebServer.h"
 #include "Logger.h"
+#include "network/NetworkPortal.h"
 #include "network/mbx_server/MutationRouteRegistration.h"
 
 static constexpr int serverPort = 80;
@@ -12,7 +13,7 @@ class MBXServer {
 public:
     explicit MBXServer(AsyncWebServer *server, DNSServer *dnsServer, Logger *logger);
 
-    void begin() const;
+    void begin();
 
     static void loop();
 
@@ -20,6 +21,7 @@ private:
     Logger *_logger;
     AsyncWebServer *server;
     DNSServer *_dnsServer;
+    NetworkPortal _portal;
 
     void configureRoutes() const;
 

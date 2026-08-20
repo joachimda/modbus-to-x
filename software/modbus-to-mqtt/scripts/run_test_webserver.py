@@ -41,6 +41,13 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
     mqtt_constraints = None
     reboot_pending = False
     reboot_lock = threading.Lock()
+    provisioning_lock = threading.Lock()
+    provisioning_scenario = "success"
+    provisioning_state = "idle"
+    provisioning_ready_at = 0.0
+    provisioning_ready = False
+    provisioning_ip = "127.0.0.1"
+    station_ready_at = 0.0
     mutation_routes = {
         ("POST", "/api/wifi/connect"),
         ("POST", "/api/wifi/cancel"),
@@ -78,11 +85,23 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
                           log_format % args))
 
     # --- Simple API emulation for local testing ---
-    def _send_json(self, obj, code=200):
+    def _send_json(self, obj, code=200, extra_headers=None):
         data = json.dumps(obj).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
+        for name, value in (extra_headers or {}).items():
+            self.send_header(name, value)
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _send_body(self, body, code, content_type, extra_headers=None):
+        data = body.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        for name, value in (extra_headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(data)
 
@@ -156,6 +175,60 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
         return False
 
     def _handle_api_get(self, path: str) -> bool:
+        if path == "/api/ssids":
+            self._send_json([
+                {"ssid": "TestNet", "rssi": -52, "secure": True, "auth": "WPA2",
+                 "bssid": "02:00:00:00:00:01", "channel": 6},
+                {"ssid": "Workshop", "rssi": -71, "secure": True, "auth": "WPA2",
+                 "bssid": "02:00:00:00:00:02", "channel": 11},
+            ])
+            return True
+
+        if path == "/api/wifi/status":
+            handler_type = type(self)
+            with handler_type.provisioning_lock:
+                if (handler_type.provisioning_state == "connecting"
+                        and time.monotonic() >= handler_type.provisioning_ready_at):
+                    handler_type.provisioning_state = "connected"
+                    handler_type.provisioning_ready = handler_type.provisioning_scenario != "temporary"
+                payload = {
+                    "state": handler_type.provisioning_state,
+                    "ssid": "TestNet",
+                    "provisioningReady": handler_type.provisioning_ready,
+                }
+                if handler_type.provisioning_state == "connected":
+                    payload["ip"] = handler_type.provisioning_ip
+                    if not handler_type.provisioning_ready:
+                        payload["reason"] = "PERSISTENCE_REQUIRED"
+            self._send_json(payload)
+            return True
+
+        if path == "/api/system/ready":
+            handler_type = type(self)
+            scenario = handler_type.provisioning_scenario
+            cors_headers = {} if scenario == "readiness-no-cors" else {"Access-Control-Allow-Origin": "*"}
+            if time.monotonic() < handler_type.station_ready_at or scenario == "readiness-timeout":
+                self._send_json({"ok": False, "mode": "rebooting"}, 503, cors_headers)
+                return True
+            if scenario == "readiness-html":
+                self._send_body("<html>captive portal</html>", 200, "text/html", cors_headers)
+                return True
+            if scenario == "readiness-malformed":
+                self._send_body('{"ok":', 200, "application/json", cors_headers)
+                return True
+            if scenario == "readiness-unrelated":
+                self._send_json({"ok": True, "mode": "station", "extra": True}, 200, cors_headers)
+                return True
+            if scenario == "readiness-redirect":
+                self.send_response(302)
+                self.send_header("Location", "/")
+                for name, value in cors_headers.items():
+                    self.send_header(name, value)
+                self.end_headers()
+                return True
+            self._send_json({"ok": True, "mode": "station"}, 200, cors_headers)
+            return True
+
         if path == "/api/config/mqtt/constraints":
             self._send_json(type(self).mqtt_constraints)
             return True
@@ -301,15 +374,74 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
         return False
 
     def do_GET(self):
-        if self.path.startswith("/api/"):
-            if self._handle_api_get(self.path):
+        path = urlsplit(self.path).path
+        if path.startswith("/api/"):
+            if self._handle_api_get(path):
                 return
         return super().do_GET()
 
     def do_POST(self):
         if not self._require_mutation_context():
             return
-        if self.path == "/api/system/reboot":
+        path = urlsplit(self.path).path
+        if path == "/api/wifi/connect":
+            try:
+                payload = json.loads(self._read_body() or b"{}")
+            except json.JSONDecodeError:
+                self._send_json({"error": "bad_request"}, 400)
+                return
+            if not payload.get("ssid"):
+                self._send_json({"error": "bad_request"}, 400)
+                return
+            handler_type = type(self)
+            with handler_type.provisioning_lock:
+                handler_type.provisioning_state = "connecting"
+                handler_type.provisioning_ready = False
+                handler_type.provisioning_ready_at = time.monotonic() + (
+                    3.0 if handler_type.provisioning_scenario == "delayed" else 0.75)
+            self._send_json({"ok": True}, 202)
+            return
+        if path == "/api/wifi/cancel":
+            handler_type = type(self)
+            with handler_type.provisioning_lock:
+                handler_type.provisioning_state = "failed"
+                handler_type.provisioning_ready = False
+            self._send_json({"ok": True})
+            return
+        if path == "/api/wifi/ap_off":
+            handler_type = type(self)
+            scenario = handler_type.provisioning_scenario
+            with handler_type.provisioning_lock:
+                ready = handler_type.provisioning_state == "connected" and handler_type.provisioning_ready
+            if not ready or scenario == "completion-rejected":
+                self._send_json({"ok": False, "error": "provisioning_not_ready"}, 409)
+                return
+            if scenario == "completion-unavailable":
+                self._send_json({"ok": False, "error": "reboot_unavailable"}, 503)
+                return
+            with handler_type.reboot_lock:
+                if handler_type.reboot_pending:
+                    self._send_json({"ok": False, "error": "reboot_pending"}, 409)
+                    return
+                handler_type.reboot_pending = True
+                handler_type.station_ready_at = time.monotonic() + 2.0
+                timer = threading.Timer(2.0, handler_type._complete_mock_reboot)
+                timer.daemon = True
+                try:
+                    timer.start()
+                except RuntimeError:
+                    handler_type.reboot_pending = False
+                    self._send_json({"ok": False, "error": "reboot_unavailable"}, 503)
+                    return
+            if scenario == "completion-html":
+                self._send_body("<html>accepted?</html>", 202, "text/html")
+                return
+            if scenario == "completion-malformed":
+                self._send_body('{"ok":', 202, "application/json")
+                return
+            self._send_json({"ok": True, "rebooting": True, "ip": handler_type.provisioning_ip}, 202)
+            return
+        if path == "/api/system/reboot":
             handler_type = type(self)
             with handler_type.reboot_lock:
                 if handler_type.reboot_pending:
@@ -326,38 +458,38 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
                     return
             self._send_json({"ok": True, "rebooting": True}, 202)
             return
-        if self.path == "/api/wifi/reset":
+        if path == "/api/wifi/reset":
             self._send_json({"ok": True, "resetting": True}, 202)
             return
-        if self.path == "/api/system/ota/http/settings":
+        if path == "/api/system/ota/http/settings":
             self._read_body()
             self.send_response(204)
             self.end_headers()
             return
-        if self.path.startswith("/api/system/ota/http/check"):
+        if path.startswith("/api/system/ota/http/check"):
             if not self._require_ota_authorized():
                 return
             self._send_json({"ok": True, "available": True, "pending": False, "version": "9.9.9-test"})
             return
-        if self.path.startswith("/api/system/ota/http/notes"):
+        if path.startswith("/api/system/ota/http/notes"):
             if not self._require_ota_authorized():
                 return
             self._send_json({"ok": True, "pending": False, "notes": "Mock release notes"})
             return
-        if self.path == "/api/system/ota/http/apply":
+        if path == "/api/system/ota/http/apply":
             if not self._require_ota_authorized():
                 return
             self._send_json({"ok": True, "started": True, "version": "9.9.9-test"})
             return
-        if self.path in ("/api/system/ota/firmware", "/api/system/ota/fs"):
+        if path in ("/api/system/ota/firmware", "/api/system/ota/fs"):
             if not self._require_ota_authorized():
                 self._read_body()
                 return
             self._read_body()
-            image_type = "firmware" if self.path.endswith("firmware") else "filesystem"
+            image_type = "firmware" if path.endswith("firmware") else "filesystem"
             self._send_json({"ok": True, "type": image_type})
             return
-        if self.path == "/api/system/factory-reset":
+        if path == "/api/system/factory-reset":
             if not self._require_ota_authorized():
                 self._read_body()
                 return
@@ -460,12 +592,31 @@ def main():
     parser.add_argument("--port", type=int, default=8000, help="Port to listen on (default: 8000)")
     parser.add_argument("--no-open", action="store_true", help="Do not open a browser automatically")
     parser.add_argument("--dir", default=None, help="Directory to serve (default: project 'data' folder)")
+    parser.add_argument(
+        "--provisioning-scenario",
+        default="success",
+        choices=(
+            "success", "delayed", "temporary", "completion-rejected", "completion-unavailable",
+            "completion-html", "completion-malformed", "readiness-html", "readiness-malformed",
+            "readiness-unrelated", "readiness-redirect", "readiness-no-cors", "readiness-timeout",
+        ),
+        help="Stateful captive-provisioning response scenario",
+    )
+    parser.add_argument(
+        "--station-ip", default="127.0.0.1",
+        help="Station IP returned by the provisioning acknowledgment (use --port 80 for full local handoff)",
+    )
     args = parser.parse_args()
 
     script_path = Path(__file__).resolve()
     project_root = find_project_root(script_path.parent)
     data_dir = Path(args.dir).resolve() if args.dir else (project_root / "data").resolve()
     NoCacheRequestHandler.mqtt_constraints = load_mqtt_constraints(project_root)
+    NoCacheRequestHandler.provisioning_scenario = args.provisioning_scenario
+    NoCacheRequestHandler.provisioning_ip = args.station_ip
+    NoCacheRequestHandler.provisioning_state = "idle"
+    NoCacheRequestHandler.provisioning_ready = False
+    NoCacheRequestHandler.reboot_pending = False
 
     if not data_dir.is_dir():
         print(f"[ERR] Data directory not found: {data_dir}", file=sys.stderr)

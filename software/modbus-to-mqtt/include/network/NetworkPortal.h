@@ -2,6 +2,8 @@
 #define MODBUS_TO_MQTT_NETWORKPORTAL_H
 
 #include <DNSServer.h>
+#include <atomic>
+#include <functional>
 #include <memory>
 
 #include "Logger.h"
@@ -11,11 +13,10 @@ class NetworkPortal {
 public:
     NetworkPortal(Logger *logger, DNSServer *dnsServer);
 
-    void begin();
+    void begin(const std::function<void()> &loopCallback = {});
 
     std::shared_ptr<const std::vector<WifiScanResult>> getLatestScanResultsSnapshot() const;
 
-    static void stop();
     void suspendScanning(bool on);
 private:
     Logger *_logger;
@@ -25,7 +26,7 @@ private:
     void configureDnsServer() const;
     void scanNetworksAsync();
     static uint8_t rssiToSignal(int8_t rssi);
-    bool _scanSuspended = false;
+    std::atomic<bool> _scanSuspended{false};
     void setAPMode() const;
 
     std::shared_ptr<const std::vector<WifiScanResult>> _latestScanResults;

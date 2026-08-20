@@ -16,7 +16,6 @@ static constexpr uint32_t SSID_SCAN_INTERVAL_MS = 10000;
 static constexpr uint32_t SCAN_POLL_INTERVAL_MS = 200;
 static constexpr uint16_t SCAN_DWELL_MS = 300;
 static std::atomic<uint32_t> lastScanStart{0};
-static std::atomic<bool> portal_should_run{true};
 
 static std::shared_ptr<const std::vector<WifiScanResult>> atomicLoadResults(
     const std::shared_ptr<const std::vector<WifiScanResult>> *p) {
@@ -32,7 +31,7 @@ NetworkPortal::NetworkPortal(Logger *logger, DNSServer *dnsServer) : _logger(log
     atomicStoreResults(&_latestScanResults, std::make_shared<const std::vector<WifiScanResult>>());
 }
 
-void NetworkPortal::begin() {
+void NetworkPortal::begin(const std::function<void()> &loopCallback) {
     _logger->logInformation("NetworkPortal::begin - AP+STA bring-up");
     setAPMode();
 
@@ -46,12 +45,13 @@ void NetworkPortal::begin() {
     unsigned long lastScanPoll = 0;
 
     // Serve portal
-    while (portal_should_run) {
+    while (true) {
+        if (loopCallback) loopCallback();
         if (_dns) {
             _dns->processNextRequest();
         }
 
-        if (!_scanSuspended &&
+        if (!_scanSuspended.load(std::memory_order_acquire) &&
             WiFi.scanComplete() != WIFI_SCAN_RUNNING &&
             (lastScanTime == 0 || millis() - lastScanTime >= SSID_SCAN_INTERVAL_MS)) {
             WiFi.scanNetworks(true, false, true, SCAN_DWELL_MS, 0);
@@ -60,7 +60,7 @@ void NetworkPortal::begin() {
             _logger->logDebug("NetworkPortal::begin - Async Scan Initiated)");
         }
 
-        if (!_scanSuspended && millis() - lastScanPoll >= SCAN_POLL_INTERVAL_MS) {
+        if (!_scanSuspended.load(std::memory_order_acquire) && millis() - lastScanPoll >= SCAN_POLL_INTERVAL_MS) {
             lastScanPoll = millis();
             scanNetworksAsync();
         }
@@ -159,12 +159,8 @@ std::shared_ptr<const std::vector<WifiScanResult>> NetworkPortal::getLatestScanR
     return atomicLoadResults(&_latestScanResults);
 }
 
-void NetworkPortal::stop() {
-    portal_should_run = false;
-}
-
 void NetworkPortal::suspendScanning(const bool on) {
-    _scanSuspended = on;
+    _scanSuspended.store(on, std::memory_order_release);
     if (on && WiFi.scanComplete() == WIFI_SCAN_RUNNING) {
         WiFi.scanDelete();
     }

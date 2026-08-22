@@ -565,10 +565,10 @@ String MqttManager::resolveTopicForRoot(const MqttTopicSpec &topic, const String
 std::vector<MqttSubscriptionHandler::HandlerEntry> MqttManager::buildHandlerEntries() const {
     std::vector<MqttSubscriptionHandler::HandlerEntry> handlers;
     handlers.reserve(_bridgePlan.subscriptions.size() + 2U);
-    handlers.push_back({resolveTopic(MqttTopicSpec{SYSTEM_NETWORK_RESET, true}), [this](const String &) {
+    handlers.push_back({resolveTopic(MqttTopicSpec{SYSTEM_NETWORK_RESET, true}), [this](const String &, const String &) {
                             _logger->logInformation("[MQTT][Subscriptions] Network reset requested");
                         }});
-    handlers.push_back({resolveTopic(MqttTopicSpec{SYSTEM_ECHO, true}), [this](const String &message) {
+    handlers.push_back({resolveTopic(MqttTopicSpec{SYSTEM_ECHO, true}), [this](const String &, const String &message) {
                             _logger->logInformation("[MQTT][Subscriptions] Echo requested");
                             _logger->logInformation(message.c_str());
                         }});

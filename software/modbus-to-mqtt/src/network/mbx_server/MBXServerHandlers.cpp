@@ -1005,10 +1005,21 @@ void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, co
 
     const String configurationJson(body);
     ConfigurationRoot validatedCandidate;
+    ModbusConfigDocument::ValidationError validationError;
     if (!ModbusConfigLoader::parseConfiguration(nullptr, configurationJson.c_str(),
-                                                configurationJson.length(), validatedCandidate)) {
-        req->send(HttpResponseCodes::BAD_REQUEST_HTTP, HttpMediaTypes::JSON,
-                  R"({"error":"invalid_modbus_configuration"})");
+                                                configurationJson.length(), validatedCandidate,
+                                                &validationError)) {
+        JsonDocument response;
+        response["error"] = "invalid_modbus_configuration";
+        response["reason"] = ModbusConfigDocument::reasonToString(validationError.reason);
+        if (validationError.reason == ModbusConfigDocument::ValidationReason::InvalidScale) {
+            response["deviceIndex"] = validationError.deviceIndex;
+            response["datapointIndex"] = validationError.datapointIndex;
+            response["message"] = "Writable holding-register scale must be finite and non-zero";
+        }
+        String payload;
+        serializeJson(response, payload);
+        req->send(HttpResponseCodes::BAD_REQUEST_HTTP, HttpMediaTypes::JSON, payload);
         return;
     }
     auto *mb = g_mb.load(std::memory_order_acquire);

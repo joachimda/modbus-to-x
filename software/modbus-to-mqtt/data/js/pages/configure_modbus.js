@@ -1,4 +1,5 @@
 import {API, safeJson, STATIC_FILES} from "app";
+import {parseConfiguredScale, validateDatapointScale} from "./modbus_scale.mjs";
 
 window.initConfigureModbus = async function initConfigureModbus() {
     await load().catch(err);
@@ -66,7 +67,7 @@ function schemaToUi(json) {
                 slice: normalizeRegisterSlice(p.registerSlice),
                 length: Number(p.numOfRegisters ?? 1) || 1,
                 type: String(p.dataType || "uint16"),
-                scale: Number(p.scale ?? 1) || 1,
+                scale: parseConfiguredScale(p.scale),
                 unit: (typeof p.unit === "string") ? p.unit : "",
                 topic: (typeof p.topic === "string") ? p.topic.trim() : "",
                 poll_secs: (Number.isFinite(Number(p?.poll_interval))
@@ -112,7 +113,7 @@ function uiToSchema(uiModel) {
                     address: toModbusAddress(p.address),
                     numOfRegisters: Number(p.length) || 1,
                     dataType: String(p.type || "uint16"),
-                    scale: Number(p.scale ?? 1) || 1,
+                    scale: parseConfiguredScale(p.scale),
                     unit: p.unit || "",
                     ...(Number.isFinite(Number(p.poll_secs)) && Number(p.poll_secs) > 0 ? { poll_interval: Number(p.poll_secs) } : {})
                 };
@@ -196,6 +197,12 @@ function validateSchemaConfig(cfg) {
             }
             if (isWriteFunction(p.function) && p.numOfRegisters !== 1) {
                 errors.push(`Datapoint ${p.id}: write functions must use numOfRegisters = 1`);
+            }
+            const scaleError = validateDatapointScale(p.function, p.scale);
+            if (scaleError === 'finite') {
+                errors.push(`Datapoint ${p.id}: scale must be finite`);
+            } else if (scaleError === 'non_zero') {
+                errors.push(`Datapoint ${p.id}: writable holding-register scale must be non-zero`);
             }
             if (typeof p.unit === "string" && p.unit.length > 5) {
                 errors.push(`Datapoint ${p.id}: unit max length 5`);

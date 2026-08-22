@@ -1,0 +1,6 @@
+#ifndef MODBUS_TO_MQTT_NATIVE_WSTRING_STUB_H
+#define MODBUS_TO_MQTT_NATIVE_WSTRING_STUB_H
+
+#include <Arduino.h>
+
+#endif

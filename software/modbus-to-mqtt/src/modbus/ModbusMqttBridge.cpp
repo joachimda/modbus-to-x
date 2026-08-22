@@ -4,6 +4,7 @@
 
 #include "modbus/ModbusFunctionUtils.h"
 #include "modbus/ModbusManager.h"
+#include "modbus/ModbusMqttWriteCore.h"
 #include "modbus/ModbusTopicBuilder.h"
 #include "mqtt/MqttManager.h"
 
@@ -49,12 +50,42 @@ MqttBridgePlan ModbusMqttBridge::buildBridgePlan(const ConfigurationRoot &root,
             const uint16_t address = datapoint.address;
             const uint8_t registerCount = datapoint.numOfRegisters ? datapoint.numOfRegisters : 1U;
             const float scale = datapoint.scale;
-            const String topicLabel = topic.topic;
+            ModbusMqttWriteCore::CommandContext context;
+            context.slaveId = slaveId;
+            context.function = function;
+            context.address = address;
+            context.registerCount = registerCount;
+            context.scale = scale;
+            context.modbusGeneration = modbusGeneration;
+            const auto handler = ModbusMqttWriteCore::buildMessageHandler(
+                context,
+                [this](const ModbusMqttWriteCore::WriteCommand &command) {
+                    if (_modbus == nullptr) return;
+                    ModbusCommandRequest request;
+                    request.sourceTopic = command.sourceTopic.c_str();
+                    request.slaveId = command.slaveId;
+                    request.hasSlaveOverride = true;
+                    request.function = static_cast<int>(command.function);
+                    request.address = command.address;
+                    request.length = command.registerCount;
+                    request.writeValue = command.rawValue;
+                    request.hasWriteValue = true;
+                    request.expectedGeneration = command.modbusGeneration;
+                    const ModbusOperationResult result = _modbus->submitWriteCommand(request);
+                    if (result != ModbusOperationResult::Success && _logger != nullptr) {
+                        _logger->logWarning((String("[Modbus][MQTT] Command was not admitted: topic=")
+                                             + request.sourceTopic + ", function=" + String(request.function)
+                                             + ", address=" + String(request.address) + ", reason="
+                                             + modbusOperationResultToString(result)).c_str());
+                    }
+                },
+                [this](const std::string &message) {
+                    if (_logger != nullptr) _logger->logWarning(message.c_str());
+                });
             plan.subscriptions.push_back({topic,
-                [this, topicLabel, slaveId, function, address, registerCount, scale, modbusGeneration]
-                (const String &payload) {
-                    handleWriteCommand(topicLabel, slaveId, function, address, registerCount, scale,
-                                       modbusGeneration, payload);
+                [handler](const String &commandTopic, const String &payload) {
+                    handler(std::string(commandTopic.c_str(), commandTopic.length()),
+                            std::string(payload.c_str(), payload.length()));
                 }});
         }
     }
@@ -158,63 +189,6 @@ void ModbusMqttBridge::publishDatapoint(ModbusDevice &device,
     if (admission != MqttAdmissionResult::Accepted) {
         _logger->logWarning((String("MQTT publish was not admitted for topic ") + topic + ": "
                              + mqttAdmissionResultToString(admission)).c_str());
-    }
-}
-
-void ModbusMqttBridge::handleWriteCommand(const String &topic,
-                                          const uint8_t slaveId,
-                                          const ModbusFunctionType function,
-                                          const uint16_t address,
-                                          const uint8_t registerCount,
-                                          const float scale,
-                                          const uint32_t modbusGeneration,
-                                          const String &payload) const {
-    if (_modbus == nullptr) return;
-
-    String trimmed = payload;
-    trimmed.trim();
-    uint16_t writeValue = 0U;
-    bool hasWriteValue = false;
-    if (function == WRITE_COIL) {
-        if (trimmed.equalsIgnoreCase("true") || trimmed == "1") {
-            writeValue = 1U;
-            hasWriteValue = true;
-        } else if (trimmed.equalsIgnoreCase("false") || trimmed == "0") {
-            writeValue = 0U;
-            hasWriteValue = true;
-        } else if (trimmed.length()) {
-            writeValue = trimmed.toInt() ? 1U : 0U;
-            hasWriteValue = true;
-        }
-    } else if (function == WRITE_HOLDING || function == WRITE_MULTIPLE_HOLDING) {
-        if (!trimmed.length()) return;
-        const float denominator = scale == 0.0F ? 1.0F : scale;
-        const float raw = trimmed.toFloat() / denominator;
-        float rounded = raw >= 0.0F ? raw + 0.5F : raw - 0.5F;
-        if (rounded < 0.0F) rounded = 0.0F;
-        if (rounded > 65535.0F) rounded = 65535.0F;
-        writeValue = static_cast<uint16_t>(rounded);
-        hasWriteValue = true;
-    }
-    if (!hasWriteValue) {
-        _logger->logWarning((String("Unable to parse MQTT write payload for ") + topic).c_str());
-        return;
-    }
-
-    ModbusCommandRequest request;
-    request.sourceTopic = topic;
-    request.slaveId = slaveId;
-    request.hasSlaveOverride = true;
-    request.function = static_cast<int>(function);
-    request.address = address;
-    request.length = function == WRITE_MULTIPLE_HOLDING ? 1U : registerCount;
-    request.writeValue = writeValue;
-    request.hasWriteValue = true;
-    request.expectedGeneration = modbusGeneration;
-    const ModbusOperationResult result = _modbus->submitWriteCommand(request);
-    if (result != ModbusOperationResult::Success) {
-        _logger->logWarning((String("Modbus MQTT write was not admitted: ")
-                             + modbusOperationResultToString(result)).c_str());
     }
 }
 
@@ -359,10 +333,21 @@ void ModbusMqttBridge::publishHomeAssistantDiscovery(ModbusDevice &device,
             if (stateTopic.length()) document["state_topic"] = stateTopic;
             else document["optimistic"] = true;
             if (datapoint.unit.length()) document["unit_of_measurement"] = datapoint.unit;
-            const float effectiveScale = datapoint.scale == 0.0F ? 1.0F : datapoint.scale;
-            document["min"] = 0;
-            document["max"] = 65535.0F * (effectiveScale > 0.0F ? effectiveScale : 1.0F);
-            document["step"] = effectiveScale > 0.0F ? effectiveScale : 1.0F;
+            const auto bounds = ModbusMqttWriteCore::numberDiscoveryBounds(datapoint.scale);
+            if (!bounds.valid()) {
+                if (_logger != nullptr) {
+                    _logger->logWarning((String("[MQTT][HA] Number discovery rejected: function=")
+                                         + String(static_cast<int>(datapoint.function))
+                                         + ", address=" + String(datapoint.address) + ", reason="
+                                         + ModbusMqttWriteCore::rejectionReasonToString(bounds.rejection)).c_str());
+                }
+                device.haDiscoveryPublishFailed = true;
+                device.haDiscoveryPublishCursor = datapointIndex + 1U;
+                continue;
+            }
+            document["min"] = bounds.minimum;
+            document["max"] = bounds.maximum;
+            document["step"] = bounds.step;
             document["mode"] = "box";
         }
 

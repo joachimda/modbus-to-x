@@ -43,15 +43,6 @@ private:
 
     static void handleMqttDisconnected(ConfigurationRoot &root);
 
-    void handleWriteCommand(const String &topic,
-                            uint8_t slaveId,
-                            ModbusFunctionType function,
-                            uint16_t address,
-                            uint8_t registerCount,
-                            float scale,
-                            uint32_t modbusGeneration,
-                            const String &payload) const;
-
     String buildDatapointTopic(const ModbusDevice &device, const ModbusDatapoint &datapoint,
                                const String &rootTopic) const;
 

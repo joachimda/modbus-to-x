@@ -12,7 +12,7 @@ class MqttSubscriptionHandler {
 public:
     explicit MqttSubscriptionHandler(Logger *logger);
 
-    using TopicHandlerFunc = std::function<void(const String &)>;
+    using TopicHandlerFunc = std::function<void(const String &, const String &)>;
 
     struct HandlerEntry {
         HandlerEntry() = default;

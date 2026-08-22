@@ -127,7 +127,8 @@
                 },
                 "scale": {
                   "type": "number",
-                  "default": 1.0
+                  "default": 1.0,
+                  "description": "Engineering units per unsigned raw register. FC6/FC16 values must be finite and non-zero; negative scales are supported."
                 },
                 "dataType": {
                   "type": "string",

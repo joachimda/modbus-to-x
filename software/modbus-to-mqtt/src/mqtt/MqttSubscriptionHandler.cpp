@@ -45,7 +45,7 @@ void MqttSubscriptionHandler::handle(const String& topic, const String& message)
     // run concurrently, but copying also guarantees the callable remains alive
     // if a handler submits a replacement command for the next owner cycle.
     if (selected) {
-        selected(message);
+        selected(topic, message);
     } else {
         _logger->logWarning((String("MqttSubscriptionHandler::handle - No handler found for topic [") + topic + "]").c_str());
     }

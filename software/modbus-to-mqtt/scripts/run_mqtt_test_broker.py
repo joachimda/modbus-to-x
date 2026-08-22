@@ -52,7 +52,7 @@ def publish_packet(topic, payload):
 
 
 class TestBroker:
-    def __init__(self, host, port, close_first):
+    def __init__(self, host, port, close_first, injections=None):
         self.host = host
         self.port = port
         self.close_remaining = close_first
@@ -65,6 +65,7 @@ class TestBroker:
         self.subscriptions = []
         self.publications = []
         self.injected_writes = 0
+        self.injections = injections or [("issue4/write", "1")]
 
     def serve(self):
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -118,7 +119,7 @@ class TestBroker:
                     packet_id = body[:2]
                     offset = 2
                     granted = bytearray()
-                    inject_write = False
+                    subscribed_topics = []
                     while offset + 2 <= len(body):
                         topic_length = int.from_bytes(body[offset:offset + 2], "big")
                         offset += 2
@@ -130,12 +131,13 @@ class TestBroker:
                         granted.append(0)
                         with self.lock:
                             self.subscriptions.append(topic)
-                        if topic == "issue4/write":
-                            inject_write = True
+                        subscribed_topics.append(topic)
                     response = packet_id + bytes(granted)
                     connection.sendall(b"\x90" + encode_remaining_length(len(response)) + response)
-                    if inject_write:
-                        connection.sendall(publish_packet("issue4/write", "1"))
+                    for topic, payload in self.injections:
+                        if topic not in subscribed_topics:
+                            continue
+                        connection.sendall(publish_packet(topic, payload))
                         with self.lock:
                             self.injected_writes += 1
                 elif packet_type == 10:  # UNSUBSCRIBE
@@ -187,8 +189,22 @@ def main():
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=1883)
     parser.add_argument("--close-first", type=int, default=2)
+    parser.add_argument(
+        "--inject",
+        action="append",
+        metavar="TOPIC=PAYLOAD",
+        help="publish a payload when the client subscribes to the exact topic; may be repeated",
+    )
     args = parser.parse_args()
-    broker = TestBroker(args.host, args.port, args.close_first)
+    injections = None
+    if args.inject:
+        injections = []
+        for value in args.inject:
+            topic, separator, payload = value.partition("=")
+            if not separator or not topic:
+                parser.error("--inject must use TOPIC=PAYLOAD")
+            injections.append((topic, payload))
+    broker = TestBroker(args.host, args.port, args.close_first, injections)
     try:
         broker.serve()
     except KeyboardInterrupt:

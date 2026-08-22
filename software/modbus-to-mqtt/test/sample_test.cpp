@@ -8,6 +8,7 @@
 #include "../src/mqtt/MqttConfigCore.cpp"
 #include "../src/mqtt/MqttConfigDocument.cpp"
 #include "../src/mqtt/MqttConfigMutationCore.cpp"
+#include "../src/modbus/ModbusMqttWriteCore.cpp"
 #include "../include/concurrency/OwnerCompletionCore.h"
 #include "../include/concurrency/OwnerMailboxCore.h"
 #include "../include/concurrency/LatestRevisionCore.h"
@@ -34,6 +35,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 #include <functional>
 #include <atomic>
 #include <string>
@@ -41,6 +43,9 @@
 #include <vector>
 #include <Preferences.h>
 #include <unity.h>
+
+#include "../src/utils/StringUtils.cpp"
+#include "../src/modbus/ModbusConfigDocument.cpp"
 
 namespace {
 
@@ -2426,6 +2431,222 @@ void test_production_snapshot_core_never_returns_mixed_runtime_fields(void) {
     TEST_ASSERT_FALSE(mixed.load(std::memory_order_relaxed));
 }
 
+void test_modbus_mqtt_coil_payload_contract(void) {
+    struct CoilCase {
+        const char *payload;
+        bool accepted;
+        uint16_t rawValue;
+        ModbusMqttWriteCore::RejectionReason rejection;
+    };
+    const CoilCase cases[] = {
+        {"0", true, 0U, ModbusMqttWriteCore::RejectionReason::None},
+        {"1", true, 1U, ModbusMqttWriteCore::RejectionReason::None},
+        {" true ", true, 1U, ModbusMqttWriteCore::RejectionReason::None},
+        {"\tFaLsE\r\n", true, 0U, ModbusMqttWriteCore::RejectionReason::None},
+        {"", false, 0U, ModbusMqttWriteCore::RejectionReason::Empty},
+        {" \t", false, 0U, ModbusMqttWriteCore::RejectionReason::Empty},
+        {"00", false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidSyntax},
+        {"2", false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidSyntax},
+        {"-1", false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidSyntax},
+        {"1.0", false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidSyntax},
+        {"yes", false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidSyntax},
+        {"true!", false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidSyntax},
+    };
+
+    for (const auto &testCase : cases) {
+        const auto result = ModbusMqttWriteCore::convertPayload(
+            WRITE_COIL, testCase.payload, 1.0);
+        TEST_ASSERT_EQUAL(testCase.accepted, result.accepted());
+        TEST_ASSERT_EQUAL_UINT16(testCase.rawValue, result.rawValue);
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(testCase.rejection),
+                              static_cast<int>(result.rejection));
+    }
+}
+
+void test_modbus_mqtt_holding_payload_grammar_and_conversion(void) {
+    struct HoldingCase {
+        const char *payload;
+        double scale;
+        bool accepted;
+        uint16_t rawValue;
+        ModbusMqttWriteCore::RejectionReason rejection;
+    };
+    const HoldingCase cases[] = {
+        {"0", 1.0, true, 0U, ModbusMqttWriteCore::RejectionReason::None},
+        {"+12", 1.0, true, 12U, ModbusMqttWriteCore::RejectionReason::None},
+        {"12.5", 1.0, true, 13U, ModbusMqttWriteCore::RejectionReason::None},
+        {".5", 1.0, true, 1U, ModbusMqttWriteCore::RejectionReason::None},
+        {"1.", 1.0, true, 1U, ModbusMqttWriteCore::RejectionReason::None},
+        {"1e3", 1.0, true, 1000U, ModbusMqttWriteCore::RejectionReason::None},
+        {" -2.5E-2 ", -0.001, true, 25U, ModbusMqttWriteCore::RejectionReason::None},
+        {"12.34", static_cast<double>(0.1F), true, 123U,
+         ModbusMqttWriteCore::RejectionReason::None},
+        {"-10", static_cast<double>(-0.1F), true, 100U,
+         ModbusMqttWriteCore::RejectionReason::None},
+        {"65535", 1.0, true, 65535U, ModbusMqttWriteCore::RejectionReason::None},
+        {"65535.0000000000000000", 1.0, true, 65535U,
+         ModbusMqttWriteCore::RejectionReason::None},
+        {"6553.500097654759883880615234375", static_cast<double>(0.1F), true, 65535U,
+         ModbusMqttWriteCore::RejectionReason::None},
+        {"65534.5", 1.0, true, 65535U, ModbusMqttWriteCore::RejectionReason::None},
+        {"1e-9999", 1.0, true, 0U, ModbusMqttWriteCore::RejectionReason::None},
+        {"", 1.0, false, 0U, ModbusMqttWriteCore::RejectionReason::Empty},
+        {"+", 1.0, false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidSyntax},
+        {".", 1.0, false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidSyntax},
+        {"1e", 1.0, false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidSyntax},
+        {"12abc", 1.0, false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidSyntax},
+        {"0x10", 1.0, false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidSyntax},
+        {"NaN", 1.0, false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidSyntax},
+        {"Infinity", 1.0, false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidSyntax},
+        {"1e9999", 1.0, false, 0U, ModbusMqttWriteCore::RejectionReason::NonFinite},
+        {"1", 0.0, false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidScale},
+        {"1", -0.0, false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidScale},
+        {"1", INFINITY, false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidScale},
+        {"1", NAN, false, 0U, ModbusMqttWriteCore::RejectionReason::InvalidScale},
+        {"-0.0001", 1.0, false, 0U, ModbusMqttWriteCore::RejectionReason::OutOfRange},
+        {"-1e-9999", 1.0, false, 0U, ModbusMqttWriteCore::RejectionReason::OutOfRange},
+        {"65535.0001", 1.0, false, 0U, ModbusMqttWriteCore::RejectionReason::OutOfRange},
+        {"65535.0000000000000001", 1.0, false, 0U,
+         ModbusMqttWriteCore::RejectionReason::OutOfRange},
+        {"6553.500097654759883880615234376", static_cast<double>(0.1F), false, 0U,
+         ModbusMqttWriteCore::RejectionReason::OutOfRange},
+        {"1e-9999", -1.0, false, 0U, ModbusMqttWriteCore::RejectionReason::OutOfRange},
+        {"-65535.0000000000000001", -1.0, false, 0U,
+         ModbusMqttWriteCore::RejectionReason::OutOfRange},
+        {"1", -1.0, false, 0U, ModbusMqttWriteCore::RejectionReason::OutOfRange},
+    };
+
+    for (const auto &testCase : cases) {
+        const auto result = ModbusMqttWriteCore::convertPayload(
+            WRITE_HOLDING, testCase.payload, testCase.scale);
+        TEST_ASSERT_EQUAL(testCase.accepted, result.accepted());
+        TEST_ASSERT_EQUAL_UINT16(testCase.rawValue, result.rawValue);
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(testCase.rejection),
+                              static_cast<int>(result.rejection));
+    }
+}
+
+void test_modbus_mqtt_production_handler_submits_only_accepted_commands(void) {
+    ModbusMqttWriteCore::CommandContext context;
+    context.slaveId = 7U;
+    context.function = WRITE_MULTIPLE_HOLDING;
+    context.address = 321U;
+    context.registerCount = 8U;
+    context.scale = 1.0;
+    context.modbusGeneration = 42U;
+
+    std::vector<ModbusMqttWriteCore::WriteCommand> submissions;
+    std::vector<std::string> warnings;
+    const auto handler = ModbusMqttWriteCore::buildMessageHandler(
+        context,
+        [&](const ModbusMqttWriteCore::WriteCommand &command) { submissions.push_back(command); },
+        [&](const std::string &warning) { warnings.push_back(warning); });
+
+    handler("root/device/write", "secret-invalid-payload");
+    TEST_ASSERT_TRUE(submissions.empty());
+    TEST_ASSERT_EQUAL_UINT(1U, warnings.size());
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[0].find("topic=root/device/write"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[0].find("function=16"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[0].find("address=321"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[0].find("reason=invalid_syntax"));
+    TEST_ASSERT_EQUAL(std::string::npos, warnings[0].find("secret-invalid-payload"));
+
+    handler("root/device/write", "-1e-9999");
+    handler("root/device/write", "65535.0000000000000001");
+    TEST_ASSERT_TRUE(submissions.empty());
+    TEST_ASSERT_EQUAL_UINT(3U, warnings.size());
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[1].find("reason=out_of_range"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[2].find("reason=out_of_range"));
+    TEST_ASSERT_EQUAL(std::string::npos, warnings[1].find("-1e-9999"));
+    TEST_ASSERT_EQUAL(std::string::npos,
+                      warnings[2].find("65535.0000000000000001"));
+
+    handler("root/device/write", "10");
+    TEST_ASSERT_EQUAL_UINT(1U, submissions.size());
+    TEST_ASSERT_EQUAL_STRING("root/device/write", submissions[0].sourceTopic.c_str());
+    TEST_ASSERT_EQUAL_UINT8(7U, submissions[0].slaveId);
+    TEST_ASSERT_EQUAL_INT(16, static_cast<int>(submissions[0].function));
+    TEST_ASSERT_EQUAL_UINT16(321U, submissions[0].address);
+    TEST_ASSERT_EQUAL_UINT8(1U, submissions[0].registerCount);
+    TEST_ASSERT_EQUAL_UINT16(10U, submissions[0].rawValue);
+    TEST_ASSERT_EQUAL_UINT32(42U, submissions[0].modbusGeneration);
+
+    handler("root/device/write", "65536");
+    handler("root/device/write", "1");
+    TEST_ASSERT_EQUAL_UINT(2U, submissions.size());
+    TEST_ASSERT_EQUAL_UINT16(1U, submissions[1].rawValue);
+    TEST_ASSERT_EQUAL_UINT(4U, warnings.size());
+}
+
+std::string modbusConfigurationWithScale(const int function, const char *scale) {
+    return std::string(R"({"version":1,"bus":{"enabled":true,"baud":9600,"serialFormat":"8N1"},"devices":[{"id":"device","name":"Device","slaveId":1,"dataPoints":[{"id":"point","name":"Point","function":)")
+           + std::to_string(function)
+           + R"(,"address":10,"numOfRegisters":1,"scale":)" + scale
+           + R"(,"dataType":"uint16","unit":"","topic":"write"}]}]})";
+}
+
+void test_modbus_configuration_rejects_noninvertible_writable_scales_atomically(void) {
+    const char *invalidScales[] = {"0", "-0.0", "1e100", "\"not-a-number\""};
+    for (const char *scale : invalidScales) {
+        ConfigurationRoot active;
+        active.bus.baud = 19200;
+        active.bus.serialFormat = "7E1";
+        active.bus.enabled = true;
+        ModbusDevice existing{};
+        existing.id = "existing";
+        active.devices.push_back(existing);
+
+        ModbusConfigDocument::ValidationError error;
+        const std::string json = modbusConfigurationWithScale(6, scale);
+        TEST_ASSERT_FALSE(ModbusConfigDocument::parse(json.c_str(), json.size(), active, &error));
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusConfigDocument::ValidationReason::InvalidScale),
+                              static_cast<int>(error.reason));
+        TEST_ASSERT_EQUAL_UINT(0U, error.deviceIndex);
+        TEST_ASSERT_EQUAL_UINT(0U, error.datapointIndex);
+        TEST_ASSERT_EQUAL_INT(19200, active.bus.baud);
+        TEST_ASSERT_EQUAL_STRING("7E1", active.bus.serialFormat.c_str());
+        TEST_ASSERT_TRUE(active.bus.enabled);
+        TEST_ASSERT_EQUAL_UINT(1U, active.devices.size());
+        TEST_ASSERT_EQUAL_STRING("existing", active.devices[0].id.c_str());
+    }
+
+    const std::string negative = modbusConfigurationWithScale(16, "-0.25");
+    ConfigurationRoot accepted;
+    TEST_ASSERT_TRUE(ModbusConfigDocument::parse(negative.c_str(), negative.size(), accepted));
+    TEST_ASSERT_EQUAL_UINT(1U, accepted.devices.size());
+    TEST_ASSERT_EQUAL_UINT(1U, accepted.devices[0].datapoints.size());
+    TEST_ASSERT_TRUE(std::fabs(accepted.devices[0].datapoints[0].scale + 0.25F) < 0.000001F);
+
+    const std::string positive = modbusConfigurationWithScale(6, "0.5");
+    TEST_ASSERT_TRUE(ModbusConfigDocument::parse(positive.c_str(), positive.size(), accepted));
+    TEST_ASSERT_TRUE(std::fabs(accepted.devices[0].datapoints[0].scale - 0.5F) < 0.000001F);
+
+    const std::string coilZero = modbusConfigurationWithScale(5, "0");
+    TEST_ASSERT_TRUE(ModbusConfigDocument::parse(coilZero.c_str(), coilZero.size(), accepted));
+    const std::string readZero = modbusConfigurationWithScale(3, "0");
+    TEST_ASSERT_TRUE(ModbusConfigDocument::parse(readZero.c_str(), readZero.size(), accepted));
+}
+
+void test_modbus_home_assistant_number_bounds_follow_scale_direction(void) {
+    const double positiveScale = static_cast<double>(0.1F);
+    const auto positive = ModbusMqttWriteCore::numberDiscoveryBounds(positiveScale);
+    TEST_ASSERT_TRUE(positive.valid());
+    TEST_ASSERT_TRUE(std::fabs(positive.minimum) < 0.0000001);
+    TEST_ASSERT_TRUE(std::fabs(positive.maximum - (65535.0 * positiveScale)) < 0.000001);
+    TEST_ASSERT_TRUE(std::fabs(positive.step - positiveScale) < 0.0000001);
+
+    const double negativeScale = static_cast<double>(-0.25F);
+    const auto negative = ModbusMqttWriteCore::numberDiscoveryBounds(negativeScale);
+    TEST_ASSERT_TRUE(negative.valid());
+    TEST_ASSERT_TRUE(std::fabs(negative.minimum - (65535.0 * negativeScale)) < 0.000001);
+    TEST_ASSERT_TRUE(std::fabs(negative.maximum) < 0.0000001);
+    TEST_ASSERT_TRUE(std::fabs(negative.step - 0.25) < 0.0000001);
+
+    TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(0.0).valid());
+    TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(INFINITY).valid());
+    TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(NAN).valid());
+}
+
 int main(int /*argc*/, char ** /*argv*/) {
     UNITY_BEGIN();
     RUN_TEST(test_single_chunk_returns_full_buffer);
@@ -2488,5 +2709,10 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_staged_bridge_plan_never_commits_after_running_timeout);
     RUN_TEST(test_async_publications_do_not_wait_for_a_stalled_owner);
     RUN_TEST(test_production_snapshot_core_never_returns_mixed_runtime_fields);
+    RUN_TEST(test_modbus_mqtt_coil_payload_contract);
+    RUN_TEST(test_modbus_mqtt_holding_payload_grammar_and_conversion);
+    RUN_TEST(test_modbus_mqtt_production_handler_submits_only_accepted_commands);
+    RUN_TEST(test_modbus_configuration_rejects_noninvertible_writable_scales_atomically);
+    RUN_TEST(test_modbus_home_assistant_number_bounds_follow_scale_direction);
     return UNITY_END();
 }

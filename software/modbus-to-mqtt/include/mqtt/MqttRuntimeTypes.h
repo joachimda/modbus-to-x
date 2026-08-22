@@ -46,7 +46,7 @@ struct MqttTopicSpec {
     bool relativeToRoot{false};
 };
 
-using MqttTopicHandler = std::function<void(const String &)>;
+using MqttTopicHandler = std::function<void(const String &, const String &)>;
 
 struct MqttSubscriptionSpec {
     MqttSubscriptionSpec() = default;

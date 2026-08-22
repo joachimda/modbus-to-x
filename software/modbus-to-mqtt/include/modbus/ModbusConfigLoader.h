@@ -2,6 +2,7 @@
 #define MODBUSCONFIGLOADER_H
 
 #include "Logger.h"
+#include "modbus/ModbusConfigDocument.h"
 #include "config_structs/ConfigurationRoot.h"
 
 class ModbusConfigLoader {
@@ -12,7 +13,8 @@ public:
 
     // Parses an owned request body without consulting the shared config file.
     static bool parseConfiguration(Logger *logger, const char *json, size_t length,
-                                   ConfigurationRoot &outConfig);
+                                   ConfigurationRoot &outConfig,
+                                   ModbusConfigDocument::ValidationError *validationError = nullptr);
 };
 
 #endif // MODBUSCONFIGLOADER_H

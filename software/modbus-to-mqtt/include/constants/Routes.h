@@ -33,6 +33,10 @@ public:
     constexpr static auto OTA_HTTP_NOTES = "/api/system/ota/http/notes";
     constexpr static auto OTA_HTTP_APPLY = "/api/system/ota/http/apply";
     constexpr static auto OTA_HTTP_SETTINGS = "/api/system/ota/http/settings";
+    constexpr static auto OTA_SESSION = "/api/system/ota/session";
+    constexpr static auto OTA_STATUS = "/api/system/ota/status";
+    constexpr static auto OTA_EVENTS = "/api/system/ota/events";
+    constexpr static auto OTA_MANUAL_START = "/api/system/ota/manual/start";
     constexpr static auto OTA_PASSWORD = "/api/system/ota/password";
     constexpr static auto FACTORY_RESET = "/api/system/factory-reset";
     constexpr static auto DEVICE_RESET = "/api/system/reboot";

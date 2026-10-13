@@ -13,6 +13,7 @@ const char *mqttOperationResultToString(const MqttOperationResult result) {
         case MqttOperationResult::InvalidConfiguration: return "invalid_configuration";
         case MqttOperationResult::StaleGeneration: return "stale_generation";
         case MqttOperationResult::Superseded: return "superseded";
+        case MqttOperationResult::OtaInProgress: return "ota_in_progress";
     }
     return "unknown";
 }
@@ -23,6 +24,19 @@ const char *mqttAdmissionResultToString(const MqttAdmissionResult result) {
         case MqttAdmissionResult::QueueFull: return "queue_full";
         case MqttAdmissionResult::Unavailable: return "unavailable";
         case MqttAdmissionResult::Shutdown: return "shutdown";
+        case MqttAdmissionResult::OtaInProgress: return "ota_in_progress";
     }
     return "unknown";
+}
+
+const char *mqttOtaQuiesceResultToString(const MqttOtaQuiesceResult result) {
+    switch (result) {
+        case MqttOtaQuiesceResult::None: return "none";
+        case MqttOtaQuiesceResult::Signalled: return "signalled";
+        case MqttOtaQuiesceResult::AlreadyDisconnected: return "already_disconnected";
+        case MqttOtaQuiesceResult::Disabled: return "disabled";
+        case MqttOtaQuiesceResult::NoSignalConfigured: return "no_signal_configured";
+        case MqttOtaQuiesceResult::SignalFailed: return "signal_failed";
+    }
+    return "none";
 }

@@ -11,12 +11,20 @@
 #include "services/IndicatorService.h"
 #include "storage/ConfigFs.h"
 
+namespace {
+
+constexpr UBaseType_t OTA_CONTROL_QUEUE_DEPTH = 2U;
+
+}
+
 struct ModbusManager::Command final : OwnerRequest {
     enum class Type : uint8_t {
         ActivateConfiguration,
         Execute,
         SetEnabled,
         PublicationCompletion,
+        QuiesceForOta,
+        ResumeFromOta,
     };
 
     explicit Command(const Type commandType)
@@ -32,6 +40,7 @@ struct ModbusManager::Command final : OwnerRequest {
     uint32_t configurationRevision{0U};
     bool enabled{false};
     bool asynchronous{false};
+    uint32_t otaOperationId{0U};
 };
 
 ModbusManager::ModbusManager(Logger *logger)
@@ -43,7 +52,8 @@ ModbusManager::ModbusManager(Logger *logger)
 bool ModbusManager::begin() {
     _ownerTaskHandle = xTaskGetCurrentTaskHandle();
     _commandQueue = xQueueCreate(MODBUS_COMMAND_QUEUE_DEPTH, sizeof(Command *));
-    if (_commandQueue == nullptr) {
+    _controlQueue = xQueueCreate(OTA_CONTROL_QUEUE_DEPTH, sizeof(Command *));
+    if (_commandQueue == nullptr || _controlQueue == nullptr) {
         _logger->logError("[Modbus] Failed to initialize owner mailbox");
         return false;
     }
@@ -111,6 +121,10 @@ ModbusOperationResult ModbusManager::submitAndWait(Command *command, const uint3
                                                    ModbusCommandResult *result,
                                                    LatestRevisionCore::Admission *admission) {
     if (command == nullptr) return ModbusOperationResult::Unavailable;
+    if (!_ordinaryAdmissionOpen.load(std::memory_order_acquire)) {
+        command->release();
+        return ModbusOperationResult::OtaInProgress;
+    }
     if (!command->valid() || _commandQueue == nullptr || !_ownerAvailable.load(std::memory_order_acquire)
         || _shuttingDown.load(std::memory_order_acquire)) {
         command->release();
@@ -145,6 +159,10 @@ ModbusOperationResult ModbusManager::submitAndWait(Command *command, const uint3
 
 ModbusOperationResult ModbusManager::submitAsync(Command *command) {
     if (command == nullptr) return ModbusOperationResult::Unavailable;
+    if (!_ordinaryAdmissionOpen.load(std::memory_order_acquire)) {
+        command->release();
+        return ModbusOperationResult::OtaInProgress;
+    }
     if (!command->valid() || _commandQueue == nullptr || !_ownerAvailable.load(std::memory_order_acquire)
         || _shuttingDown.load(std::memory_order_acquire)) {
         command->release();
@@ -155,6 +173,28 @@ ModbusOperationResult ModbusManager::submitAsync(Command *command) {
     command->retain();
     command->markQueued();
     if (xQueueSend(_commandQueue, &command, 0) != pdTRUE) {
+        _commandFailureCount.fetch_add(1U, std::memory_order_relaxed);
+        command->release();
+        command->release();
+        return ModbusOperationResult::QueueFull;
+    }
+    command->release();
+    return ModbusOperationResult::Success;
+}
+
+ModbusOperationResult ModbusManager::submitControl(Command *command) {
+    if (command == nullptr) return ModbusOperationResult::Unavailable;
+    if (!command->valid() || _controlQueue == nullptr || !_ownerAvailable.load(std::memory_order_acquire)
+        || _shuttingDown.load(std::memory_order_acquire)) {
+        command->release();
+        return _shuttingDown.load(std::memory_order_acquire)
+                   ? ModbusOperationResult::Shutdown
+                   : ModbusOperationResult::Unavailable;
+    }
+    command->asynchronous = true;
+    command->retain();
+    command->markQueued();
+    if (xQueueSend(_controlQueue, &command, 0) != pdTRUE) {
         _commandFailureCount.fetch_add(1U, std::memory_order_relaxed);
         command->release();
         command->release();
@@ -229,6 +269,49 @@ ModbusOperationResult ModbusManager::setEnabled(const bool enabled) {
     return submitAndWait(command);
 }
 
+ModbusOperationResult ModbusManager::requestQuiesceForOta(const uint32_t operationId) {
+    if (operationId == 0U) return ModbusOperationResult::Unavailable;
+    uint32_t expected = 0U;
+    if (!_otaAdmissionOperation.compare_exchange_strong(
+            expected, operationId, std::memory_order_acq_rel, std::memory_order_acquire)) {
+        return expected == operationId ? ModbusOperationResult::Success
+                                       : ModbusOperationResult::OtaInProgress;
+    }
+    _ordinaryAdmissionOpen.store(false, std::memory_order_release);
+    auto *command = new (std::nothrow) Command(Command::Type::QuiesceForOta);
+    if (command == nullptr) {
+        _otaAdmissionOperation.store(0U, std::memory_order_release);
+        _ordinaryAdmissionOpen.store(true, std::memory_order_release);
+        return ModbusOperationResult::Unavailable;
+    }
+    command->otaOperationId = operationId;
+    const ModbusOperationResult result = submitControl(command);
+    if (result != ModbusOperationResult::Success) {
+        _otaAdmissionOperation.store(0U, std::memory_order_release);
+        _ordinaryAdmissionOpen.store(true, std::memory_order_release);
+    }
+    return result;
+}
+
+ModbusOperationResult ModbusManager::requestResumeFromOta(const uint32_t operationId) {
+    if (operationId == 0U
+        || _otaAdmissionOperation.load(std::memory_order_acquire) != operationId) {
+        return ModbusOperationResult::Unavailable;
+    }
+    auto *command = new (std::nothrow) Command(Command::Type::ResumeFromOta);
+    if (command == nullptr) return ModbusOperationResult::Unavailable;
+    command->otaOperationId = operationId;
+    return submitControl(command);
+}
+
+void ModbusManager::cancelOtaQuiesceRequest(const uint32_t operationId) {
+    (void)requestResumeFromOta(operationId);
+}
+
+bool ModbusManager::otaControlActive() const {
+    return _otaAdmissionOperation.load(std::memory_order_acquire) != 0U;
+}
+
 ModbusOperationResult ModbusManager::submitPublicationCompletion(
     const ModbusPublicationCompletion &completion) {
     auto *command = new (std::nothrow) Command(Command::Type::PublicationCompletion);
@@ -238,6 +321,15 @@ ModbusOperationResult ModbusManager::submitPublicationCompletion(
 }
 
 void ModbusManager::drainCommands() {
+    for (size_t i = 0; i < OTA_CONTROL_QUEUE_DEPTH; ++i) {
+        Command *command = nullptr;
+        if (xQueueReceive(_controlQueue, &command, 0) != pdTRUE) break;
+        if (command != nullptr && command->tryStart()) {
+            processCommand(*command);
+            command->complete();
+        }
+        if (command != nullptr) command->release();
+    }
     for (size_t i = 0; i < MODBUS_COMMANDS_PER_CYCLE; ++i) {
         Command *command = nullptr;
         if (xQueueReceive(_commandQueue, &command, 0) != pdTRUE) break;
@@ -250,6 +342,13 @@ void ModbusManager::drainCommands() {
 }
 
 void ModbusManager::processCommand(Command &command) {
+    if (_otaQuiesced && command.type != Command::Type::QuiesceForOta
+        && command.type != Command::Type::ResumeFromOta) {
+        command.result = ModbusOperationResult::OtaInProgress;
+        if (command.type == Command::Type::Execute) {
+            command.commandResult.operation = ModbusOperationResult::OtaInProgress;
+        }
+    } else {
     switch (command.type) {
         case Command::Type::ActivateConfiguration:
             command.result = activateConfiguration(std::move(command.configuration),
@@ -280,6 +379,13 @@ void ModbusManager::processCommand(Command &command) {
                                                _generation);
             command.result = ModbusOperationResult::Success;
             break;
+        case Command::Type::QuiesceForOta:
+            quiesceForOtaOwned(command.otaOperationId, command.result);
+            break;
+        case Command::Type::ResumeFromOta:
+            resumeFromOtaOwned(command.otaOperationId, command.result);
+            break;
+    }
     }
     if (command.result != ModbusOperationResult::Success
         && command.result != ModbusOperationResult::Superseded
@@ -289,28 +395,87 @@ void ModbusManager::processCommand(Command &command) {
     updateRuntimeSnapshot();
 }
 
+void ModbusManager::quiesceForOtaOwned(const uint32_t operationId,
+                                       ModbusOperationResult &result) {
+    if (operationId == 0U) {
+        result = ModbusOperationResult::Unavailable;
+        return;
+    }
+    if (_otaAdmissionOperation.load(std::memory_order_acquire) != operationId) {
+        result = ModbusOperationResult::StaleGeneration;
+        return;
+    }
+    if (_otaQuiesced) {
+        result = operationId == _otaOperationId
+                     ? ModbusOperationResult::Success
+                     : ModbusOperationResult::OtaInProgress;
+        return;
+    }
+    _busActiveBeforeOta = _bus.isActive();
+    _otaQuiesceResult = _busActiveBeforeOta ? ModbusOtaQuiesceResult::Stopped
+                                            : ModbusOtaQuiesceResult::AlreadyDisabled;
+    _bus.setActive(false);
+    _otaOperationId = operationId;
+    _otaQuiesced = true;
+    result = ModbusOperationResult::Success;
+
+    // Reject all bounded work overtaken by the priority quiesce command so it
+    // cannot execute after a later recovery resume.
+    Command *queued = nullptr;
+    while (xQueueReceive(_commandQueue, &queued, 0) == pdTRUE) {
+        if (queued != nullptr && queued->tryStart()) {
+            processCommand(*queued);
+            queued->complete();
+        }
+        if (queued != nullptr) queued->release();
+        queued = nullptr;
+    }
+}
+
+void ModbusManager::resumeFromOtaOwned(const uint32_t operationId,
+                                      ModbusOperationResult &result) {
+    if (operationId == 0U
+        || _otaAdmissionOperation.load(std::memory_order_acquire) != operationId) {
+        result = ModbusOperationResult::StaleGeneration;
+        return;
+    }
+    if (_otaQuiesced) {
+        if (operationId != _otaOperationId) {
+            result = ModbusOperationResult::StaleGeneration;
+            return;
+        }
+        _bus.setActive(_busActiveBeforeOta);
+        _otaQuiesced = false;
+        _otaOperationId = 0U;
+        _otaQuiesceResult = ModbusOtaQuiesceResult::None;
+    }
+    _otaAdmissionOperation.store(0U, std::memory_order_release);
+    _ordinaryAdmissionOpen.store(true, std::memory_order_release);
+    result = ModbusOperationResult::Success;
+}
+
 void ModbusManager::loop() {
     if (!inOwnerContext()) {
         recordOwnerViolation();
         return;
     }
 
-    // This is the only activation/command boundary. Once polling begins below,
-    // no queued request is observed until every device/datapoint in the pass is
-    // complete and all local pointers have gone out of scope.
+    // This is the activation/control boundary. Polling below performs at most
+    // one RTU transaction, so a priority OTA command is observed before any
+    // subsequent transaction begins.
     drainCommands();
+
+    if (!_bus.isActive()) {
+        IndicatorService::instance().setModbusConnected(false);
+        updateRuntimeSnapshot();
+        return;
+    }
 
     _mqttBridge.recoverLostPublicationCompletions(_modbusRoot);
 
     if (_mqtt != nullptr) {
         const MqttStatusSnapshot mqttStatus = _mqtt->getStatusSnapshot();
         _mqttBridge.onConnectionState(mqttStatus, _modbusRoot, _generation);
-    }
-
-    if (!_bus.isActive()) {
-        IndicatorService::instance().setModbusConnected(false);
-        updateRuntimeSnapshot();
-        return;
     }
 
     bool anySuccess = false;
@@ -322,6 +487,7 @@ void ModbusManager::loop() {
         if (dueCount == 0U) continue;
         anyAttempted = true;
         anySuccess = readModbusDevice(device, _dueScratch, now) || anySuccess;
+        break;
     }
     if (anyAttempted) IndicatorService::instance().setModbusConnected(anySuccess);
     updateRuntimeSnapshot();
@@ -374,6 +540,7 @@ bool ModbusManager::readModbusDevice(ModbusDevice &device,
                                + _bus.dumpRx()).c_str());
         }
         ModbusPollScheduler::scheduleNext(datapoint, now);
+        return successOnDevice;
     }
     return successOnDevice;
 }
@@ -492,6 +659,11 @@ void ModbusManager::updateRuntimeSnapshot() {
     snapshot.errorCount = _bus.errorCount();
     snapshot.ownerViolationCount = _ownerViolationCount.load(std::memory_order_relaxed);
     snapshot.commandFailureCount = _commandFailureCount.load(std::memory_order_relaxed);
+    snapshot.commandQueueDepth = (_commandQueue != nullptr ? uxQueueMessagesWaiting(_commandQueue) : 0U)
+                               + (_controlQueue != nullptr ? uxQueueMessagesWaiting(_controlQueue) : 0U);
+    snapshot.otaQuiesced = _otaQuiesced;
+    snapshot.otaOperationId = _otaOperationId;
+    snapshot.otaQuiesceResult = _otaQuiesceResult;
     _runtimeSnapshot.write(std::move(snapshot));
 }
 

@@ -22,10 +22,17 @@ void addRequest(Server *server, const Callbacks callbacks, const char *route,
     });
     entry.setFilter([callbacks, route, method](Request *request) {
         return request != nullptr && request->method() == method && request->url() == route
-               && callbacks.isMutationAllowed(request);
+               && callbacks.isMutationAllowed(request) && callbacks.isOrdinaryMutationAllowed(request);
+    });
+    auto &forbidden = server->on(route, method, [callbacks](Request *request) {
+        callbacks.sendForbidden(request);
+    });
+    forbidden.setFilter([callbacks, route, method](Request *request) {
+        return request != nullptr && request->method() == method && request->url() == route
+               && !callbacks.isMutationAllowed(request);
     });
     server->on(route, method, [callbacks](Request *request) {
-        callbacks.sendForbidden(request);
+        callbacks.sendOtaInProgress(request);
     });
 }
 
@@ -40,10 +47,17 @@ void addBody(Server *server, const Callbacks callbacks, const char *route,
     });
     entry.setFilter([callbacks, route, method](Request *request) {
         return request != nullptr && request->method() == method && request->url() == route
-               && callbacks.isMutationAllowed(request);
+               && callbacks.isMutationAllowed(request) && callbacks.isOrdinaryMutationAllowed(request);
+    });
+    auto &forbidden = server->on(route, method, [callbacks](Request *request) {
+        callbacks.sendForbidden(request);
+    });
+    forbidden.setFilter([callbacks, route, method](Request *request) {
+        return request != nullptr && request->method() == method && request->url() == route
+               && !callbacks.isMutationAllowed(request);
     });
     server->on(route, method, [callbacks](Request *request) {
-        callbacks.sendForbidden(request);
+        callbacks.sendOtaInProgress(request);
     });
 }
 

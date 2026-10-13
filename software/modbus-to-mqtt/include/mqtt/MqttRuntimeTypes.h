@@ -21,6 +21,7 @@ enum class MqttOperationResult : uint8_t {
     InvalidConfiguration,
     StaleGeneration,
     Superseded,
+    OtaInProgress,
 };
 
 enum class MqttAdmissionResult : uint8_t {
@@ -28,6 +29,16 @@ enum class MqttAdmissionResult : uint8_t {
     QueueFull,
     Unavailable,
     Shutdown,
+    OtaInProgress,
+};
+
+enum class MqttOtaQuiesceResult : uint8_t {
+    None = 0,
+    Signalled,
+    AlreadyDisconnected,
+    Disabled,
+    NoSignalConfigured,
+    SignalFailed,
 };
 
 struct MqttRuntimeConfiguration {
@@ -81,6 +92,10 @@ struct MqttStatusSnapshot {
     uint32_t modbusGeneration{0U};
     uint32_t ownerViolationCount{0U};
     uint32_t commandFailureCount{0U};
+    size_t commandQueueDepth{0U};
+    bool otaQuiesced{false};
+    uint32_t otaOperationId{0U};
+    MqttOtaQuiesceResult otaQuiesceResult{MqttOtaQuiesceResult::None};
     String broker;
     String user;
     String rootTopic;
@@ -120,5 +135,7 @@ struct MqttTestResult {
 const char *mqttOperationResultToString(MqttOperationResult result);
 
 const char *mqttAdmissionResultToString(MqttAdmissionResult result);
+
+const char *mqttOtaQuiesceResultToString(MqttOtaQuiesceResult result);
 
 #endif

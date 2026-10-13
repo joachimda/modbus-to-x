@@ -27,13 +27,15 @@ public:
         bool enabled{false};
         uint32_t generation{0U};
         uint32_t modbusGeneration{0U};
+        bool quiesced{false};
+        uint32_t otaOperationId{0U};
     };
 
     MqttOwnerCore(Client &client, const uintptr_t ownerContext)
         : _client(client), _ownerContext(ownerContext) {}
 
     bool applyConfiguration(const uintptr_t context, const std::string &server, const bool enabled) {
-        if (!checkOwner(context)) return false;
+        if (!checkOwner(context) || _quiesced) return false;
         if (_connected) {
             _client.disconnect();
             _connected = false;
@@ -47,7 +49,7 @@ public:
 
     bool replaceSubscriptions(const uintptr_t context, std::vector<Subscription> subscriptions,
                               const uint32_t modbusGeneration) {
-        if (!checkOwner(context)) return false;
+        if (!checkOwner(context) || _quiesced) return false;
         std::vector<std::string> seen;
         for (const auto &subscription : subscriptions) {
             if (subscription.topic.empty()
@@ -75,7 +77,7 @@ public:
     }
 
     bool connect(const uintptr_t context) {
-        if (!checkOwner(context) || !_enabled) return false;
+        if (!checkOwner(context) || !_enabled || _quiesced) return false;
         _connected = _client.connect();
         if (_connected) {
             for (const auto &subscription : _subscriptions) _client.subscribe(subscription.topic);
@@ -84,19 +86,19 @@ public:
     }
 
     bool loop(const uintptr_t context) {
-        if (!checkOwner(context)) return false;
+        if (!checkOwner(context) || _quiesced) return false;
         return _client.loop();
     }
 
     bool publish(const uintptr_t context, const std::string &topic, const std::string &payload,
                  const uint32_t mqttGeneration, const uint32_t modbusGeneration) {
-        if (!checkOwner(context) || !_connected || mqttGeneration != _generation
+        if (!checkOwner(context) || _quiesced || !_connected || mqttGeneration != _generation
             || modbusGeneration != _modbusGeneration) return false;
         return _client.publish(topic, payload);
     }
 
     bool disable(const uintptr_t context) {
-        if (!checkOwner(context)) return false;
+        if (!checkOwner(context) || _quiesced) return false;
         _enabled = false;
         if (_connected) _client.disconnect();
         _connected = false;
@@ -104,7 +106,7 @@ public:
     }
 
     bool dispatch(const uintptr_t context, const std::string &topic, const std::string &payload) {
-        if (!checkOwner(context)) return false;
+        if (!checkOwner(context) || _quiesced) return false;
         Handler selected;
         for (const auto &subscription : _subscriptions) {
             if (subscription.topic == topic) {
@@ -120,12 +122,37 @@ public:
     uint32_t generation() const { return _generation; }
     uint32_t ownerViolations() const { return _ownerViolations; }
 
+    bool quiesceForOta(const uintptr_t context, const uint32_t operationId,
+                       const std::string &willTopic = {}, const std::string &willPayload = {}) {
+        if (!checkOwner(context) || operationId == 0U) return false;
+        if (_quiesced) return _otaOperationId == operationId;
+        _wasEnabledBeforeOta = _enabled;
+        if (_connected && !willTopic.empty() && !willPayload.empty()) {
+            _client.publish(willTopic, willPayload);
+        }
+        if (_connected) _client.disconnect();
+        _connected = false;
+        _quiesced = true;
+        _otaOperationId = operationId;
+        return true;
+    }
+
+    bool resumeFromOta(const uintptr_t context, const uint32_t operationId) {
+        if (!checkOwner(context) || !_quiesced || operationId != _otaOperationId) return false;
+        _enabled = _wasEnabledBeforeOta;
+        _quiesced = false;
+        _otaOperationId = 0U;
+        return true;
+    }
+
     Snapshot snapshot() const {
         Snapshot value;
         value.server = _server;
         value.enabled = _enabled;
         value.generation = _generation;
         value.modbusGeneration = _modbusGeneration;
+        value.quiesced = _quiesced;
+        value.otaOperationId = _otaOperationId;
         value.topics.reserve(_subscriptions.size());
         for (const auto &subscription : _subscriptions) value.topics.push_back(subscription.topic);
         return value;
@@ -142,6 +169,9 @@ private:
     uintptr_t _ownerContext;
     bool _enabled{false};
     bool _connected{false};
+    bool _quiesced{false};
+    bool _wasEnabledBeforeOta{false};
+    uint32_t _otaOperationId{0U};
     std::string _server;
     uint32_t _generation{0U};
     uint32_t _modbusGeneration{0U};

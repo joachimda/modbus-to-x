@@ -31,6 +31,11 @@
 #include "../src/services/ota/OtaCredentialService.cpp"
 #include "../src/network/wifi/WifiConfigurationStorage.cpp"
 #include "../include/services/ota/OtaUploadGuardCore.h"
+#include "../include/services/ota/OtaAdmissionGateCore.h"
+#include "../include/services/ota/OtaQuiescenceCore.h"
+#include "../include/services/ota/OtaProgressCore.h"
+#include "../include/services/ota/OtaSessionCore.h"
+#include "../include/Config.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -173,6 +178,13 @@ struct RouteTestState {
     int factoryResetEraseCalls = 0;
     int mutationSideEffectCalls = 0;
     int rebootScheduleCalls = 0;
+    int otaBusyCalls = 0;
+    int sessionCalls = 0;
+    int passwordVerificationCalls = 0;
+    int statusCalls = 0;
+    int manualStartCalls = 0;
+    bool otaActive = false;
+    std::string sessionToken;
 };
 
 struct RouteTestRequest {
@@ -183,6 +195,7 @@ struct RouteTestRequest {
     RouteTestState *state = nullptr;
     std::string marker = MutationRequestGuardCore::REQUEST_HEADER_VALUE;
     std::string host = "192.168.1.42";
+    std::string session;
 
     RouteTestMethod method() const {
         return requestMethod;
@@ -347,7 +360,8 @@ struct RouteTestCallbacks {
     RouteTestState *state;
 
     bool isAuthorized(const RouteTestRequest *request) const {
-        return request != nullptr && authorizeRouteRequest(*request);
+        return request != nullptr && !state->sessionToken.empty()
+               && request->session == state->sessionToken;
     }
 
     bool isMutationAllowed(const RouteTestRequest *request) const {
@@ -355,9 +369,13 @@ struct RouteTestCallbacks {
             request->marker.c_str(), request->host.c_str(), "192.168.1.42", "192.168.4.1", "modbus-to-x");
     }
 
+    bool isOrdinaryMutationAllowed(const RouteTestRequest *) const {
+        return !state->otaActive;
+    }
+
     bool cacheUploadAuthorization(RouteTestRequest *request) const {
         if (request == nullptr || request->uploadState.authorizationChecked) return false;
-        bool authorized = authorizeRouteRequest(*request);
+        bool authorized = isAuthorized(request);
         return OtaUploadGuardCore::authorize(
             request->uploadState, returnAuthorizationResult, &authorized);
     }
@@ -369,6 +387,10 @@ struct RouteTestCallbacks {
     void sendForbidden(RouteTestRequest *) const {
         ++state->forbiddenCalls;
     }
+
+    void sendOtaInProgress(RouteTestRequest *) const { ++state->otaBusyCalls; }
+
+    void sendOtaBusy(RouteTestRequest *) const { ++state->otaBusyCalls; }
 
     void logRequest(const RouteTestRequest *) const {}
 
@@ -385,6 +407,20 @@ struct RouteTestCallbacks {
     void handleHttpCheck(RouteTestRequest *) const { ++state->checkCalls; }
     void handleHttpNotes(RouteTestRequest *) const { ++state->notesCalls; }
     void handleHttpApply(RouteTestRequest *) const { ++state->applyCalls; }
+    void handleCreateSession(RouteTestRequest *request) const {
+        ++state->sessionCalls;
+        if (OtaCredentialService::isProtected()) ++state->passwordVerificationCalls;
+        if (!authorizeRouteRequest(*request)) {
+            ++state->unauthorizedCalls;
+            return;
+        }
+        state->sessionToken = "test-session-token";
+    }
+    void handleStatus(RouteTestRequest *) const { ++state->statusCalls; }
+    void handleManualStartBody(RouteTestRequest *, const uint8_t *, const size_t,
+                               const size_t, const size_t) const {
+        ++state->manualStartCalls;
+    }
     void handleGetHttpSettings(RouteTestRequest *) const { ++state->getSettingsCalls; }
 
     void handlePutHttpSettingsBody(RouteTestRequest *, const uint8_t *, const size_t,
@@ -399,12 +435,14 @@ struct RouteTestCallbacks {
         const std::string body(reinterpret_cast<const char *>(data), length);
         if (body == R"({"password":"route-password"})") {
             (void)OtaCredentialService::setPassword(String("route-password"));
+            state->sessionToken.clear();
         }
     }
 
     void handleDeletePassword(RouteTestRequest *) const {
         ++state->deletePasswordCalls;
         (void)OtaCredentialService::clearPassword();
+        state->sessionToken.clear();
     }
 
     void handleFactoryResetBody(RouteTestRequest *, const uint8_t *data, const size_t length,
@@ -478,6 +516,13 @@ RouteTestServer configuredMutationTestServer(RouteTestState &state, const Mutati
     MutationRouteRegistration::configure<RouteTestRequest>(
         &server, RouteTestCallbacks{&state}, mode, ROUTE_TEST_POST, ROUTE_TEST_PUT);
     return server;
+}
+
+std::string createRouteSession(RouteTestServer &server, RouteTestState &state,
+                               const char *bearer = "") {
+    RouteTestRequest request{ROUTE_TEST_POST, Routes::OTA_SESSION, bearer, {}, &state};
+    if (!server.dispatchRequest(request)) return {};
+    return state.sessionToken;
 }
 
 void freeSlot(void *&slot) {
@@ -1158,7 +1203,6 @@ void test_factory_reset_nvs_failure_is_reported(void) {
 
 void test_registered_ota_routes_decode_bearer_and_dispatch_first_upload_chunk(void) {
     constexpr const char *correctBearer = "cm91dGUtcGFzc3dvcmQ=";
-    constexpr const char *wrongBearer = "d3JvbmctcGFzc3dvcmQ=";
     const char *uploadRoutes[] = {Routes::OTA_FIRMWARE, Routes::OTA_FILESYSTEM};
 
     for (int routeMode = 0; routeMode < 2; ++routeMode) {
@@ -1169,39 +1213,54 @@ void test_registered_ota_routes_decode_bearer_and_dispatch_first_upload_chunk(vo
 
         TEST_ASSERT_EQUAL_UINT(3U, server.count(Routes::OTA_FIRMWARE, ROUTE_TEST_POST));
         TEST_ASSERT_EQUAL_UINT(3U, server.count(Routes::OTA_FILESYSTEM, ROUTE_TEST_POST));
-        TEST_ASSERT_EQUAL_UINT(3U, server.count(Routes::OTA_HTTP_CHECK, ROUTE_TEST_POST));
-        TEST_ASSERT_EQUAL_UINT(3U, server.count(Routes::FACTORY_RESET, ROUTE_TEST_POST));
+        TEST_ASSERT_EQUAL_UINT(4U, server.count(Routes::OTA_HTTP_CHECK, ROUTE_TEST_POST));
+        TEST_ASSERT_EQUAL_UINT(4U, server.count(Routes::FACTORY_RESET, ROUTE_TEST_POST));
+
+        const std::string initialSession = createRouteSession(server, state);
+        TEST_ASSERT_FALSE(initialSession.empty());
 
         RouteTestRequest setPassword{ROUTE_TEST_PUT, Routes::OTA_PASSWORD, "", {}, &state};
+        setPassword.session = initialSession;
         TEST_ASSERT_TRUE(server.dispatchBody(setPassword, R"({"password":"route-password"})"));
         TEST_ASSERT_EQUAL_INT(1, state.passwordHandlerCalls);
         TEST_ASSERT_TRUE(OtaCredentialService::isProtected());
+        TEST_ASSERT_TRUE(state.sessionToken.empty());
+
+        const std::string session = createRouteSession(server, state, correctBearer);
+        TEST_ASSERT_FALSE(session.empty());
+        TEST_ASSERT_EQUAL_INT(1, state.passwordVerificationCalls);
 
         RouteTestRequest absentCheck{ROUTE_TEST_POST, Routes::OTA_HTTP_CHECK, "", {}, &state};
         TEST_ASSERT_TRUE(server.dispatchRequest(absentCheck));
         TEST_ASSERT_EQUAL_INT(1, state.unauthorizedCalls);
         TEST_ASSERT_EQUAL_INT(0, state.checkCalls);
 
-        RouteTestRequest malformedCheck{ROUTE_TEST_POST, Routes::OTA_HTTP_CHECK, "%%%not-base64%%%", {}, &state};
+        RouteTestRequest malformedCheck{ROUTE_TEST_POST, Routes::OTA_HTTP_CHECK, "", {}, &state};
+        malformedCheck.session = "%%%not-a-session%%%";
         TEST_ASSERT_TRUE(server.dispatchRequest(malformedCheck));
         TEST_ASSERT_EQUAL_INT(2, state.unauthorizedCalls);
         TEST_ASSERT_EQUAL_INT(0, state.checkCalls);
 
-        RouteTestRequest wrongCheck{ROUTE_TEST_POST, Routes::OTA_HTTP_CHECK, wrongBearer, {}, &state};
+        RouteTestRequest wrongCheck{ROUTE_TEST_POST, Routes::OTA_HTTP_CHECK, "", {}, &state};
+        wrongCheck.session = "wrong-session";
         TEST_ASSERT_TRUE(server.dispatchRequest(wrongCheck));
         TEST_ASSERT_EQUAL_INT(3, state.unauthorizedCalls);
         TEST_ASSERT_EQUAL_INT(0, state.checkCalls);
 
-        RouteTestRequest correctCheck{ROUTE_TEST_POST, Routes::OTA_HTTP_CHECK, correctBearer, {}, &state};
+        RouteTestRequest correctCheck{ROUTE_TEST_POST, Routes::OTA_HTTP_CHECK, "", {}, &state};
+        correctCheck.session = session;
         TEST_ASSERT_TRUE(server.dispatchRequest(correctCheck));
         TEST_ASSERT_EQUAL_INT(1, state.checkCalls);
 
-        RouteTestRequest correctNotes{ROUTE_TEST_POST, Routes::OTA_HTTP_NOTES, correctBearer, {}, &state};
-        RouteTestRequest correctApply{ROUTE_TEST_POST, Routes::OTA_HTTP_APPLY, correctBearer, {}, &state};
+        RouteTestRequest correctNotes{ROUTE_TEST_POST, Routes::OTA_HTTP_NOTES, "", {}, &state};
+        RouteTestRequest correctApply{ROUTE_TEST_POST, Routes::OTA_HTTP_APPLY, "", {}, &state};
+        correctNotes.session = session;
+        correctApply.session = session;
         TEST_ASSERT_TRUE(server.dispatchRequest(correctNotes));
         TEST_ASSERT_TRUE(server.dispatchRequest(correctApply));
         TEST_ASSERT_EQUAL_INT(1, state.notesCalls);
         TEST_ASSERT_EQUAL_INT(1, state.applyCalls);
+        TEST_ASSERT_EQUAL_INT(1, state.passwordVerificationCalls);
 
         for (int imageType = 0; imageType < 2; ++imageType) {
             const int beginCallsBefore = state.firmwareBeginCalls + state.filesystemBeginCalls;
@@ -1210,12 +1269,14 @@ void test_registered_ota_routes_decode_bearer_and_dispatch_first_upload_chunk(vo
 
             RouteTestRequest absent{ROUTE_TEST_POST, uploadRoutes[imageType], "", {}, &state};
             TEST_ASSERT_TRUE(server.dispatchUploadChunk(absent, firstChunk, sizeof(firstChunk)));
-            RouteTestRequest wrong{ROUTE_TEST_POST, uploadRoutes[imageType], wrongBearer, {}, &state};
+            RouteTestRequest wrong{ROUTE_TEST_POST, uploadRoutes[imageType], "", {}, &state};
+            wrong.session = "wrong-session";
             TEST_ASSERT_TRUE(server.dispatchUploadChunk(wrong, firstChunk, sizeof(firstChunk)));
             TEST_ASSERT_EQUAL_INT(beginCallsBefore, state.firmwareBeginCalls + state.filesystemBeginCalls);
             TEST_ASSERT_EQUAL_INT(writesBefore, state.writeCalls);
 
-            RouteTestRequest correct{ROUTE_TEST_POST, uploadRoutes[imageType], correctBearer, {}, &state};
+            RouteTestRequest correct{ROUTE_TEST_POST, uploadRoutes[imageType], "", {}, &state};
+            correct.session = session;
             TEST_ASSERT_TRUE(server.dispatchUploadChunk(correct, firstChunk, sizeof(firstChunk)));
             TEST_ASSERT_EQUAL_INT(beginCallsBefore + 1, state.firmwareBeginCalls + state.filesystemBeginCalls);
             TEST_ASSERT_EQUAL_INT(writesBefore + 1, state.writeCalls);
@@ -1233,7 +1294,9 @@ void test_registered_factory_reset_route_clears_persisted_credential(void) {
     RouteTestState state;
     RouteTestServer server = configuredRouteTestServer(state);
 
+    const std::string initialSession = createRouteSession(server, state);
     RouteTestRequest setPassword{ROUTE_TEST_PUT, Routes::OTA_PASSWORD, "", {}, &state};
+    setPassword.session = initialSession;
     TEST_ASSERT_TRUE(server.dispatchBody(setPassword, R"({"password":"route-password"})"));
     TEST_ASSERT_TRUE(OtaCredentialService::isProtected());
 
@@ -1243,7 +1306,9 @@ void test_registered_factory_reset_route_clears_persisted_credential(void) {
     TEST_ASSERT_EQUAL_INT(0, state.factoryResetHandlerCalls);
     TEST_ASSERT_TRUE(OtaCredentialService::isProtected());
 
-    RouteTestRequest acceptedReset{ROUTE_TEST_POST, Routes::FACTORY_RESET, correctBearer, {}, &state};
+    const std::string session = createRouteSession(server, state, correctBearer);
+    RouteTestRequest acceptedReset{ROUTE_TEST_POST, Routes::FACTORY_RESET, "", {}, &state};
+    acceptedReset.session = session;
     TEST_ASSERT_TRUE(server.dispatchBody(acceptedReset, R"({"confirm":"factory-reset"})"));
     TEST_ASSERT_EQUAL_INT(1, state.factoryResetHandlerCalls);
     TEST_ASSERT_EQUAL_INT(1, state.factoryResetScheduleCalls);
@@ -1267,6 +1332,8 @@ void test_registered_ota_routes_fail_closed_when_credential_storage_is_unavailab
         RouteTestServer server = configuredRouteTestServer(state);
         Preferences::setBeginFailure(true);
 
+        TEST_ASSERT_TRUE(createRouteSession(server, state, correctBearer).empty());
+
         RouteTestRequest check{ROUTE_TEST_POST, Routes::OTA_HTTP_CHECK, correctBearer, {}, &state};
         RouteTestRequest notes{ROUTE_TEST_POST, Routes::OTA_HTTP_NOTES, correctBearer, {}, &state};
         RouteTestRequest apply{ROUTE_TEST_POST, Routes::OTA_HTTP_APPLY, correctBearer, {}, &state};
@@ -1288,7 +1355,8 @@ void test_registered_ota_routes_fail_closed_when_credential_storage_is_unavailab
             TEST_ASSERT_TRUE(server.dispatchUploadChunk(upload, firstChunk, sizeof(firstChunk)));
         }
 
-        TEST_ASSERT_EQUAL_INT(8, state.unauthorizedCalls);
+        TEST_ASSERT_EQUAL_INT(9, state.unauthorizedCalls);
+        TEST_ASSERT_EQUAL_INT(1, state.passwordVerificationCalls);
         TEST_ASSERT_EQUAL_INT(0, state.checkCalls);
         TEST_ASSERT_EQUAL_INT(0, state.notesCalls);
         TEST_ASSERT_EQUAL_INT(0, state.applyCalls);
@@ -1392,12 +1460,21 @@ void test_registered_mutation_matrix_fails_closed_before_dispatch(void) {
 
         for (size_t i = 0U; i < routeCount; ++i) {
             const MutationCase &route = routes[i];
-            TEST_ASSERT_EQUAL_UINT(2U, server.count(route.path, route.method));
+            TEST_ASSERT_EQUAL_UINT(3U, server.count(route.path, route.method));
 
             const int callsBefore = state.mutationSideEffectCalls;
             RouteTestRequest valid{route.method, route.path, "", {}, &state};
             TEST_ASSERT_TRUE(route.hasBody ? server.dispatchBody(valid, "{}") : server.dispatchRequest(valid));
             TEST_ASSERT_EQUAL_INT(callsBefore + 1, state.mutationSideEffectCalls);
+
+            state.otaActive = true;
+            RouteTestRequest duringOta{route.method, route.path, "", {}, &state};
+            TEST_ASSERT_TRUE(route.hasBody
+                                 ? server.dispatchBody(duringOta, R"({"mustNotAccumulate":true})")
+                                 : server.dispatchRequest(duringOta));
+            TEST_ASSERT_EQUAL_INT(callsBefore + 1, state.mutationSideEffectCalls);
+            TEST_ASSERT_EQUAL_INT(static_cast<int>(i + 1U), state.otaBusyCalls);
+            state.otaActive = false;
 
             RouteTestRequest missingMarker{route.method, route.path, "", {}, &state};
             missingMarker.marker.clear();
@@ -1503,7 +1580,9 @@ void test_registered_ota_matrix_checks_mutation_context_before_auth_or_payload(v
     TEST_ASSERT_EQUAL_INT(9, state.forbiddenCalls);
 
     constexpr const char *correctBearer = "cm91dGUtcGFzc3dvcmQ=";
-    RouteTestRequest accepted{ROUTE_TEST_POST, Routes::OTA_HTTP_CHECK, correctBearer, {}, &state};
+    const std::string session = createRouteSession(server, state, correctBearer);
+    RouteTestRequest accepted{ROUTE_TEST_POST, Routes::OTA_HTTP_CHECK, "", {}, &state};
+    accepted.session = session;
     accepted.host = "MODBUS-TO-X.LOCAL:80";
     TEST_ASSERT_TRUE(server.dispatchRequest(accepted));
     TEST_ASSERT_EQUAL_INT(1, state.checkCalls);
@@ -1513,6 +1592,57 @@ void test_registered_ota_matrix_checks_mutation_context_before_auth_or_payload(v
     readSettings.host = "public.example";
     TEST_ASSERT_TRUE(server.dispatchRequest(readSettings));
     TEST_ASSERT_EQUAL_INT(1, state.getSettingsCalls);
+}
+
+void test_registered_ota_routes_apply_context_session_and_busy_precedence_before_body(void) {
+    RouteTestState state;
+    state.sessionToken = "active-session";
+    state.otaActive = true;
+    RouteTestServer server = configuredRouteTestServer(state);
+
+    RouteTestRequest invalidContext{ROUTE_TEST_POST, Routes::OTA_HTTP_CHECK, "", {}, &state};
+    invalidContext.marker.clear();
+    invalidContext.session = state.sessionToken;
+    TEST_ASSERT_TRUE(server.dispatchRequest(invalidContext));
+    TEST_ASSERT_EQUAL_INT(1, state.forbiddenCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.unauthorizedCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.otaBusyCalls);
+
+    RouteTestRequest invalidSession{ROUTE_TEST_POST, Routes::OTA_HTTP_CHECK, "", {}, &state};
+    invalidSession.session = "stale-session";
+    TEST_ASSERT_TRUE(server.dispatchRequest(invalidSession));
+    TEST_ASSERT_EQUAL_INT(1, state.unauthorizedCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.otaBusyCalls);
+
+    RouteTestRequest busyCheck{ROUTE_TEST_POST, Routes::OTA_HTTP_CHECK, "", {}, &state};
+    busyCheck.session = state.sessionToken;
+    TEST_ASSERT_TRUE(server.dispatchRequest(busyCheck));
+    TEST_ASSERT_EQUAL_INT(1, state.otaBusyCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.checkCalls);
+
+    RouteTestRequest busySettings{ROUTE_TEST_POST, Routes::OTA_HTTP_SETTINGS, "", {}, &state};
+    busySettings.session = state.sessionToken;
+    TEST_ASSERT_TRUE(server.dispatchBody(busySettings, R"({"includePrereleases":true})"));
+    TEST_ASSERT_EQUAL_INT(2, state.otaBusyCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.putSettingsCalls);
+
+    RouteTestRequest concurrentApply{ROUTE_TEST_POST, Routes::OTA_HTTP_APPLY, "", {}, &state};
+    concurrentApply.session = state.sessionToken;
+    TEST_ASSERT_TRUE(server.dispatchRequest(concurrentApply));
+    TEST_ASSERT_EQUAL_INT(3, state.otaBusyCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.applyCalls);
+
+    RouteTestRequest manualStart{ROUTE_TEST_POST, Routes::OTA_MANUAL_START, "", {}, &state};
+    manualStart.session = state.sessionToken;
+    TEST_ASSERT_TRUE(server.dispatchBody(manualStart, R"({"component":"firmware","size":1024})"));
+    TEST_ASSERT_EQUAL_INT(4, state.otaBusyCalls);
+    TEST_ASSERT_EQUAL_INT(0, state.manualStartCalls);
+
+    RouteTestRequest status{ROUTE_TEST_GET, Routes::OTA_STATUS, "", {}, &state};
+    status.marker.clear();
+    status.host = "public.example";
+    TEST_ASSERT_TRUE(server.dispatchRequest(status));
+    TEST_ASSERT_EQUAL_INT(1, state.statusCalls);
 }
 
 namespace {
@@ -2125,6 +2255,66 @@ void test_mqtt_owner_core_replacement_deduplicates_reconnect_subscriptions(void)
     TEST_ASSERT_EQUAL_UINT(1U, subscribeCount);
 }
 
+void test_mqtt_owner_quiesces_after_retained_signal_and_rejects_work_until_matching_resume(void) {
+    constexpr uintptr_t OWNER = 52U;
+    RecordingMqttOwnerClient client;
+    MqttOwnerCore<RecordingMqttOwnerClient> owner(client, OWNER);
+    TEST_ASSERT_TRUE(owner.applyConfiguration(OWNER, "broker", true));
+    TEST_ASSERT_TRUE(owner.connect(OWNER));
+    TEST_ASSERT_TRUE(owner.quiesceForOta(OWNER, 91U, "root/status", "offline"));
+    TEST_ASSERT_TRUE(owner.snapshot().quiesced);
+    TEST_ASSERT_EQUAL_UINT32(91U, owner.snapshot().otaOperationId);
+    TEST_ASSERT_FALSE(owner.loop(OWNER));
+    TEST_ASSERT_FALSE(owner.publish(OWNER, "root/state", "late", owner.generation(), 0U));
+    TEST_ASSERT_FALSE(owner.resumeFromOta(OWNER, 92U));
+    TEST_ASSERT_TRUE(owner.resumeFromOta(OWNER, 91U));
+    TEST_ASSERT_FALSE(owner.snapshot().quiesced);
+    TEST_ASSERT_TRUE(owner.snapshot().enabled);
+    TEST_ASSERT_TRUE(owner.connect(OWNER));
+
+    const char *expected[] = {
+        "server:broker",
+        "connect",
+        "publish:root/status=offline",
+        "disconnect",
+        "connect",
+    };
+    TEST_ASSERT_EQUAL_UINT(sizeof(expected) / sizeof(expected[0]), client.calls.size());
+    for (size_t i = 0U; i < client.calls.size(); ++i) {
+        TEST_ASSERT_EQUAL_STRING(expected[i], client.calls[i].c_str());
+    }
+}
+
+void test_mqtt_owner_preserves_initially_disabled_state_across_ota(void) {
+    constexpr uintptr_t OWNER = 53U;
+    RecordingMqttOwnerClient client;
+    MqttOwnerCore<RecordingMqttOwnerClient> owner(client, OWNER);
+    TEST_ASSERT_TRUE(owner.applyConfiguration(OWNER, "broker", false));
+    TEST_ASSERT_TRUE(owner.quiesceForOta(OWNER, 7U));
+    TEST_ASSERT_TRUE(owner.resumeFromOta(OWNER, 7U));
+    TEST_ASSERT_FALSE(owner.snapshot().enabled);
+    TEST_ASSERT_FALSE(owner.connect(OWNER));
+}
+
+void test_mqtt_owner_quiesce_is_bounded_when_signal_fails_or_broker_is_disconnected(void) {
+    constexpr uintptr_t OWNER = 54U;
+    RecordingMqttOwnerClient failingClient;
+    failingClient.publishResult = false;
+    MqttOwnerCore<RecordingMqttOwnerClient> failingOwner(failingClient, OWNER);
+    TEST_ASSERT_TRUE(failingOwner.applyConfiguration(OWNER, "broker", true));
+    TEST_ASSERT_TRUE(failingOwner.connect(OWNER));
+    TEST_ASSERT_TRUE(failingOwner.quiesceForOta(OWNER, 8U, "root/status", "offline"));
+    TEST_ASSERT_EQUAL_STRING("publish:root/status=offline", failingClient.calls[2].c_str());
+    TEST_ASSERT_EQUAL_STRING("disconnect", failingClient.calls[3].c_str());
+
+    RecordingMqttOwnerClient disconnectedClient;
+    MqttOwnerCore<RecordingMqttOwnerClient> disconnectedOwner(disconnectedClient, OWNER);
+    TEST_ASSERT_TRUE(disconnectedOwner.applyConfiguration(OWNER, "broker", true));
+    TEST_ASSERT_TRUE(disconnectedOwner.quiesceForOta(OWNER, 9U, "root/status", "offline"));
+    TEST_ASSERT_EQUAL_UINT(1U, disconnectedClient.calls.size());
+    TEST_ASSERT_EQUAL_STRING("server:broker", disconnectedClient.calls[0].c_str());
+}
+
 struct ModbusOwnerTestConfiguration {
     int identity = 0;
     int busValue = 0;
@@ -2137,21 +2327,22 @@ struct RecordingModbusOwnerBus {
     void initialize(const int value) { initializedValues.push_back(value); }
 };
 
-void test_modbus_owner_activates_only_after_complete_polling_pass(void) {
+void test_modbus_owner_activates_only_after_transaction_boundary(void) {
     RecordingModbusOwnerBus bus;
     ModbusOwnerCore<ModbusOwnerTestConfiguration, RecordingModbusOwnerBus> owner(bus);
     owner.requestActivation({1, 9600, 3U, 6U});
     TEST_ASSERT_TRUE(owner.processBoundary());
+    owner.setActive(true);
 
     std::vector<int> observedIdentities;
     owner.runPollingPass([&](const ModbusOwnerTestConfiguration &active, const size_t deviceIndex) {
         observedIdentities.push_back(active.identity);
-        if (deviceIndex == 1U) {
+        if (deviceIndex == 0U) {
             owner.requestActivation({2, 19200, 2U, 4U});
             TEST_ASSERT_FALSE(owner.processBoundary());
         }
     });
-    TEST_ASSERT_EQUAL_UINT(3U, observedIdentities.size());
+    TEST_ASSERT_EQUAL_UINT(1U, observedIdentities.size());
     for (const int identity : observedIdentities) TEST_ASSERT_EQUAL_INT(1, identity);
     TEST_ASSERT_EQUAL_INT(1, owner.active().identity);
     TEST_ASSERT_TRUE(owner.processBoundary());
@@ -2190,6 +2381,33 @@ void test_modbus_owner_snapshots_remain_values_across_replacement(void) {
     TEST_ASSERT_EQUAL_UINT(2U, oldSnapshot.deviceCount);
     TEST_ASSERT_EQUAL_UINT(10U, oldSnapshot.datapointCount);
     TEST_ASSERT_EQUAL_UINT32(49U, owner.snapshot().generation);
+}
+
+void test_modbus_owner_quiesce_stops_commands_and_restores_only_prior_state(void) {
+    RecordingModbusOwnerBus bus;
+    ModbusOwnerCore<ModbusOwnerTestConfiguration, RecordingModbusOwnerBus> owner(bus);
+    owner.requestActivation({1, 9600, 1U, 1U});
+    TEST_ASSERT_TRUE(owner.processBoundary());
+    owner.setActive(true);
+    int transactionCalls = 0;
+    owner.runPollingPass([&](const ModbusOwnerTestConfiguration &, const size_t) {
+        ++transactionCalls;
+        TEST_ASSERT_TRUE(owner.requestQuiesceForOta(44U));
+    });
+    TEST_ASSERT_EQUAL_INT(1, transactionCalls);
+    TEST_ASSERT_TRUE(owner.snapshot().quiesced);
+    int commandCalls = 0;
+    owner.runCommand([&](const ModbusOwnerTestConfiguration &) { ++commandCalls; });
+    TEST_ASSERT_EQUAL_INT(0, commandCalls);
+    TEST_ASSERT_FALSE(owner.processBoundary());
+    TEST_ASSERT_FALSE(owner.resumeFromOta(45U));
+    TEST_ASSERT_TRUE(owner.resumeFromOta(44U));
+    TEST_ASSERT_TRUE(owner.snapshot().active);
+
+    owner.setActive(false);
+    TEST_ASSERT_TRUE(owner.quiesceForOta(46U));
+    TEST_ASSERT_TRUE(owner.resumeFromOta(46U));
+    TEST_ASSERT_FALSE(owner.snapshot().active);
 }
 
 void test_mqtt_owner_snapshots_remain_values_across_replacement(void) {
@@ -2647,6 +2865,261 @@ void test_modbus_home_assistant_number_bounds_follow_scale_direction(void) {
     TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(NAN).valid());
 }
 
+void test_ota_lifecycle_rejects_duplicates_and_retains_terminal_failure(void) {
+    OtaProgressCore::Lifecycle lifecycle;
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(OtaProgressCore::Lifecycle::Admission::Accepted),
+        static_cast<int>(lifecycle.reserve("8.1.0", true, true, false)));
+    const uint32_t operation = lifecycle.operationId();
+    TEST_ASSERT_NOT_EQUAL(0U, operation);
+    TEST_ASSERT_FALSE(lifecycle.markAwaitingUpload(operation + 1U));
+    TEST_ASSERT_FALSE(lifecycle.beginVerification(operation, OtaProgressCore::Component::Firmware));
+    TEST_ASSERT_FALSE(lifecycle.markResuming(operation));
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(OtaProgressCore::Lifecycle::Admission::Busy),
+        static_cast<int>(lifecycle.reserve("8.1.1", true, true, false)));
+    TEST_ASSERT_TRUE(lifecycle.failureDetected(operation, "quiesce_timeout"));
+    TEST_ASSERT_TRUE(lifecycle.markResuming(operation));
+    TEST_ASSERT_TRUE(lifecycle.markFailed(operation, "quiesce_timeout"));
+    TEST_ASSERT_FALSE(lifecycle.active());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(OtaProgressCore::State::Failed),
+                          static_cast<int>(lifecycle.snapshot().state));
+    TEST_ASSERT_EQUAL_STRING("quiesce_timeout", lifecycle.snapshot().errorCode);
+
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(OtaProgressCore::Lifecycle::Admission::Accepted),
+        static_cast<int>(lifecycle.reserve("8.1.1", true, false, true)));
+    TEST_ASSERT_NOT_EQUAL(operation, lifecycle.operationId());
+}
+
+void test_ota_quiescence_deadlines_are_independent_and_rollover_safe(void) {
+    using OtaQuiescenceCore::Result;
+    const uint32_t startedAt = UINT32_MAX - 100U;
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Result::Pending), static_cast<int>(
+        OtaQuiescenceCore::evaluate(startedAt, 899U, false, false, false,
+                                    1500U, 2500U, 6000U)));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Result::MqttTimeout), static_cast<int>(
+        OtaQuiescenceCore::evaluate(startedAt, 1400U, false, false, false,
+                                    1500U, 2500U, 6000U)));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Result::ModbusTimeout), static_cast<int>(
+        OtaQuiescenceCore::evaluate(startedAt, 2400U, true, false, false,
+                                    1500U, 2500U, 6000U)));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Result::HttpTimeout), static_cast<int>(
+        OtaQuiescenceCore::evaluate(startedAt, 5900U, true, true, false,
+                                    1500U, 2500U, 6000U)));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(Result::Ready), static_cast<int>(
+        OtaQuiescenceCore::evaluate(startedAt, 5900U, true, true, true,
+                                    1500U, 2500U, 6000U)));
+}
+
+void test_ota_progress_calculates_component_and_overall_without_overflow(void) {
+    OtaProgressCore::Lifecycle lifecycle;
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(OtaProgressCore::Lifecycle::Admission::Accepted),
+        static_cast<int>(lifecycle.reserve("8.2.0", true, true, false)));
+    const uint32_t operation = lifecycle.operationId();
+    TEST_ASSERT_TRUE(lifecycle.beginComponent(operation, OtaProgressCore::Component::Firmware,
+                                              UINT32_MAX));
+    TEST_ASSERT_TRUE(lifecycle.updateBytes(operation, UINT32_MAX - 1U));
+    TEST_ASSERT_EQUAL_UINT8(99U, lifecycle.snapshot().componentPercent);
+    TEST_ASSERT_FALSE(lifecycle.snapshot().overallPercentKnown);
+    TEST_ASSERT_TRUE(lifecycle.beginVerification(operation, OtaProgressCore::Component::Firmware));
+    TEST_ASSERT_TRUE(lifecycle.completeComponent(operation, OtaProgressCore::Component::Firmware));
+    TEST_ASSERT_TRUE(lifecycle.beginComponent(operation, OtaProgressCore::Component::Filesystem, 100U));
+    TEST_ASSERT_TRUE(lifecycle.updateBytes(operation, 50U));
+    TEST_ASSERT_TRUE(lifecycle.snapshot().overallPercentKnown);
+    TEST_ASSERT_EQUAL_UINT8(99U, lifecycle.snapshot().overallPercent);
+    TEST_ASSERT_TRUE(lifecycle.updateBytes(operation, 1000U));
+    TEST_ASSERT_EQUAL_UINT8(100U, lifecycle.snapshot().componentPercent);
+    TEST_ASSERT_EQUAL_UINT32(100U, lifecycle.snapshot().receivedBytes);
+}
+
+void test_ota_manual_progress_and_success_transition(void) {
+    OtaProgressCore::Lifecycle lifecycle;
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(OtaProgressCore::Lifecycle::Admission::Accepted),
+        static_cast<int>(lifecycle.reserve("manual", false, true, true)));
+    const uint32_t operation = lifecycle.operationId();
+    TEST_ASSERT_TRUE(lifecycle.markAwaitingUpload(operation));
+    TEST_ASSERT_TRUE(lifecycle.beginComponent(operation, OtaProgressCore::Component::Filesystem, 400U));
+    TEST_ASSERT_TRUE(lifecycle.updateBytes(operation, 100U));
+    TEST_ASSERT_TRUE(lifecycle.snapshot().overallPercentKnown);
+    TEST_ASSERT_EQUAL_UINT8(25U, lifecycle.snapshot().componentPercent);
+    TEST_ASSERT_EQUAL_UINT8(25U, lifecycle.snapshot().overallPercent);
+    TEST_ASSERT_TRUE(lifecycle.beginVerification(operation, OtaProgressCore::Component::Filesystem));
+    TEST_ASSERT_TRUE(lifecycle.completeComponent(operation, OtaProgressCore::Component::Filesystem));
+    TEST_ASSERT_TRUE(lifecycle.markRebooting(operation));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(OtaProgressCore::State::Rebooting),
+                          static_cast<int>(lifecycle.snapshot().state));
+}
+
+void test_ota_signed_single_component_reports_overall_progress(void) {
+    OtaProgressCore::Lifecycle lifecycle;
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(OtaProgressCore::Lifecycle::Admission::Accepted),
+        static_cast<int>(lifecycle.reserve("8.2.1", true, false, false)));
+    const uint32_t operation = lifecycle.operationId();
+    TEST_ASSERT_TRUE(lifecycle.beginComponent(
+        operation, OtaProgressCore::Component::Firmware, 400U));
+    TEST_ASSERT_TRUE(lifecycle.updateBytes(operation, 100U));
+    TEST_ASSERT_TRUE(lifecycle.snapshot().overallPercentKnown);
+    TEST_ASSERT_EQUAL_UINT8(25U, lifecycle.snapshot().overallPercent);
+}
+
+void test_ota_heap_floor_requires_free_and_contiguous_headroom(void) {
+    TEST_ASSERT_TRUE(OtaProgressCore::meetsHeapFloor(100U, 50U, 100U, 50U));
+    TEST_ASSERT_FALSE(OtaProgressCore::meetsHeapFloor(99U, 50U, 100U, 50U));
+    TEST_ASSERT_FALSE(OtaProgressCore::meetsHeapFloor(100U, 49U, 100U, 50U));
+}
+
+// Runtime mirror of the static_asserts in Config.h. The asserts permit
+// equality for -D overrides; the shipped defaults are expected to be strictly
+// ordered because the flash-boundary check runs after TLS has been paid for.
+void test_ota_flash_boundary_floor_sits_below_quiescence_floor(void) {
+    TEST_ASSERT_TRUE(OTA_FLASH_MIN_INTERNAL_FREE_HEAP < OTA_MIN_INTERNAL_FREE_HEAP);
+    TEST_ASSERT_TRUE(OTA_FLASH_MIN_INTERNAL_LARGEST_BLOCK < OTA_MIN_INTERNAL_LARGEST_BLOCK);
+}
+
+// Regression anchor from a serial capture on the custom board: quiescence
+// measured 122,200 B free / 40,948 B largest, and the post-TLS reading at the
+// flash boundary was 76,248 B (second attempt 77,412 B) with the same largest
+// block. One shared 96 KiB floor refused every HTTPS download on this
+// hardware.
+void test_ota_two_stage_admission_matches_observed_tls_cost(void) {
+    TEST_ASSERT_TRUE(OtaProgressCore::meetsHeapFloor(
+        122200U, 40948U, OTA_MIN_INTERNAL_FREE_HEAP, OTA_MIN_INTERNAL_LARGEST_BLOCK));
+    TEST_ASSERT_TRUE(OtaProgressCore::meetsHeapFloor(
+        76248U, 40948U, OTA_FLASH_MIN_INTERNAL_FREE_HEAP, OTA_FLASH_MIN_INTERNAL_LARGEST_BLOCK));
+    TEST_ASSERT_TRUE(OtaProgressCore::meetsHeapFloor(
+        77412U, 40948U, OTA_FLASH_MIN_INTERNAL_FREE_HEAP, OTA_FLASH_MIN_INTERNAL_LARGEST_BLOCK));
+    // The former single-stage floor refused the post-TLS reading.
+    TEST_ASSERT_FALSE(OtaProgressCore::meetsHeapFloor(
+        76248U, 40948U, OTA_MIN_INTERNAL_FREE_HEAP, OTA_MIN_INTERNAL_LARGEST_BLOCK));
+    // The flash-boundary floor still refuses genuinely exhausted memory.
+    TEST_ASSERT_FALSE(OtaProgressCore::meetsHeapFloor(
+        40000U, 40948U, OTA_FLASH_MIN_INTERNAL_FREE_HEAP, OTA_FLASH_MIN_INTERNAL_LARGEST_BLOCK));
+    TEST_ASSERT_FALSE(OtaProgressCore::meetsHeapFloor(
+        76248U, 12000U, OTA_FLASH_MIN_INTERNAL_FREE_HEAP, OTA_FLASH_MIN_INTERNAL_LARGEST_BLOCK));
+}
+
+void test_ota_manual_transfer_timeout_covers_start_idle_and_rollover(void) {
+    using OtaProgressCore::State;
+    TEST_ASSERT_FALSE(OtaProgressCore::manualTransferTimedOut(
+        State::AwaitingUpload, false, 30000U, 0U, 30000U));
+    TEST_ASSERT_FALSE(OtaProgressCore::manualTransferTimedOut(
+        State::AwaitingUpload, true, 29999U, 0U, 30000U));
+    TEST_ASSERT_TRUE(OtaProgressCore::manualTransferTimedOut(
+        State::AwaitingUpload, true, 30000U, 0U, 30000U));
+    TEST_ASSERT_TRUE(OtaProgressCore::manualTransferTimedOut(
+        State::DownloadingWritingFirmware, true, 20000U, UINT32_MAX - 9999U, 30000U));
+    TEST_ASSERT_TRUE(OtaProgressCore::manualTransferTimedOut(
+        State::DownloadingWritingFilesystem, true, 30000U, 0U, 30000U));
+    TEST_ASSERT_FALSE(OtaProgressCore::manualTransferTimedOut(
+        State::VerifyingFirmware, true, 30000U, 0U, 30000U));
+}
+
+void test_ota_sessions_enforce_capacity_expiry_revocation_and_hex_tokens(void) {
+    OtaSessionCore::Store<2U> sessions(900000U, 300000U);
+    uint8_t first[OtaSessionCore::TOKEN_BYTES]{};
+    uint8_t second[OtaSessionCore::TOKEN_BYTES]{};
+    uint8_t third[OtaSessionCore::TOKEN_BYTES]{};
+    for (size_t i = 0U; i < OtaSessionCore::TOKEN_BYTES; ++i) {
+        first[i] = static_cast<uint8_t>(i);
+        second[i] = static_cast<uint8_t>(i + 1U);
+        third[i] = static_cast<uint8_t>(i + 2U);
+    }
+    TEST_ASSERT_TRUE(sessions.create(first, UINT32_MAX - 1000U));
+    TEST_ASSERT_TRUE(sessions.create(second, UINT32_MAX - 1000U));
+    TEST_ASSERT_FALSE(sessions.create(third, UINT32_MAX - 1000U));
+    TEST_ASSERT_TRUE(sessions.authorize(first, 500U));
+    TEST_ASSERT_FALSE(sessions.authorize(third, 500U));
+
+    char encoded[OtaSessionCore::TOKEN_BYTES * 2U + 1U]{};
+    uint8_t decoded[OtaSessionCore::TOKEN_BYTES]{};
+    OtaSessionCore::encodeHexToken(first, encoded);
+    TEST_ASSERT_TRUE(OtaSessionCore::decodeHexToken(encoded, std::strlen(encoded), decoded));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(first, decoded, OtaSessionCore::TOKEN_BYTES);
+    TEST_ASSERT_FALSE(OtaSessionCore::decodeHexToken("abcd", 4U, decoded));
+
+    sessions.expire(300500U);
+    TEST_ASSERT_EQUAL_UINT(0U, sessions.activeCount());
+    TEST_ASSERT_TRUE(sessions.create(third, 300500U));
+    sessions.revokeAll();
+    TEST_ASSERT_FALSE(sessions.authorize(third, 300501U));
+}
+
+void test_ota_progress_publisher_coalesces_and_applies_queue_heap_guards(void) {
+    OtaProgressCore::Publisher publisher;
+    OtaProgressCore::Snapshot snapshot;
+    snapshot.operationId = 1U;
+    snapshot.sequence = 1U;
+    snapshot.state = OtaProgressCore::State::Quiescing;
+    TEST_ASSERT_FALSE(publisher.shouldPublish(snapshot, 1000U, 0U, 0U,
+                                              100000U, 50000U, 80000U, 24000U));
+    TEST_ASSERT_FALSE(publisher.shouldPublish(snapshot, 1000U, 1U, 1U,
+                                              100000U, 50000U, 80000U, 24000U));
+    TEST_ASSERT_FALSE(publisher.shouldPublish(snapshot, 1000U, 1U, 0U,
+                                              70000U, 50000U, 80000U, 24000U));
+    TEST_ASSERT_TRUE(publisher.shouldPublish(snapshot, 1000U, 1U, 0U,
+                                             100000U, 50000U, 80000U, 24000U));
+    TEST_ASSERT_FALSE(publisher.shouldPublish(snapshot, 2000U, 1U, 0U,
+                                              100000U, 50000U, 80000U, 24000U));
+    snapshot.sequence = 2U;
+    snapshot.componentPercent = 1U;
+    TEST_ASSERT_FALSE(publisher.shouldPublish(snapshot, 1050U, 1U, 0U,
+                                              100000U, 50000U, 80000U, 24000U));
+    TEST_ASSERT_TRUE(publisher.shouldPublish(snapshot, 1100U, 1U, 0U,
+                                             100000U, 50000U, 80000U, 24000U));
+    snapshot.sequence = 3U;
+    TEST_ASSERT_TRUE(publisher.shouldPublish(snapshot, 1101U, 1U, 0U,
+                                             100000U, 50000U, 80000U, 24000U, true));
+}
+
+void test_ota_admission_gate_waits_for_existing_ui_lease_and_restores_selectively(void) {
+    OtaAdmissionGateCore::Gate gate;
+    TEST_ASSERT_TRUE(gate.tryAcquireUiLease());
+    gate.close();
+    TEST_ASSERT_FALSE(gate.ordinaryMutationOpen());
+    TEST_ASSERT_FALSE(gate.runtimeJobsOpen());
+    TEST_ASSERT_FALSE(gate.tryAcquireUiLease());
+    TEST_ASSERT_EQUAL_UINT(1U, gate.uiLeaseCount());
+    gate.releaseUiLease();
+    TEST_ASSERT_EQUAL_UINT(0U, gate.uiLeaseCount());
+    gate.reopen(false);
+    TEST_ASSERT_TRUE(gate.ordinaryMutationOpen());
+    TEST_ASSERT_TRUE(gate.runtimeJobsOpen());
+    TEST_ASSERT_TRUE(gate.normalEventsOpen());
+    TEST_ASSERT_FALSE(gate.uiFilesystemOpen());
+}
+
+void test_ota_ui_filesystem_gate_prevents_access_until_safe_remount(void) {
+    OtaAdmissionGateCore::Gate gate;
+    size_t existsCalls = 0U;
+    size_t openCalls = 0U;
+    const auto serve = [&]() {
+        if (!gate.tryAcquireUiLease()) return false;
+        ++existsCalls;
+        ++openCalls;
+        gate.releaseUiLease();
+        return true;
+    };
+
+    TEST_ASSERT_TRUE(serve());
+    gate.close();
+    TEST_ASSERT_FALSE(serve());
+    TEST_ASSERT_EQUAL_UINT(1U, existsCalls);
+    TEST_ASSERT_EQUAL_UINT(1U, openCalls);
+    gate.reopen(false);
+    TEST_ASSERT_FALSE(serve());
+    TEST_ASSERT_EQUAL_UINT(1U, existsCalls);
+    TEST_ASSERT_EQUAL_UINT(1U, openCalls);
+    gate.close();
+    gate.reopen(true);
+    TEST_ASSERT_TRUE(serve());
+    TEST_ASSERT_EQUAL_UINT(2U, existsCalls);
+    TEST_ASSERT_EQUAL_UINT(2U, openCalls);
+}
+
 int main(int /*argc*/, char ** /*argv*/) {
     UNITY_BEGIN();
     RUN_TEST(test_single_chunk_returns_full_buffer);
@@ -2684,6 +3157,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_mutation_request_guard_validates_marker_and_allowed_hosts);
     RUN_TEST(test_registered_mutation_matrix_fails_closed_before_dispatch);
     RUN_TEST(test_registered_ota_matrix_checks_mutation_context_before_auth_or_payload);
+    RUN_TEST(test_registered_ota_routes_apply_context_session_and_busy_precedence_before_body);
     RUN_TEST(test_mqtt_connection_field_byte_boundaries);
     RUN_TEST(test_mqtt_multibyte_credentials_use_utf8_byte_lengths);
     RUN_TEST(test_mqtt_port_contract);
@@ -2699,9 +3173,13 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_mqtt_owner_core_removal_during_dispatch_has_no_stale_invocation);
     RUN_TEST(test_mqtt_owner_queues_replacement_submitted_during_callback_dispatch);
     RUN_TEST(test_mqtt_owner_core_replacement_deduplicates_reconnect_subscriptions);
-    RUN_TEST(test_modbus_owner_activates_only_after_complete_polling_pass);
+    RUN_TEST(test_mqtt_owner_quiesces_after_retained_signal_and_rejects_work_until_matching_resume);
+    RUN_TEST(test_mqtt_owner_preserves_initially_disabled_state_across_ota);
+    RUN_TEST(test_mqtt_owner_quiesce_is_bounded_when_signal_fails_or_broker_is_disconnected);
+    RUN_TEST(test_modbus_owner_activates_only_after_transaction_boundary);
     RUN_TEST(test_modbus_owner_defers_activation_during_adhoc_command);
     RUN_TEST(test_modbus_owner_snapshots_remain_values_across_replacement);
+    RUN_TEST(test_modbus_owner_quiesce_stops_commands_and_restores_only_prior_state);
     RUN_TEST(test_mqtt_owner_snapshots_remain_values_across_replacement);
     RUN_TEST(test_latest_revision_preserves_exact_candidate_across_overlapping_workers);
     RUN_TEST(test_configuration_revision_failure_is_inert_during_concurrent_worker_check);
@@ -2714,5 +3192,18 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_modbus_mqtt_production_handler_submits_only_accepted_commands);
     RUN_TEST(test_modbus_configuration_rejects_noninvertible_writable_scales_atomically);
     RUN_TEST(test_modbus_home_assistant_number_bounds_follow_scale_direction);
+    RUN_TEST(test_ota_lifecycle_rejects_duplicates_and_retains_terminal_failure);
+    RUN_TEST(test_ota_quiescence_deadlines_are_independent_and_rollover_safe);
+    RUN_TEST(test_ota_progress_calculates_component_and_overall_without_overflow);
+    RUN_TEST(test_ota_manual_progress_and_success_transition);
+    RUN_TEST(test_ota_signed_single_component_reports_overall_progress);
+    RUN_TEST(test_ota_heap_floor_requires_free_and_contiguous_headroom);
+    RUN_TEST(test_ota_flash_boundary_floor_sits_below_quiescence_floor);
+    RUN_TEST(test_ota_two_stage_admission_matches_observed_tls_cost);
+    RUN_TEST(test_ota_manual_transfer_timeout_covers_start_idle_and_rollover);
+    RUN_TEST(test_ota_sessions_enforce_capacity_expiry_revocation_and_hex_tokens);
+    RUN_TEST(test_ota_progress_publisher_coalesces_and_applies_queue_heap_guards);
+    RUN_TEST(test_ota_admission_gate_waits_for_existing_ui_lease_and_restores_selectively);
+    RUN_TEST(test_ota_ui_filesystem_gate_prevents_access_until_safe_remount);
     return UNITY_END();
 }

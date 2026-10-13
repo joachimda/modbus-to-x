@@ -18,6 +18,13 @@ enum class ModbusOperationResult : uint8_t {
     StaleGeneration,
     ActivationFailed,
     Superseded,
+    OtaInProgress,
+};
+
+enum class ModbusOtaQuiesceResult : uint8_t {
+    None = 0,
+    Stopped,
+    AlreadyDisabled,
 };
 
 enum class ModbusPublicationKind : uint8_t {
@@ -71,6 +78,10 @@ struct ModbusRuntimeSnapshot {
     uint32_t errorCount{0U};
     uint32_t ownerViolationCount{0U};
     uint32_t commandFailureCount{0U};
+    size_t commandQueueDepth{0U};
+    bool otaQuiesced{false};
+    uint32_t otaOperationId{0U};
+    ModbusOtaQuiesceResult otaQuiesceResult{ModbusOtaQuiesceResult::None};
 };
 
 const char *modbusOperationResultToString(ModbusOperationResult result);

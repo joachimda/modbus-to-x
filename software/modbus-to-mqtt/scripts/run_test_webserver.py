@@ -16,6 +16,7 @@ import json
 import mimetypes
 import random
 import re
+import secrets
 import socket
 import socketserver
 import sys
@@ -51,6 +52,19 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
     wifi_scan_scenario = "default"
     wifi_scan_request_count = 0
     wifi_scan_lock = threading.Lock()
+    ota_lock = threading.Lock()
+    ota_sessions = set()
+    ota_operation_id = 0
+    ota_active = False
+    ota_scenario = "success"
+    ota_manual_component = None
+    ota_manual_size = 0
+    ota_snapshot = {
+        "operationId": 0, "sequence": 0, "targetVersion": "", "state": "idle",
+        "stage": "idle", "component": "none", "receivedBytes": 0, "totalBytes": 0,
+        "componentPercentKnown": False, "componentPercent": 0,
+        "overallPercentKnown": False, "overallPercent": 0, "result": "none", "error": "",
+    }
     mutation_routes = {
         ("POST", "/api/wifi/connect"),
         ("POST", "/api/wifi/cancel"),
@@ -70,6 +84,8 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
         ("POST", "/api/system/ota/http/notes"),
         ("POST", "/api/system/ota/http/apply"),
         ("POST", "/api/system/ota/http/settings"),
+        ("POST", "/api/system/ota/session"),
+        ("POST", "/api/system/ota/manual/start"),
         ("PUT", "/api/system/ota/password"),
         ("DELETE", "/api/system/ota/password"),
         ("POST", "/api/system/factory-reset"),
@@ -148,6 +164,12 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
         if (self.command, path) not in self.mutation_routes:
             return True
         if self._mutation_context_allowed():
+            with type(self).ota_lock:
+                ota_active = type(self).ota_active
+            if (ota_active and not path.startswith("/api/system/ota/")
+                    and path != "/api/system/factory-reset"):
+                self._send_json({"error": "ota_in_progress"}, 503)
+                return False
             return True
         self._send_json({"error": "forbidden_request_context"}, 403)
         return False
@@ -176,6 +198,102 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
         return False
+
+    def _ota_session_authorized(self):
+        supplied = self.headers.get("X-OTA-Session", "")
+        with type(self).ota_lock:
+            return supplied in type(self).ota_sessions
+
+    def _require_ota_session(self):
+        if self._ota_session_authorized():
+            return True
+        self._send_json({"error": "ota_session_required"}, 401)
+        return False
+
+    @classmethod
+    def _set_ota_snapshot(cls, operation_id, state, component="none", received=0,
+                          total=0, target="9.9.9-test", error=""):
+        with cls.ota_lock:
+            previous = cls.ota_snapshot
+            sequence = int(previous.get("sequence", 0)) + 1
+            percent_known = total > 0
+            percent = min(100, int(received * 100 / total)) if percent_known else 0
+            cls.ota_snapshot = {
+                "operationId": operation_id,
+                "sequence": sequence,
+                "targetVersion": target,
+                "state": state,
+                "stage": state,
+                "component": component,
+                "receivedBytes": received,
+                "totalBytes": total,
+                "componentPercentKnown": percent_known,
+                "componentPercent": percent,
+                "overallPercentKnown": percent_known,
+                "overallPercent": percent,
+                "result": "failed" if state == "failed" else "rebooting" if state == "rebooting" else "none",
+                "error": error,
+            }
+            if state in ("failed", "rebooting"):
+                if state == "failed":
+                    cls.ota_active = False
+                cls.ota_sessions.clear()
+
+    @classmethod
+    def _reserve_mock_ota(cls, target="9.9.9-test"):
+        with cls.ota_lock:
+            if cls.ota_active:
+                return 0
+            cls.ota_active = True
+            cls.ota_operation_id += 1
+            operation_id = cls.ota_operation_id
+        cls._set_ota_snapshot(operation_id, "quiescing", target=target)
+        return operation_id
+
+    @classmethod
+    def _run_signed_ota(cls, operation_id):
+        stages = [
+            ("downloading_writing_filesystem", "filesystem", 25, 100),
+            ("downloading_writing_filesystem", "filesystem", 100, 100),
+            ("verifying_filesystem", "filesystem", 100, 100),
+            ("downloading_writing_firmware", "firmware", 50, 200),
+            ("downloading_writing_firmware", "firmware", 200, 200),
+            ("verifying_firmware", "firmware", 200, 200),
+        ]
+        for state, component, received, total in stages:
+            time.sleep(0.35)
+            cls._set_ota_snapshot(operation_id, state, component, received, total)
+        time.sleep(0.35)
+        if cls.ota_scenario == "failure":
+            cls._set_ota_snapshot(operation_id, "failure_detected", "firmware", 200, 200,
+                                  error="mock_stream_interrupted")
+            time.sleep(0.35)
+            cls._set_ota_snapshot(operation_id, "resuming", error="mock_stream_interrupted")
+            time.sleep(0.35)
+            cls._set_ota_snapshot(operation_id, "failed", error="mock_stream_interrupted")
+        else:
+            cls._set_ota_snapshot(operation_id, "rebooting")
+
+    @classmethod
+    def _run_manual_preflight(cls, operation_id):
+        time.sleep(0.5)
+        cls._set_ota_snapshot(operation_id, "awaiting_upload")
+
+    @classmethod
+    def _run_manual_completion(cls, operation_id, component, total):
+        cls._set_ota_snapshot(operation_id, f"downloading_writing_{component}", component, total, total)
+        time.sleep(0.35)
+        cls._set_ota_snapshot(operation_id, f"verifying_{component}", component, total, total)
+        time.sleep(0.35)
+        if cls.ota_scenario == "failure":
+            cls._set_ota_snapshot(operation_id, "failure_detected", component, total, total,
+                                  error="mock_upload_failed")
+            time.sleep(0.35)
+            cls._set_ota_snapshot(operation_id, "resuming", error="mock_upload_failed")
+            time.sleep(0.35)
+            cls._set_ota_snapshot(operation_id, "failed", error="mock_upload_failed")
+        else:
+            cls._set_ota_snapshot(operation_id, "rebooting")
 
     def _handle_api_get(self, path: str) -> bool:
         if path == "/api/ssids":
@@ -332,13 +450,57 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
             return True
 
         if path == "/api/system/ota/http/settings":
+            with type(self).ota_lock:
+                busy = type(self).ota_active
+            if busy:
+                self._send_json({"error": "ota_in_progress"}, 503)
+                return True
             self._send_json({
                 "includePrereleases": False,
                 "passwordProtected": type(self).ota_password is not None,
             })
             return True
 
+        if path == "/api/system/ota/status":
+            with type(self).ota_lock:
+                snapshot = dict(type(self).ota_snapshot)
+            self._send_json(snapshot)
+            return True
+
+        if path == "/api/system/ota/events":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            last_sequence = -1
+            sends = 0
+            deadline = time.monotonic() + 20.0
+            try:
+                while time.monotonic() < deadline:
+                    with type(self).ota_lock:
+                        snapshot = dict(type(self).ota_snapshot)
+                    if snapshot["sequence"] != last_sequence:
+                        payload = json.dumps(snapshot)
+                        self.wfile.write(f"event: ota-progress\nid: {snapshot['sequence']}\ndata: {payload}\n\n".encode("utf-8"))
+                        self.wfile.flush()
+                        last_sequence = snapshot["sequence"]
+                        sends += 1
+                        if type(self).ota_scenario == "sse-loss" and sends >= 2:
+                            return True
+                        if snapshot["state"] in ("failed", "rebooting"):
+                            return True
+                    time.sleep(0.2)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return True
+
         if path == "/api/events":
+            with type(self).ota_lock:
+                busy = type(self).ota_active
+            if busy:
+                self._send_json({"error": "ota_in_progress"}, 503)
+                return True
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
@@ -496,37 +658,129 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/api/wifi/reset":
             self._send_json({"ok": True, "resetting": True}, 202)
             return
+        if path == "/api/system/ota/session":
+            with type(self).ota_lock:
+                busy = type(self).ota_active
+            if busy:
+                self._send_json({"error": "ota_in_progress"}, 409)
+                return
+            if not self._require_ota_authorized():
+                return
+            session_token = secrets.token_hex(32)
+            with type(self).ota_lock:
+                type(self).ota_sessions.add(session_token)
+            self._send_json({
+                "token": session_token,
+                "absoluteExpiresMs": 900000,
+                "idleExpiresMs": 300000,
+            })
+            return
         if path == "/api/system/ota/http/settings":
+            if not self._require_ota_session():
+                self._read_body()
+                return
+            with type(self).ota_lock:
+                busy = type(self).ota_active
+            if busy:
+                self._read_body()
+                self._send_json({"error": "ota_in_progress"}, 503)
+                return
             self._read_body()
             self.send_response(204)
             self.end_headers()
             return
         if path.startswith("/api/system/ota/http/check"):
-            if not self._require_ota_authorized():
+            if not self._require_ota_session():
+                return
+            with type(self).ota_lock:
+                busy = type(self).ota_active
+            if busy:
+                self._send_json({"error": "ota_in_progress"}, 503)
                 return
             self._send_json({"ok": True, "available": True, "pending": False, "version": "9.9.9-test"})
             return
         if path.startswith("/api/system/ota/http/notes"):
-            if not self._require_ota_authorized():
+            if not self._require_ota_session():
+                return
+            with type(self).ota_lock:
+                busy = type(self).ota_active
+            if busy:
+                self._send_json({"error": "ota_in_progress"}, 503)
                 return
             self._send_json({"ok": True, "pending": False, "notes": "Mock release notes"})
             return
         if path == "/api/system/ota/http/apply":
-            if not self._require_ota_authorized():
+            if not self._require_ota_session():
                 return
-            self._send_json({"ok": True, "started": True, "version": "9.9.9-test"})
+            operation_id = type(self)._reserve_mock_ota()
+            if not operation_id:
+                self._send_json({"error": "ota_in_progress"}, 409)
+                return
+            threading.Thread(
+                target=type(self)._run_signed_ota, args=(operation_id,), daemon=True).start()
+            self._send_json({
+                "ok": True, "started": True, "operationId": operation_id,
+                "version": "9.9.9-test",
+            }, 202)
+            return
+        if path == "/api/system/ota/manual/start":
+            if not self._require_ota_session():
+                self._read_body()
+                return
+            try:
+                payload = json.loads(self._read_body() or b"{}")
+            except json.JSONDecodeError:
+                payload = {}
+            component = payload.get("component")
+            size = payload.get("size")
+            if component not in ("firmware", "filesystem") or not isinstance(size, int) or size <= 0:
+                self._send_json({"error": "bad_request"}, 400)
+                return
+            operation_id = type(self)._reserve_mock_ota(target="manual")
+            if not operation_id:
+                self._send_json({"error": "ota_in_progress"}, 409)
+                return
+            with type(self).ota_lock:
+                type(self).ota_manual_component = component
+                type(self).ota_manual_size = size
+            threading.Thread(
+                target=type(self)._run_manual_preflight, args=(operation_id,), daemon=True).start()
+            self._send_json({"ok": True, "operationId": operation_id}, 202)
             return
         if path in ("/api/system/ota/firmware", "/api/system/ota/fs"):
-            if not self._require_ota_authorized():
+            if not self._require_ota_session():
                 self._read_body()
                 return
+            component = "firmware" if path.endswith("firmware") else "filesystem"
+            try:
+                supplied_operation = int(self.headers.get("X-OTA-Operation", "0"))
+            except ValueError:
+                supplied_operation = 0
+            with type(self).ota_lock:
+                snapshot = dict(type(self).ota_snapshot)
+                expected_component = type(self).ota_manual_component
+                declared_size = type(self).ota_manual_size
+            if (snapshot["state"] != "awaiting_upload"
+                    or snapshot["operationId"] != supplied_operation
+                    or component != expected_component):
+                self._read_body()
+                self._send_json({"error": "ota_in_progress"}, 409)
+                return
             self._read_body()
-            image_type = "firmware" if path.endswith("firmware") else "filesystem"
-            self._send_json({"ok": True, "type": image_type})
+            threading.Thread(
+                target=type(self)._run_manual_completion,
+                args=(supplied_operation, component, declared_size), daemon=True).start()
+            self._send_json({"ok": True, "type": component})
             return
         if path == "/api/system/factory-reset":
-            if not self._require_ota_authorized():
+            if not self._require_ota_session():
                 self._read_body()
+                return
+            with type(self).ota_lock:
+                busy = type(self).ota_active
+            if busy:
+                self._read_body()
+                self._send_json({"error": "ota_in_progress"}, 503)
                 return
             try:
                 payload = json.loads(self._read_body() or b"{}")
@@ -536,6 +790,8 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({"error": "bad_request"}, 400)
                 return
             type(self).ota_password = None
+            with type(self).ota_lock:
+                type(self).ota_sessions.clear()
             self._send_json({"ok": True, "rebooting": True}, 202)
             return
         return super().do_POST()
@@ -544,8 +800,14 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
         if not self._require_mutation_context():
             return
         if self.path == "/api/system/ota/password":
-            if not self._require_ota_authorized():
+            if not self._require_ota_session():
                 self._read_body()
+                return
+            with type(self).ota_lock:
+                busy = type(self).ota_active
+            if busy:
+                self._read_body()
+                self._send_json({"error": "ota_in_progress"}, 503)
                 return
             try:
                 payload = json.loads(self._read_body() or b"{}")
@@ -557,6 +819,8 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({"error": "invalid_password"}, 400)
                 return
             type(self).ota_password = password
+            with type(self).ota_lock:
+                type(self).ota_sessions.clear()
             self.send_response(204)
             self.end_headers()
             return
@@ -566,9 +830,16 @@ class NoCacheRequestHandler(http.server.SimpleHTTPRequestHandler):
         if not self._require_mutation_context():
             return
         if self.path == "/api/system/ota/password":
-            if not self._require_ota_authorized():
+            if not self._require_ota_session():
+                return
+            with type(self).ota_lock:
+                busy = type(self).ota_active
+            if busy:
+                self._send_json({"error": "ota_in_progress"}, 503)
                 return
             type(self).ota_password = None
+            with type(self).ota_lock:
+                type(self).ota_sessions.clear()
             self.send_response(204)
             self.end_headers()
             return
@@ -647,6 +918,12 @@ def main():
         choices=("default", "selection"),
         help="Wi-Fi scan fixture sequence used by the captive portal",
     )
+    parser.add_argument(
+        "--ota-scenario",
+        default="success",
+        choices=("success", "failure", "sse-loss"),
+        help="OTA lifecycle fixture, including recoverable failure and deliberate SSE loss",
+    )
     args = parser.parse_args()
 
     script_path = Path(__file__).resolve()
@@ -660,6 +937,18 @@ def main():
     NoCacheRequestHandler.reboot_pending = False
     NoCacheRequestHandler.wifi_scan_scenario = args.wifi_scan_scenario
     NoCacheRequestHandler.wifi_scan_request_count = 0
+    NoCacheRequestHandler.ota_scenario = args.ota_scenario
+    NoCacheRequestHandler.ota_sessions = set()
+    NoCacheRequestHandler.ota_operation_id = 0
+    NoCacheRequestHandler.ota_active = False
+    NoCacheRequestHandler.ota_manual_component = None
+    NoCacheRequestHandler.ota_manual_size = 0
+    NoCacheRequestHandler.ota_snapshot = {
+        "operationId": 0, "sequence": 0, "targetVersion": "", "state": "idle",
+        "stage": "idle", "component": "none", "receivedBytes": 0, "totalBytes": 0,
+        "componentPercentKnown": False, "componentPercent": 0,
+        "overallPercentKnown": False, "overallPercent": 0, "result": "none", "error": "",
+    }
 
     if not data_dir.is_dir():
         print(f"[ERR] Data directory not found: {data_dir}", file=sys.stderr)

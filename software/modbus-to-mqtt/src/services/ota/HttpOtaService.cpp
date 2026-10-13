@@ -11,6 +11,7 @@
 #include "mbedtls/sha256.h"
 
 #include "services/ota/HttpOtaService.h"
+#include "services/ota/OtaCoordinator.h"
 #include "services/ota/OtaPublicKeys.h"
 #include "services/IndicatorService.h"
 #include "Logger.h"
@@ -23,7 +24,6 @@ const char* HttpOtaService::s_manifestUrl = nullptr;
 const char* HttpOtaService::s_device = nullptr;
 const char* HttpOtaService::s_currentVersion = nullptr;
 const char* HttpOtaService::s_caCertPem = nullptr;
-HttpOtaService::ProgressCallback HttpOtaService::s_progressCb = nullptr;
 
 uint32_t HttpOtaService::s_intervalMs = 6UL * 60UL * 60UL * 1000UL; // 6 hours
 uint32_t HttpOtaService::s_lastCheckMs = 0;
@@ -131,18 +131,6 @@ void HttpOtaService::setIntervalMs(const uint32_t intervalMs) {
     s_intervalMs = intervalMs;
 }
 
-void HttpOtaService::setProgressCallback(ProgressCallback cb) {
-    s_progressCb = cb;
-}
-
-void HttpOtaService::emitProgress(const char *stage,
-                                  uint32_t received,
-                                  uint32_t total,
-                                  const char *detail) {
-    if (!s_progressCb || !stage) return;
-    s_progressCb(stage, received, total, detail);
-}
-
 void HttpOtaService::checkNow() {
     s_forceCheck = true;
     s_checkRequested.store(true, std::memory_order_release);
@@ -150,6 +138,7 @@ void HttpOtaService::checkNow() {
 
 void HttpOtaService::loop() {
     if (!s_manifestUrl || s_manifestUrl[0] == '\0' || !s_device || !s_currentVersion) return;
+    if (OtaCoordinator::installationActive()) return;
 
     const uint32_t now = millis();
     const bool timeToCheck = now - s_lastCheckMs >= s_intervalMs;
@@ -279,74 +268,90 @@ void HttpOtaService::getNotesStatus(bool &ready, bool &pending, String &notesOut
     errorOut = s_lastNotesError;
 }
 
-bool HttpOtaService::applyPendingUpdate(String &errorOut) {
+bool HttpOtaService::applyPendingUpdate(String &errorOut, const uint32_t operationId) {
     errorOut = "";
-    if (!s_updateAvailable) {
-        errorOut = "no_update";
+    const auto failReservedOperation = [&](const char *errorCode) {
+        errorOut = errorCode;
         s_lastError = errorOut;
-        emitProgress("error", 0, 0, errorOut.c_str());
+        OtaCoordinator::fail(operationId, errorCode);
         return false;
+    };
+    if (!s_updateAvailable) {
+        return failReservedOperation("no_update");
     }
     if (!s_pendingUpdateApp && !s_pendingUpdateFs) {
-        errorOut = "no_components";
-        s_lastError = errorOut;
-        emitProgress("error", 0, 0, errorOut.c_str());
-        return false;
+        return failReservedOperation("no_components");
     }
     if (WiFiClass::status() != WL_CONNECTED) {
-        errorOut = "wifi_disconnected";
+        return failReservedOperation("wifi_disconnected");
+    }
+    // Clear any code left by a previous attempt so only a failure recorded by
+    // this attempt can reach the UI.
+    s_lastError = "";
+
+    if (!OtaCoordinator::quiesce(operationId, false)) {
+        errorOut = "quiesce_failed";
         s_lastError = errorOut;
-        emitProgress("error", 0, 0, errorOut.c_str());
+        // Quiescence normally records its specific failure. This is a no-op if
+        // that unwind already released the lifecycle slot, and closes the
+        // reservation if it returned early for any other reason.
+        OtaCoordinator::fail(operationId, "quiesce_failed");
         return false;
     }
 
     logInfo(s_logger, "HTTP-OTA: Applying pending update");
-    emitProgress("start", 0, 0, nullptr);
-    IndicatorService::instance().setOtaActive(true);
     // Flash firmware FIRST so that a failed FS flash leaves the old
     // (working) UI in place rather than bricking the web interface.
     bool ok = true;
     if (s_pendingUpdateApp) {
         logInfo(s_logger, "HTTP-OTA: Updating firmware");
-        ok = downloadVerifyAndFlash(s_pendingAppUrl, s_pendingAppSha256, U_FLASH, nullptr);
+        ok = downloadVerifyAndFlash(
+            s_pendingAppUrl, s_pendingAppSha256, U_FLASH, nullptr, operationId);
         if (ok) {
             storeAppliedAppHash(s_pendingAppSha256);
         }
     } else {
         logInfo(s_logger, "HTTP-OTA: Firmware up to date, skipping");
-        emitProgress("fw_skip", 0, 0, nullptr);
     }
     if (ok) {
         if (s_pendingUpdateFs) {
             logInfo(s_logger, "HTTP-OTA: Updating filesystem");
-            ok = downloadVerifyAndFlash(s_pendingFsUrl, s_pendingFsSha256, U_SPIFFS, s_pendingFsLabel.c_str());
+            ok = downloadVerifyAndFlash(
+                s_pendingFsUrl, s_pendingFsSha256, U_SPIFFS,
+                s_pendingFsLabel.c_str(), operationId);
             if (ok) {
                 storeAppliedFsHash(s_pendingFsSha256);
             }
         } else {
             logInfo(s_logger, "HTTP-OTA: Filesystem up to date, skipping");
-            emitProgress("fs_skip", 0, 0, nullptr);
         }
     }
-    IndicatorService::instance().setOtaActive(false);
-
     if (!ok) {
-        errorOut = "apply_failed";
+        errorOut = s_lastError.isEmpty() ? String("apply_failed") : s_lastError;
         s_lastError = errorOut;
-        emitProgress("error", 0, 0, errorOut.c_str());
+        OtaCoordinator::fail(operationId, errorOut.c_str());
         return false;
     }
 
     clearPendingUpdate();
-    emitProgress("complete", 0, 0, nullptr);
     return true;
 }
 
-bool HttpOtaService::hasPendingUpdate(String &versionOut) {
+bool HttpOtaService::hasPendingUpdate(String &versionOut, bool *firmwarePending,
+                                      bool *filesystemPending) {
     versionOut = "";
+    if (firmwarePending != nullptr) *firmwarePending = false;
+    if (filesystemPending != nullptr) *filesystemPending = false;
     if (!s_updateAvailable || (!s_pendingUpdateApp && !s_pendingUpdateFs)) return false;
     versionOut = s_pendingVersion;
+    if (firmwarePending != nullptr) *firmwarePending = s_pendingUpdateApp;
+    if (filesystemPending != nullptr) *filesystemPending = s_pendingUpdateFs;
     return true;
+}
+
+bool HttpOtaService::transportIdle() {
+    return !s_checkInProgress.load(std::memory_order_acquire)
+        && !s_notesInProgress.load(std::memory_order_acquire);
 }
 
 bool HttpOtaService::fetchManifest(String& outJson) {
@@ -650,7 +655,8 @@ bool HttpOtaService::verifyEcdsaP256Signature(const String& payload,
 bool HttpOtaService::downloadVerifyAndFlash(const String& url,
                                             const String& expectedSha256Hex,
                                             const int updateCommand,
-                                            const char *partitionLabel) {
+                                            const char *partitionLabel,
+                                            const uint32_t operationId) {
     WiFiClientSecure client;
     const uint32_t httpTimeoutMs = updateCommand == U_FLASH ? 120000 : 30000;
     client.setTimeout(httpTimeoutMs);
@@ -680,8 +686,9 @@ bool HttpOtaService::downloadVerifyAndFlash(const String& url,
 
     const int totalLen = http.getSize();
     const size_t totalSize = totalLen > 0 ? static_cast<size_t>(totalLen) : 0;
-    const char *downloadStage = updateCommand == U_FLASH ? "fw_download" : "fs_download";
-    const char *installStage = updateCommand == U_FLASH ? "fw_install" : "fs_install";
+    const OtaProgressCore::Component component = updateCommand == U_FLASH
+        ? OtaProgressCore::Component::Firmware
+        : OtaProgressCore::Component::Filesystem;
     WiFiClient* stream = http.getStreamPtr();
     if (!stream) {
         logErr(s_logger, "HTTP-OTA: No HTTP stream available");
@@ -737,6 +744,13 @@ bool HttpOtaService::downloadVerifyAndFlash(const String& url,
 
     // Begin OTA update
     const size_t updateSize = totalLen > 0 ? (size_t)totalLen : UPDATE_SIZE_UNKNOWN;
+    if (!OtaCoordinator::beginComponent(
+            operationId, component, static_cast<uint32_t>(totalSize))) {
+        logErr(s_logger, "HTTP-OTA: component admission failed");
+        s_lastError = "insufficient_heap";
+        http.end();
+        return false;
+    }
     bool started = false;
     if (partitionLabel && partitionLabel[0] != '\0') {
         started = Update.begin(updateSize, updateCommand, -1, LOW, partitionLabel);
@@ -749,8 +763,6 @@ bool HttpOtaService::downloadVerifyAndFlash(const String& url,
         http.end();
         return false;
     }
-
-    emitProgress(downloadStage, 0, static_cast<uint32_t>(totalSize), nullptr);
 
     // Hash as we write
     mbedtls_sha256_context sha;
@@ -812,15 +824,14 @@ bool HttpOtaService::downloadVerifyAndFlash(const String& url,
             if (totalSize > 0) {
                 const int pct = static_cast<int>((received * 100) / totalSize);
                 if (pct != lastProgressPct) {
-                    emitProgress(downloadStage,
-                                 static_cast<uint32_t>(received),
-                                 static_cast<uint32_t>(totalSize),
-                                 nullptr);
+                    (void)OtaCoordinator::updateProgress(
+                        operationId, static_cast<uint32_t>(received));
                     lastProgressPct = pct;
                     lastProgressMs = lastDataMs;
                 }
             } else if (received != lastProgressBytes) {
-                emitProgress(downloadStage, static_cast<uint32_t>(received), 0, nullptr);
+                (void)OtaCoordinator::updateProgress(
+                    operationId, static_cast<uint32_t>(received));
                 lastProgressBytes = received;
                 lastProgressMs = lastDataMs;
             }
@@ -846,11 +857,12 @@ bool HttpOtaService::downloadVerifyAndFlash(const String& url,
     mbedtls_sha256_finish_ret(&sha, digest);
     mbedtls_sha256_free(&sha);
 
-    emitProgress(downloadStage,
-                 static_cast<uint32_t>(received),
-                 static_cast<uint32_t>(totalSize),
-                 nullptr);
-    emitProgress(installStage, 0, 0, nullptr);
+    (void)OtaCoordinator::updateProgress(operationId, static_cast<uint32_t>(received));
+    if (!OtaCoordinator::beginVerification(operationId, component)) {
+        Update.abort();
+        http.end();
+        return false;
+    }
 
     // Convert to hex
     char hex[65];
@@ -873,6 +885,7 @@ bool HttpOtaService::downloadVerifyAndFlash(const String& url,
     }
 
     http.end();
+    (void)OtaCoordinator::completeComponent(operationId, component);
     return true;
 }
 

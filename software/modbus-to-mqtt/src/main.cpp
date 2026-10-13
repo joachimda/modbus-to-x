@@ -10,6 +10,7 @@
 #include "mqtt/MqttSubscriptionHandler.h"
 #include "services/IndicatorService.h"
 #include "services/ota/HttpOtaService.h"
+#include "services/ota/OtaCoordinator.h"
 #include <esp_system.h>
 
 #include "logging/MemoryLogger.h"
@@ -93,6 +94,8 @@ void setup() {
     logger.logDebug("setup() - Starting modbus manager");
     modbus_manager.begin();
 
+    OtaCoordinator::begin(&logger, &mqtt_manager, &modbus_manager);
+
     logger.logDebug("setup() - Starting MBX Server");
     mbx_server.begin();
 
@@ -114,5 +117,6 @@ void loop() {
 #if OTA_HTTP_ENABLED
     HttpOtaService::loop();
 #endif
+    OtaCoordinator::loop();
     delay(10);
 }

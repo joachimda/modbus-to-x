@@ -131,6 +131,65 @@
 #define OTA_HTTP_FORCE_UPDATE_ON_NEW_VERSION 1
 #endif
 
+// OTA quiescence is bounded independently for each owner. ModbusMaster uses a
+// two-second response timeout, so the Modbus allowance covers one transaction
+// plus local owner-loop margin.
+#ifndef OTA_MQTT_QUIESCE_TIMEOUT_MS
+#define OTA_MQTT_QUIESCE_TIMEOUT_MS 1500U
+#endif
+#ifndef OTA_MQTT_SIGNAL_SERVICE_WINDOW_MS
+#define OTA_MQTT_SIGNAL_SERVICE_WINDOW_MS 100U
+#endif
+#ifndef OTA_MODBUS_QUIESCE_TIMEOUT_MS
+#define OTA_MODBUS_QUIESCE_TIMEOUT_MS 2500U
+#endif
+#ifndef OTA_RUNTIME_DRAIN_TIMEOUT_MS
+#define OTA_RUNTIME_DRAIN_TIMEOUT_MS 6000U
+#endif
+#ifndef OTA_RESUME_TIMEOUT_MS
+#define OTA_RESUME_TIMEOUT_MS 2500U
+#endif
+#ifndef OTA_MANUAL_UPLOAD_TIMEOUT_MS
+#define OTA_MANUAL_UPLOAD_TIMEOUT_MS 30000U
+#endif
+
+// Internal-memory admission floors are checked in two stages. The quiescence
+// floors are checked once normal services are quiescent, before any TLS
+// session or multipart upload has been set up. The flash-boundary floors are
+// re-checked immediately before Update.begin, after TLS (signed path) or the
+// multipart request (manual path) has already consumed memory. A TLS session
+// costs roughly 45 KiB of internal heap on ESP32, so the two stages differ.
+// A -D override must keep the flash-boundary floors at or below the
+// quiescence floors; the static_asserts below enforce that ordering.
+#ifndef OTA_MIN_INTERNAL_FREE_HEAP
+#define OTA_MIN_INTERNAL_FREE_HEAP (96U * 1024U)
+#endif
+#ifndef OTA_MIN_INTERNAL_LARGEST_BLOCK
+#define OTA_MIN_INTERNAL_LARGEST_BLOCK (32U * 1024U)
+#endif
+#ifndef OTA_FLASH_MIN_INTERNAL_FREE_HEAP
+#define OTA_FLASH_MIN_INTERNAL_FREE_HEAP (48U * 1024U)
+#endif
+#ifndef OTA_FLASH_MIN_INTERNAL_LARGEST_BLOCK
+#define OTA_FLASH_MIN_INTERNAL_LARGEST_BLOCK (16U * 1024U)
+#endif
+static_assert(OTA_FLASH_MIN_INTERNAL_FREE_HEAP <= OTA_MIN_INTERNAL_FREE_HEAP,
+              "flash-boundary heap floor must not exceed the quiescence floor");
+static_assert(OTA_FLASH_MIN_INTERNAL_LARGEST_BLOCK <= OTA_MIN_INTERNAL_LARGEST_BLOCK,
+              "flash-boundary block floor must not exceed the quiescence floor");
+#ifndef OTA_PROGRESS_MIN_INTERNAL_FREE_HEAP
+#define OTA_PROGRESS_MIN_INTERNAL_FREE_HEAP (64U * 1024U)
+#endif
+#ifndef OTA_PROGRESS_MIN_INTERNAL_LARGEST_BLOCK
+#define OTA_PROGRESS_MIN_INTERNAL_LARGEST_BLOCK (20U * 1024U)
+#endif
+#ifndef OTA_SESSION_ABSOLUTE_LIFETIME_MS
+#define OTA_SESSION_ABSOLUTE_LIFETIME_MS (15U * 60U * 1000U)
+#endif
+#ifndef OTA_SESSION_IDLE_LIFETIME_MS
+#define OTA_SESSION_IDLE_LIFETIME_MS (5U * 60U * 1000U)
+#endif
+
 #ifndef DEV_OTA_ARDUINO_PASS
 #define DEV_OTA_ARDUINO_PASS ""
 #endif

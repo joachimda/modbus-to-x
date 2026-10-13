@@ -36,49 +36,72 @@ button:disabled{opacity:.5;cursor:wait}input{display:block;margin:.5em 0;width:1
 </div>
 <div id="status"></div>
 <script>
-var protectedMode=false,password=null;
+var protectedMode=false,protectionKnown=false,token=null,operationId=0,sequence=0,source=null,pollTimer=null,retryTimer=null,awaitUpload=null;
 function s(msg,ok){var e=document.getElementById('status');e.style.display='block';e.className=ok?'ok':'err';e.textContent=msg;}
-function askPassword(){var value=prompt('OTA password:');if(value===null||value==='')return false;password=value;return true;}
 function encodedPassword(value){var bytes=new TextEncoder().encode(value),binary='';for(var i=0;i<bytes.length;i++)binary+=String.fromCharCode(bytes[i]);return btoa(binary);}
-function authHeaders(headers){var h=new Headers(headers||{});if(password!==null)h.set('Authorization','Bearer '+encodedPassword(password));return h;}
 function parse(r){if(r.status===204)return {};return r.json();}
-async function api(url,options){
-  options=options||{};options.headers=authHeaders(options.headers);options.headers.set('X-MBX-Request','1');
-  var response=await fetch(url,options);
-  if(response.status===401){password=null;if(!askPassword())throw new Error('password required');options.headers=authHeaders(options.headers);response=await fetch(url,options);}
-  if(!response.ok)throw new Error(response.status+' '+response.statusText);return parse(response);
+async function session(){
+  if(token)return token;var headers=new Headers({'X-MBX-Request':'1'}),response=await fetch('/api/system/ota/session',{method:'POST',cache:'no-store',headers:headers});
+  if(response.status===401){var password=prompt('OTA password:');if(password===null||password==='')throw new Error('password required');headers.set('Authorization','Bearer '+encodedPassword(password));response=await fetch('/api/system/ota/session',{method:'POST',cache:'no-store',headers:headers});}
+  if(!response.ok)throw new Error(response.status+' '+response.statusText);var body=await parse(response);if(!/^[0-9a-fA-F]{64}$/.test(body.token||''))throw new Error('invalid OTA session');token=body.token;return token;
 }
+async function api(url,options){
+  options=options||{};var headers=new Headers(options.headers||{});headers.set('X-MBX-Request','1');headers.set('X-OTA-Session',await session());options.headers=headers;options.cache='no-store';
+  var response=await fetch(url,options);if(response.status===401){token=null;headers.set('X-OTA-Session',await session());response=await fetch(url,options);}
+  if(!response.ok)throw new Error(response.status+' '+response.statusText);var body=await parse(response);if(url==='/api/system/ota/password')token=null;return body;
+}
+function active(state){return ['quiescing','awaiting_upload','downloading_writing_firmware','verifying_firmware','downloading_writing_filesystem','verifying_filesystem','failure_detected','resuming','rebooting'].indexOf(state)>=0;}
+function progress(snapshot){
+  var labels={idle:'Ready for an update',quiescing:'Preparing device services',awaiting_upload:'Ready for image upload',downloading_writing_firmware:'Downloading and writing firmware',verifying_firmware:'Verifying firmware',downloading_writing_filesystem:'Downloading and writing filesystem',verifying_filesystem:'Verifying filesystem',failure_detected:'Update failure detected',resuming:'Restoring device services',failed:'Update failed',rebooting:'Update verified; rebooting'};
+  var msg=labels[snapshot.state]||'Update status';if(snapshot.targetVersion)msg+=' to '+snapshot.targetVersion;if(snapshot.component&&snapshot.component!=='none'){
+    if(snapshot.totalBytes>0)msg+=' — '+snapshot.receivedBytes+' / '+snapshot.totalBytes+' bytes';else if(snapshot.receivedBytes>0)msg+=' — '+snapshot.receivedBytes+' bytes';if(snapshot.componentPercentKnown)msg+=' ('+snapshot.componentPercent+'%)';}
+  if(snapshot.overallPercentKnown)msg+=' — overall '+snapshot.overallPercent+'%';if(snapshot.state==='failed'&&snapshot.error)msg+=': '+snapshot.error;return msg;
+}
+function accept(snapshot){
+  var op=Number(snapshot.operationId),next=Number(snapshot.sequence);if(!Number.isInteger(op)||!Number.isInteger(next)||op<=0||next<=sequence||(operationId&&op!==operationId))return false;operationId=op;sequence=next;s(progress(snapshot),snapshot.state!=='failed');
+  if(snapshot.state==='awaiting_upload'&&awaitUpload){awaitUpload.resolve();awaitUpload=null;}
+  if(snapshot.state==='failed'){if(awaitUpload){awaitUpload.reject(new Error(snapshot.error||'OTA failed'));awaitUpload=null;}token=null;stopMonitor();}
+  if(snapshot.state==='rebooting'){token=null;stopMonitor();s('Update verified; device is rebooting. Reconnect when it returns.',true);}return true;
+}
+async function poll(){if(!operationId||source)return;try{var response=await fetch('/api/system/ota/status',{cache:'no-store'});if(response.ok)accept(await parse(response));}catch(e){}if(operationId&&!source)pollTimer=setTimeout(poll,3000);}
+function openEvents(){
+  if(!operationId)return;if(source)source.close();source=new EventSource('/api/system/ota/events');source.addEventListener('ota-progress',function(event){try{accept(JSON.parse(event.data||'{}'));}catch(e){}});source.addEventListener('error',function(){source.close();source=null;poll();retryTimer=setTimeout(openEvents,5000);});
+}
+function monitor(op){stopMonitor();operationId=op;sequence=0;openEvents();if(!source||source.readyState!==1)poll();}
+function stopMonitor(){if(source)source.close();source=null;if(pollTimer)clearTimeout(pollTimer);if(retryTimer)clearTimeout(retryTimer);pollTimer=null;retryTimer=null;operationId=0;sequence=0;}
+async function recover(){try{var response=await fetch('/api/system/ota/status',{cache:'no-store'}),snapshot=await parse(response);if(response.ok&&active(snapshot.state)&&snapshot.operationId>0){monitor(snapshot.operationId);accept(snapshot);return true;}}catch(e){}return false;}
+function waitForUpload(){return new Promise(function(resolve,reject){awaitUpload={resolve:resolve,reject:reject};});}
 async function loadProtection(){
-  try{var d=await fetch('/api/system/ota/http/settings',{cache:'no-store'}).then(parse);protectedMode=!!d.passwordProtected;
+  try{var response=await fetch('/api/system/ota/http/settings',{cache:'no-store'});if(!response.ok)throw new Error(response.status+' '+response.statusText);var d=await parse(response);protectedMode=!!d.passwordProtected;protectionKnown=true;
     document.getElementById('protection').textContent=protectedMode?'Protected — OTA operations require the configured password.':'Unprotected — confirm uploads carefully and set a password when possible.';
     document.getElementById('setPassBtn').textContent=protectedMode?'Change password':'Set password';document.getElementById('clearPassBtn').disabled=!protectedMode;
-  }catch(e){s('Could not load protection state: '+e,false);}
+  }catch(e){protectionKnown=false;document.getElementById('protection').textContent='Protection state is unavailable while an update is active.';document.getElementById('setPassBtn').disabled=true;document.getElementById('clearPassBtn').disabled=true;}
 }
 async function setPassword(){
   var next=document.getElementById('newPass').value,confirmValue=document.getElementById('confirmPass').value;
   var bytes=new TextEncoder().encode(next).length;if(next!==confirmValue){s('Passwords do not match',false);return;}if(bytes<8||bytes>128){s('Password must be 8–128 UTF-8 bytes',false);return;}
-  if(protectedMode&&password===null&&!askPassword())return;
-  try{await api('/api/system/ota/password',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:next})});password=null;document.getElementById('newPass').value='';document.getElementById('confirmPass').value='';s('OTA password saved',true);loadProtection();}catch(e){password=null;s('Password change failed: '+e,false);}
+  try{await api('/api/system/ota/password',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:next})});document.getElementById('newPass').value='';document.getElementById('confirmPass').value='';s('OTA password saved',true);loadProtection();}catch(e){s('Password change failed: '+e,false);}
 }
 async function clearPassword(){
-  if(!protectedMode||!confirm('Clear the OTA password and leave recovery unprotected?'))return;if(password===null&&!askPassword())return;
-  try{await api('/api/system/ota/password',{method:'DELETE'});password=null;s('OTA password cleared',true);loadProtection();}catch(e){password=null;s('Password clear failed: '+e,false);}
+  if(!protectedMode||!confirm('Clear the OTA password and leave recovery unprotected?'))return;
+  try{await api('/api/system/ota/password',{method:'DELETE'});s('OTA password cleared',true);loadProtection();}catch(e){s('Password clear failed: '+e,false);}
 }
 async function otaCheck(){
-  if(protectedMode&&password===null&&!askPassword())return;s('Checking...',true);
-  try{var d=await api('/api/system/ota/http/check',{method:'POST'});if(d.available){s('Update available: '+d.version,true);document.getElementById('applyBtn').disabled=false;}else if(d.pending){s('Check in progress; try again shortly',true);}else if(d.ok){s('No update available',true);}else{s('Check failed: '+(d.error||'unknown'),false);}}catch(e){password=null;s('Check failed: '+e,false);}
+  s('Checking...',true);try{var d=await api('/api/system/ota/http/check',{method:'POST'});if(d.available){s('Update available: '+d.version,true);document.getElementById('applyBtn').disabled=false;}else if(d.pending){s('Check in progress; try again shortly',true);}else if(d.ok){s('No update available',true);}else{s('Check failed: '+(d.error||'unknown'),false);}}catch(e){s('Check failed: '+e,false);}
 }
 async function otaApply(){
-  if(!confirm('Apply the signed update? The device will reboot.'))return;if(protectedMode&&password===null&&!askPassword())return;s('Applying update...',true);document.getElementById('applyBtn').disabled=true;
-  try{var d=await api('/api/system/ota/http/apply',{method:'POST'});password=null;s(d.ok?'Update started. Device will reboot.':'Apply failed: '+(d.error||'unknown'),!!d.ok);}catch(e){password=null;s('Apply failed: '+e,false);document.getElementById('applyBtn').disabled=false;}
+  if(!confirm('Apply the signed update? The device will reboot.'))return;s('Preparing update...',true);document.getElementById('applyBtn').disabled=true;
+  try{var d=await api('/api/system/ota/http/apply',{method:'POST'});if(!d.operationId)throw new Error('update was not admitted');monitor(d.operationId);}catch(e){if(!(await recover())){s('Apply failed: '+e,false);document.getElementById('applyBtn').disabled=false;}}
 }
 async function upload(type){
   var firmware=type==='firmware',input=document.getElementById(firmware?'fwFile':'fsFile'),file=input.files[0];if(!file){s('Select a .bin file first',false);return;}
-  var warning=protectedMode?'The configured OTA password is required.':'WARNING: OTA protection is not configured.';if(!confirm('Upload '+file.name+' as the '+type+' image?\n\n'+warning+'\nThe device will reboot on success.'))return;
-  if(protectedMode&&password===null&&!askPassword())return;var form=new FormData();form.append(type,file,file.name);s('Uploading '+type+'...',true);
-  try{var d=await api(firmware?'/api/system/ota/firmware':'/api/system/ota/fs',{method:'POST',body:form});password=null;input.value='';s(d.ok?'Upload complete. Device rebooting...':'Upload failed',!!d.ok);}catch(e){password=null;s('Upload failed: '+e,false);}
+  var warning=!protectionKnown?'Protection state is unavailable; the server still enforces its configured policy.':(protectedMode?'The configured OTA password is required.':'WARNING: OTA protection is not configured.');if(!confirm('Upload '+file.name+' as the '+type+' image?\n\n'+warning+'\nThe device will reboot on success.'))return;
+  s('Preparing '+type+' upload...',true);var start;try{start=await api('/api/system/ota/manual/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component:type,size:file.size})});}
+  catch(e){if(!(await recover())){s('Upload failed: '+e,false);return;}start={operationId:operationId};}
+  try{var ready=waitForUpload();monitor(start.operationId);await ready;var form=new FormData();form.append(type,file,file.name);var headers=new Headers({'X-MBX-Request':'1','X-OTA-Session':await session(),'X-OTA-Operation':String(start.operationId)}),response=await fetch(firmware?'/api/system/ota/firmware':'/api/system/ota/fs',{method:'POST',body:form,headers:headers});if(!response.ok)throw new Error(response.status+' '+response.statusText);input.value='';s('Upload complete. Device rebooting...',true);}
+  catch(e){if(!(await recover()))s('Upload failed: '+e,false);}
 }
-loadProtection();
+recover();loadProtection();
 </script></body></html>)rawhtml";
 
 #endif

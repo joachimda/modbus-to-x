@@ -16,6 +16,7 @@
 #include "services/IndicatorService.h"
 #include "services/ArduinoOtaManager.h"
 #include "services/TimeService.h"
+#include "services/ota/OtaCoordinator.h"
 #include "network/mbx_server/OtaRecoveryPage.h"
 
 static constexpr auto WIFI_CONNECT_DELAY_MS = 100;
@@ -77,23 +78,38 @@ void MBXServer::configureRoutes() const {
             .setCacheControl("no-store")
             .setFilter([](AsyncWebServerRequest *req) {
                 const String &url = req->url();
-                return url != Routes::GET_MODBUS_CONFIG && url != Routes::GET_MQTT_CONFIG;
+                return !url.startsWith("/api/")
+                    && url != Routes::GET_MODBUS_CONFIG && url != Routes::GET_MQTT_CONFIG
+                    && MBXServerHandlers::tryAcquireUiFilesystemLease(req);
             });
 
     MBXServerHandlers::initEventStream(server, _logger);
 
     server->on(Routes::CONFIGURE, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
+        if (!MBXServerHandlers::tryAcquireUiFilesystemLease(req)) {
+            req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::JSON,
+                      R"({"error":"ota_in_progress"})");
+            return;
+        }
         req->send(SPIFFS, "/pages/configure_modbus.html", HttpMediaTypes::HTML);
     });
 
     server->on(Routes::GET_MODBUS_CONFIG, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
+        if (!OtaCoordinator::ordinaryHttpAllowed()) {
+            MBXServerHandlers::sendOtaInProgress(req);
+            return;
+        }
         serveFsFile(req, ConfigFS, ConfigFs::kModbusConfigFile, nullptr, HttpMediaTypes::JSON, _logger);
     });
 
     server->on(Routes::GET_MQTT_CONFIG, HTTP_GET, [this](AsyncWebServerRequest *req) {
         logRequest(req);
+        if (!OtaCoordinator::ordinaryHttpAllowed()) {
+            MBXServerHandlers::sendOtaInProgress(req);
+            return;
+        }
         serveFsFile(req, ConfigFS, ConfigFs::kMqttConfigFile, nullptr, HttpMediaTypes::JSON, _logger);
     });
 
@@ -121,6 +137,18 @@ void MBXServer::configureRoutes() const {
 
     server->onNotFound([this](AsyncWebServerRequest *req) {
         logRequest(req);
+        if (!MBXServerHandlers::uiFilesystemAvailable()) {
+            if (req->url() == Routes::ROOT) {
+                req->send_P(HttpResponseCodes::OK, HttpMediaTypes::HTML, OTA_RECOVERY_HTML);
+            } else {
+                MBXServerHandlers::sendOtaInProgress(req);
+            }
+            return;
+        }
+        if (!MBXServerHandlers::tryAcquireUiFilesystemLease(req)) {
+            MBXServerHandlers::sendOtaInProgress(req);
+            return;
+        }
         if (!SPIFFS.exists("/index.html")) {
             req->send_P(HttpResponseCodes::OK, HttpMediaTypes::HTML, OTA_RECOVERY_HTML);
             return;
@@ -160,8 +188,16 @@ void MBXServer::configureMutationRoutes(const MutationRouteRegistration::Mode mo
             return MBXServer::isMutationAllowed(request);
         }
 
+        bool isOrdinaryMutationAllowed(const AsyncWebServerRequest *) const {
+            return OtaCoordinator::ordinaryHttpAllowed();
+        }
+
         void sendForbidden(AsyncWebServerRequest *request) const {
             MBXServerHandlers::sendMutationForbidden(request);
+        }
+
+        void sendOtaInProgress(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::sendOtaInProgress(request);
         }
 
         void logRequest(const AsyncWebServerRequest *request) const {
@@ -233,6 +269,10 @@ void MBXServer::configureOtaRoutes() const {
             return MBXServer::isMutationAllowed(request);
         }
 
+        bool isOrdinaryMutationAllowed(const AsyncWebServerRequest *) const {
+            return OtaCoordinator::ordinaryHttpAllowed();
+        }
+
         bool cacheUploadAuthorization(AsyncWebServerRequest *request) const {
             return MBXServerHandlers::cacheOtaUploadAuthorization(request);
         }
@@ -243,6 +283,14 @@ void MBXServer::configureOtaRoutes() const {
 
         void sendForbidden(AsyncWebServerRequest *request) const {
             MBXServerHandlers::sendMutationForbidden(request);
+        }
+
+        void sendOtaInProgress(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::sendOtaInProgress(request);
+        }
+
+        void sendOtaBusy(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::sendOtaInProgress(request, HttpResponseCodes::CONFLICT);
         }
 
         void logRequest(const AsyncWebServerRequest *request) const {
@@ -271,6 +319,21 @@ void MBXServer::configureOtaRoutes() const {
 
         void handleHttpApply(AsyncWebServerRequest *request) const {
             MBXServerHandlers::handleOtaHttpApply(request, owner->_logger);
+        }
+
+        void handleCreateSession(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::handleCreateOtaSession(request);
+        }
+
+        void handleStatus(AsyncWebServerRequest *request) const {
+            MBXServerHandlers::handleOtaStatus(request);
+        }
+
+        void handleManualStartBody(AsyncWebServerRequest *request, const uint8_t *data,
+                                   const size_t length, const size_t index,
+                                   const size_t total) const {
+            MBXServerHandlers::handleOtaManualStartBody(
+                request, data, length, index, total, owner->_logger);
         }
 
         void handleGetHttpSettings(AsyncWebServerRequest *request) const {
@@ -307,10 +370,16 @@ void MBXServer::configureAccessPointRoutes() const {
             .setCacheControl("no-store")
             .setFilter([](AsyncWebServerRequest *req) {
                 const String &url = req->url();
-                return url != Routes::GET_MODBUS_CONFIG && url != Routes::GET_MQTT_CONFIG;
+                return !url.startsWith("/api/")
+                    && url != Routes::GET_MODBUS_CONFIG && url != Routes::GET_MQTT_CONFIG
+                    && MBXServerHandlers::tryAcquireUiFilesystemLease(req);
             });
 
     server->on(Routes::ROOT, HTTP_GET, [this](AsyncWebServerRequest *req) {
+        if (!MBXServerHandlers::tryAcquireUiFilesystemLease(req)) {
+            req->send_P(HttpResponseCodes::OK, HttpMediaTypes::HTML, OTA_RECOVERY_HTML);
+            return;
+        }
         if (!SPIFFS.exists("/pages/mbx_captive_portal.html")) {
             req->send(HttpResponseCodes::OK, HttpMediaTypes::HTML, OTA_RECOVERY_HTML);
             return;
@@ -336,6 +405,18 @@ void MBXServer::configureAccessPointRoutes() const {
     }
 
     server->onNotFound([](AsyncWebServerRequest *req) {
+        if (!MBXServerHandlers::uiFilesystemAvailable()) {
+            if (req->url() == Routes::ROOT) {
+                req->send_P(HttpResponseCodes::OK, HttpMediaTypes::HTML, OTA_RECOVERY_HTML);
+            } else {
+                MBXServerHandlers::sendOtaInProgress(req);
+            }
+            return;
+        }
+        if (!MBXServerHandlers::tryAcquireUiFilesystemLease(req)) {
+            MBXServerHandlers::sendOtaInProgress(req);
+            return;
+        }
         if (!SPIFFS.exists("/pages/mbx_captive_portal.html")) {
             req->send(HttpResponseCodes::OK, HttpMediaTypes::HTML, OTA_RECOVERY_HTML);
             return;
@@ -480,6 +561,10 @@ auto MBXServer::readConfig() const -> String {
 }
 
 void MBXServer::streamSPIFFSFileChunked(AsyncWebServerRequest *req, const char *path, const char *contentType) {
+    if (!MBXServerHandlers::tryAcquireUiFilesystemLease(req)) {
+        MBXServerHandlers::sendOtaInProgress(req);
+        return;
+    }
     if (!SPIFFS.exists(path)) {
         req->send(HttpResponseCodes::NOT_FOUND, HttpMediaTypes::PLAIN_TEXT, "Page not found");
         return;

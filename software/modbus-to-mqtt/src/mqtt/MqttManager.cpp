@@ -17,6 +17,7 @@ namespace {
 MqttManager *s_activeMqttManager = nullptr;
 constexpr auto MQTT_TASK_STACK = 6144;
 constexpr auto MQTT_TASK_LOOP_DELAY_MS = 50;
+constexpr UBaseType_t OTA_CONTROL_QUEUE_DEPTH = 2U;
 const String MQTT_CLIENT_PREFIX = "MBX_CLIENT-";
 const String SYSTEM_NETWORK_RESET = "/system/network/reset";
 const String SYSTEM_ECHO = "/system/log/echo";
@@ -41,6 +42,8 @@ struct MqttManager::Command final : OwnerRequest {
         ApplyBridgePlan,
         SetEnabled,
         TestConnection,
+        QuiesceForOta,
+        ResumeFromOta,
     };
 
     explicit Command(const Type commandType)
@@ -57,6 +60,7 @@ struct MqttManager::Command final : OwnerRequest {
     uint32_t configurationRevision{0U};
     bool enabled{false};
     bool asynchronous{false};
+    uint32_t otaOperationId{0U};
 };
 
 MqttManager::MqttManager(MqttSubscriptionHandler *subscriptionHandler, PubSubClient *mqttClient, Logger *logger)
@@ -69,7 +73,9 @@ MqttManager::MqttManager(MqttSubscriptionHandler *subscriptionHandler, PubSubCli
 bool MqttManager::begin() {
     _statusMutex = xSemaphoreCreateMutex();
     _commandQueue = xQueueCreate(MQTT_COMMAND_QUEUE_DEPTH, sizeof(Command *));
-    if (_statusMutex == nullptr || _commandQueue == nullptr || _mqttClient == nullptr || _subscriptionHandler == nullptr) {
+    _controlQueue = xQueueCreate(OTA_CONTROL_QUEUE_DEPTH, sizeof(Command *));
+    if (_statusMutex == nullptr || _commandQueue == nullptr || _controlQueue == nullptr
+        || _mqttClient == nullptr || _subscriptionHandler == nullptr) {
         _logger->logError("[MQTT] Failed to initialize owner mailbox or status snapshot");
         return false;
     }
@@ -166,6 +172,10 @@ MqttOperationResult MqttManager::submitAndWait(Command *command, const uint32_t 
                                                MqttTestResult *testResult,
                                                LatestRevisionCore::Admission *admission) {
     if (command == nullptr) return MqttOperationResult::Unavailable;
+    if (!_ordinaryAdmissionOpen.load(std::memory_order_acquire)) {
+        command->release();
+        return MqttOperationResult::OtaInProgress;
+    }
     if (!command->valid() || _commandQueue == nullptr || !_taskRunning.load(std::memory_order_acquire)
         || _shuttingDown.load(std::memory_order_acquire)) {
         command->release();
@@ -207,6 +217,13 @@ MqttOperationResult MqttManager::publish(const MqttPublishRequest &request) {
 
 MqttAdmissionResult MqttManager::submitAsync(Command *command) {
     if (command == nullptr) return MqttAdmissionResult::Unavailable;
+    if (!_ordinaryAdmissionOpen.load(std::memory_order_acquire)) {
+        if (command->type == Command::Type::Publish && command->publishCallback) {
+            command->publishCallback(MqttOperationResult::OtaInProgress);
+        }
+        command->release();
+        return MqttAdmissionResult::OtaInProgress;
+    }
     if (!command->valid() || _commandQueue == nullptr || !_taskRunning.load(std::memory_order_acquire)
         || _shuttingDown.load(std::memory_order_acquire)) {
         command->release();
@@ -219,6 +236,28 @@ MqttAdmissionResult MqttManager::submitAsync(Command *command) {
     command->retain();
     command->markQueued();
     if (xQueueSend(_commandQueue, &command, 0) != pdTRUE) {
+        _commandFailureCount.fetch_add(1U, std::memory_order_relaxed);
+        command->release();
+        command->release();
+        return MqttAdmissionResult::QueueFull;
+    }
+    command->release();
+    return MqttAdmissionResult::Accepted;
+}
+
+MqttAdmissionResult MqttManager::submitControl(Command *command) {
+    if (command == nullptr) return MqttAdmissionResult::Unavailable;
+    if (!command->valid() || _controlQueue == nullptr || !_taskRunning.load(std::memory_order_acquire)
+        || _shuttingDown.load(std::memory_order_acquire)) {
+        command->release();
+        return _shuttingDown.load(std::memory_order_acquire)
+                   ? MqttAdmissionResult::Shutdown
+                   : MqttAdmissionResult::Unavailable;
+    }
+    command->asynchronous = true;
+    command->retain();
+    command->markQueued();
+    if (xQueueSend(_controlQueue, &command, 0) != pdTRUE) {
         _commandFailureCount.fetch_add(1U, std::memory_order_relaxed);
         command->release();
         command->release();
@@ -311,7 +350,54 @@ MqttTestResult MqttManager::testConnectOnce() {
     return result;
 }
 
+MqttAdmissionResult MqttManager::requestQuiesceForOta(const uint32_t operationId) {
+    if (operationId == 0U) return MqttAdmissionResult::Unavailable;
+    uint32_t expected = 0U;
+    if (!_otaAdmissionOperation.compare_exchange_strong(
+            expected, operationId, std::memory_order_acq_rel, std::memory_order_acquire)) {
+        return expected == operationId ? MqttAdmissionResult::Accepted
+                                       : MqttAdmissionResult::OtaInProgress;
+    }
+    _ordinaryAdmissionOpen.store(false, std::memory_order_release);
+    auto *command = new (std::nothrow) Command(Command::Type::QuiesceForOta);
+    if (command == nullptr) {
+        _otaAdmissionOperation.store(0U, std::memory_order_release);
+        _ordinaryAdmissionOpen.store(true, std::memory_order_release);
+        return MqttAdmissionResult::Unavailable;
+    }
+    command->otaOperationId = operationId;
+    const MqttAdmissionResult result = submitControl(command);
+    if (result != MqttAdmissionResult::Accepted) {
+        _otaAdmissionOperation.store(0U, std::memory_order_release);
+        _ordinaryAdmissionOpen.store(true, std::memory_order_release);
+    }
+    return result;
+}
+
+MqttAdmissionResult MqttManager::requestResumeFromOta(const uint32_t operationId) {
+    if (operationId == 0U
+        || _otaAdmissionOperation.load(std::memory_order_acquire) != operationId) {
+        return MqttAdmissionResult::Unavailable;
+    }
+    auto *command = new (std::nothrow) Command(Command::Type::ResumeFromOta);
+    if (command == nullptr) return MqttAdmissionResult::Unavailable;
+    command->otaOperationId = operationId;
+    return submitControl(command);
+}
+
+void MqttManager::cancelOtaQuiesceRequest(const uint32_t operationId) {
+    (void)requestResumeFromOta(operationId);
+}
+
+bool MqttManager::otaControlActive() const {
+    return _otaAdmissionOperation.load(std::memory_order_acquire) != 0U;
+}
+
 void MqttManager::processCommand(Command &command) {
+    if (_otaQuiesced && command.type != Command::Type::QuiesceForOta
+        && command.type != Command::Type::ResumeFromOta) {
+        command.result = MqttOperationResult::OtaInProgress;
+    } else {
     switch (command.type) {
         case Command::Type::Publish:
             executePublish(command);
@@ -329,6 +415,13 @@ void MqttManager::processCommand(Command &command) {
         case Command::Type::TestConnection:
             executeConnectionTest(command);
             break;
+        case Command::Type::QuiesceForOta:
+            quiesceForOtaOwned(command.otaOperationId, command.result);
+            break;
+        case Command::Type::ResumeFromOta:
+            resumeFromOtaOwned(command.otaOperationId, command.result);
+            break;
+    }
     }
     if (command.result != MqttOperationResult::Success
         && command.result != MqttOperationResult::Superseded
@@ -340,6 +433,84 @@ void MqttManager::processCommand(Command &command) {
         command.publishCallback(command.result);
     }
     updateStatusSnapshot();
+}
+
+void MqttManager::quiesceForOtaOwned(const uint32_t operationId, MqttOperationResult &result) {
+    if (operationId == 0U) {
+        result = MqttOperationResult::Unavailable;
+        return;
+    }
+    if (_otaAdmissionOperation.load(std::memory_order_acquire) != operationId) {
+        result = MqttOperationResult::StaleGeneration;
+        return;
+    }
+    if (_otaQuiesced) {
+        result = operationId == _otaOperationId
+                     ? MqttOperationResult::Success
+                     : MqttOperationResult::OtaInProgress;
+        return;
+    }
+
+    _runtimeEnabledBeforeOta = _runtimeEnabled;
+    _otaOperationId = operationId;
+    if (!_activeConfiguration.enabled || !_runtimeEnabled) {
+        _otaQuiesceResult = MqttOtaQuiesceResult::Disabled;
+    } else if (!_mqttClient->connected()) {
+        _otaQuiesceResult = MqttOtaQuiesceResult::AlreadyDisconnected;
+    } else if (!_bridgePlan.will.configured || !_bridgePlan.will.topic.topic.length()
+               || !_bridgePlan.will.payload.length()) {
+        _otaQuiesceResult = MqttOtaQuiesceResult::NoSignalConfigured;
+    } else {
+        const String topic = resolveTopic(_bridgePlan.will.topic);
+        const bool published = _mqttClient->publish(
+            topic.c_str(), _bridgePlan.will.payload.c_str(), _bridgePlan.will.retain);
+        if (published) {
+            const uint32_t serviceStartedAt = millis();
+            do {
+                if (!_mqttClient->loop()) break;
+                delay(1);
+            } while (static_cast<uint32_t>(millis() - serviceStartedAt)
+                     < OTA_MQTT_SIGNAL_SERVICE_WINDOW_MS);
+        }
+        _otaQuiesceResult = published ? MqttOtaQuiesceResult::Signalled
+                                      : MqttOtaQuiesceResult::SignalFailed;
+    }
+    disconnectOwned();
+    _otaQuiesced = true;
+    result = MqttOperationResult::Success;
+
+    // The priority control command overtakes ordinary work. Drain the bounded
+    // remainder now so no pre-quiescence publication can survive into resume.
+    Command *queued = nullptr;
+    while (xQueueReceive(_commandQueue, &queued, 0) == pdTRUE) {
+        if (queued != nullptr && queued->tryStart()) {
+            processCommand(*queued);
+            queued->complete();
+        }
+        if (queued != nullptr) queued->release();
+        queued = nullptr;
+    }
+}
+
+void MqttManager::resumeFromOtaOwned(const uint32_t operationId, MqttOperationResult &result) {
+    if (operationId == 0U
+        || _otaAdmissionOperation.load(std::memory_order_acquire) != operationId) {
+        result = MqttOperationResult::StaleGeneration;
+        return;
+    }
+    if (_otaQuiesced) {
+        if (operationId != _otaOperationId) {
+            result = MqttOperationResult::StaleGeneration;
+            return;
+        }
+        _runtimeEnabled = _runtimeEnabledBeforeOta;
+        _otaQuiesced = false;
+        _otaOperationId = 0U;
+        _otaQuiesceResult = MqttOtaQuiesceResult::None;
+    }
+    _otaAdmissionOperation.store(0U, std::memory_order_release);
+    _ordinaryAdmissionOpen.store(true, std::memory_order_release);
+    result = MqttOperationResult::Success;
 }
 
 void MqttManager::applyConfiguration(MqttRuntimeConfiguration configuration,
@@ -625,6 +796,11 @@ void MqttManager::updateStatusSnapshot() {
     snapshot.modbusGeneration = _bridgePlan.modbusGeneration;
     snapshot.ownerViolationCount = _ownerViolationCount.load(std::memory_order_relaxed);
     snapshot.commandFailureCount = _commandFailureCount.load(std::memory_order_relaxed);
+    snapshot.commandQueueDepth = (_commandQueue != nullptr ? uxQueueMessagesWaiting(_commandQueue) : 0U)
+                               + (_controlQueue != nullptr ? uxQueueMessagesWaiting(_controlQueue) : 0U);
+    snapshot.otaQuiesced = _otaQuiesced;
+    snapshot.otaOperationId = _otaOperationId;
+    snapshot.otaQuiesceResult = _otaQuiesceResult;
     snapshot.broker = _activeConfiguration.connection.broker.data();
     snapshot.user = _activeConfiguration.connection.user.data();
     snapshot.rootTopic = _activeConfiguration.rootTopic;
@@ -675,6 +851,15 @@ bool MqttManager::isMQTTEnabled() {
     unsigned long lastReconnectAttempt = 0U;
 
     while (true) {
+        for (size_t i = 0; i < OTA_CONTROL_QUEUE_DEPTH; ++i) {
+            Command *command = nullptr;
+            if (xQueueReceive(manager->_controlQueue, &command, 0) != pdTRUE) break;
+            if (command != nullptr && command->tryStart()) {
+                manager->processCommand(*command);
+                command->complete();
+            }
+            if (command != nullptr) command->release();
+        }
         for (size_t i = 0; i < MQTT_COMMANDS_PER_CYCLE; ++i) {
             Command *command = nullptr;
             if (xQueueReceive(manager->_commandQueue, &command, 0) != pdTRUE) break;
@@ -685,9 +870,10 @@ bool MqttManager::isMQTTEnabled() {
             if (command != nullptr) command->release();
         }
 
-        manager->commitApprovedBridgePlan();
+        if (!manager->_otaQuiesced) manager->commitApprovedBridgePlan();
 
-        const bool enabled = manager->_activeConfiguration.enabled && manager->_runtimeEnabled;
+        const bool enabled = manager->_activeConfiguration.enabled && manager->_runtimeEnabled
+                          && !manager->_otaQuiesced;
         const bool wifiConnected = WiFiClass::status() == WL_CONNECTED;
         if (!enabled || !wifiConnected) {
             manager->disconnectOwned();

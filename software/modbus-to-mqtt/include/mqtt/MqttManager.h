@@ -54,6 +54,14 @@ public:
 
     MqttTestResult testConnectOnce();
 
+    MqttAdmissionResult requestQuiesceForOta(uint32_t operationId);
+
+    MqttAdmissionResult requestResumeFromOta(uint32_t operationId);
+
+    void cancelOtaQuiesceRequest(uint32_t operationId);
+
+    bool otaControlActive() const;
+
     static void setMQTTEnabled(bool enabled);
 
     static bool isMQTTEnabled();
@@ -76,6 +84,8 @@ private:
 
     MqttAdmissionResult submitAsync(Command *command);
 
+    MqttAdmissionResult submitControl(Command *command);
+
     void processCommand(Command &command);
 
     void applyConfiguration(MqttRuntimeConfiguration configuration, uint32_t revision,
@@ -90,6 +100,10 @@ private:
     void executePublish(Command &command);
 
     void executeConnectionTest(Command &command);
+
+    void quiesceForOtaOwned(uint32_t operationId, MqttOperationResult &result);
+
+    void resumeFromOtaOwned(uint32_t operationId, MqttOperationResult &result);
 
     bool ensureMQTTConnection();
 
@@ -120,6 +134,10 @@ private:
     StagedCommitCore<MqttBridgePlan> _stagedBridgePlan;
     LatestRevisionCore _configurationRevisions;
     bool _runtimeEnabled{true};
+    bool _otaQuiesced{false};
+    bool _runtimeEnabledBeforeOta{false};
+    uint32_t _otaOperationId{0U};
+    MqttOtaQuiesceResult _otaQuiesceResult{MqttOtaQuiesceResult::None};
     uint32_t _generation{0U};
     uint32_t _connectionEpoch{0U};
 
@@ -127,11 +145,14 @@ private:
     Logger *_logger;
     TaskHandle_t _mqttTaskHandle{nullptr};
     QueueHandle_t _commandQueue{nullptr};
+    QueueHandle_t _controlQueue{nullptr};
     mutable SemaphoreHandle_t _statusMutex{nullptr};
     MqttStatusSnapshot _statusSnapshot;
     MqttSubscriptionHandler *_subscriptionHandler;
     std::atomic<bool> _taskRunning{false};
     std::atomic<bool> _shuttingDown{false};
+    std::atomic<bool> _ordinaryAdmissionOpen{true};
+    std::atomic<uint32_t> _otaAdmissionOperation{0U};
     std::atomic<uint32_t> _ownerViolationCount{0U};
     std::atomic<uint32_t> _commandFailureCount{0U};
 };

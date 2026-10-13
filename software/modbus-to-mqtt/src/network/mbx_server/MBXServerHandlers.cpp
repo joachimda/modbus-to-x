@@ -16,6 +16,8 @@
 #include <nvs_flash.h>
 #include <AsyncEventSource.h>
 #include <Arduino.h>
+#include <SPIFFS.h>
+#include <esp_heap_caps.h>
 #include "Config.h"
 
 #include "constants/HttpMediaTypes.h"
@@ -34,6 +36,8 @@
 #include "services/ota/OtaCredentialCore.h"
 #include "services/ota/OtaCredentialService.h"
 #include "services/ota/OtaUploadGuardCore.h"
+#include "services/ota/OtaCoordinator.h"
+#include "services/ota/OtaProgressCore.h"
 #include "services/IndicatorService.h"
 #include "modbus/ModbusManager.h"
 #include "modbus/ModbusConfigLoader.h"
@@ -45,6 +49,8 @@ auto constexpr OTA_END_FW_UPLOAD_OK = R"({"ok":true,"type":"firmware"})";
 auto constexpr OTA_END_FS_UPLOAD_OK = R"({"ok":true,"type":"filesystem"})";
 auto constexpr BAD_REQUEST_RESP = R"({"error":"bad_request"})";
 auto constexpr OTA_UNAUTHORIZED_RESP = R"({"error":"ota_password_required"})";
+auto constexpr OTA_SESSION_UNAUTHORIZED_RESP = R"({"error":"ota_session_required"})";
+auto constexpr OTA_IN_PROGRESS_RESP = R"({"error":"ota_in_progress"})";
 auto constexpr OTA_PASSWORD_INVALID_RESP = R"({"error":"invalid_password"})";
 auto constexpr OTA_PASSWORD_STORAGE_RESP = R"({"error":"credential_storage_failed"})";
 auto constexpr FACTORY_RESET_BUSY_RESP = R"({"error":"factory_reset_in_progress"})";
@@ -66,13 +72,13 @@ static std::atomic<MemoryLogger *> g_memlog{nullptr};
 static std::atomic<MqttManager *> g_comm{nullptr};
 static std::atomic<ModbusManager *> g_mb{nullptr};
 static AsyncEventSource g_events(Routes::EVENTS);
+static AsyncEventSource g_otaEvents(Routes::OTA_EVENTS);
 static const Logger *g_eventLogger = nullptr;
 static std::atomic<bool> g_eventsAttached{false};
 static std::atomic<uint32_t> g_lastPingAt{0};
 static std::atomic<size_t> g_lastLogCursor{0};
 static std::atomic<uint32_t> g_lastLogCheckAt{0};
 static std::atomic<uint32_t> g_eventSeq{0};
-static std::atomic<bool> g_otaHttpApplying{false};
 static std::atomic<bool> g_factoryResetInProgress{false};
 static QueueHandle_t g_runtimeJobQueue = nullptr;
 static QueueHandle_t g_runtimeResponseQueue = nullptr;
@@ -81,6 +87,14 @@ static SemaphoreHandle_t g_configScheduleMutex = nullptr;
 static SemaphoreHandle_t g_configStorageMutex = nullptr;
 static std::array<TaskHandle_t, RUNTIME_HTTP_WORKER_COUNT> g_runtimeWorkerTasks{};
 static std::atomic<size_t> g_runtimeWorkerCount{0U};
+static std::atomic<bool> g_runtimeAdmissionOpen{true};
+static std::atomic<bool> g_uiFilesystemAdmissionOpen{true};
+static std::atomic<bool> g_uiFilesystemMounted{true};
+static std::atomic<size_t> g_uiFilesystemLeases{0U};
+static std::atomic<bool> g_otaQuiescenceRequested{false};
+static std::atomic<bool> g_normalEventsSuspended{false};
+static std::atomic<bool> g_otaProgressForcePublish{false};
+static OtaProgressCore::Publisher g_otaProgressPublisher;
 
 constexpr uint32_t STATS_PUSH_INTERVAL_MS = 5000;
 constexpr uint32_t STATS_HEARTBEAT_MS = 30000;
@@ -90,6 +104,7 @@ constexpr uint32_t LOGS_CHECK_INTERVAL_MS = 1200;
 constexpr uint32_t EVENTS_PING_INTERVAL_MS = 30000;
 constexpr uint32_t EVENT_RETRY_MS = 5000;
 constexpr size_t LOG_CHUNK_BYTES = 2048;
+constexpr const char *UI_FS_LEASE_ATTRIBUTE = "uiFsLease";
 
 namespace {
 
@@ -111,14 +126,31 @@ constexpr const char *OTA_UPLOAD_STATE_ATTRIBUTE = "otaUploadState";
 struct OtaUploadState {
     uint32_t magic;
     OtaUploadGuardCore::State guard;
+    uint32_t operationId;
+    uint32_t declaredSize;
+    OtaProgressCore::Component component;
 };
 
 struct OtaOperationContext {
-    OtaOperationContext(const Logger *loggerValue, const bool firmwareValue)
-        : logger(loggerValue), firmware(firmwareValue) {}
+    OtaOperationContext(const Logger *loggerValue, const bool firmwareValue,
+                        const uint32_t operationIdValue, const uint32_t totalSizeValue)
+        : logger(loggerValue), firmware(firmwareValue), operationId(operationIdValue),
+          totalSize(totalSizeValue) {}
 
     const Logger *logger;
     bool firmware;
+    uint32_t operationId;
+    uint32_t totalSize;
+};
+
+struct ManualQuiesceContext {
+    uint32_t operationId;
+    const Logger *logger;
+};
+
+struct SignedApplyContext {
+    uint32_t operationId;
+    Logger *logger;
 };
 
 struct FactoryResetContext {
@@ -175,7 +207,9 @@ void setRuntimeJsonResponse(RuntimeResponse &response, const JsonDocument &docum
 
 bool scheduleRuntimeJob(AsyncWebServerRequest *request,
                         std::function<void(RuntimeResponse &)> operation) {
-    if (request == nullptr || g_runtimeJobQueue == nullptr || g_runtimeResponseQueue == nullptr
+    if (!g_runtimeAdmissionOpen.load(std::memory_order_acquire)
+        || !OtaCoordinator::ordinaryHttpAllowed()
+        || request == nullptr || g_runtimeJobQueue == nullptr || g_runtimeResponseQueue == nullptr
         || g_runtimeJobSlots == nullptr
         || g_runtimeWorkerCount.load(std::memory_order_acquire) == 0U) return false;
     if (xSemaphoreTake(g_runtimeJobSlots, 0) != pdTRUE) return false;
@@ -296,17 +330,27 @@ bool scheduleFactoryResetTask(void *context) {
 bool beginOtaOperation(void *context) {
     const auto *operation = static_cast<OtaOperationContext *>(context);
     return operation->firmware
-               ? OtaService::beginFirmware(0, operation->logger)
-               : OtaService::beginFilesystem(0, operation->logger);
+               ? OtaService::beginFirmware(operation->totalSize, operation->operationId, operation->logger)
+               : OtaService::beginFilesystem(operation->totalSize, operation->operationId, operation->logger);
 }
 
 bool writeOtaOperation(void *context, uint8_t *data, const size_t len) {
     const auto *operation = static_cast<OtaOperationContext *>(context);
-    return OtaService::write(data, len, operation->logger);
+    return OtaService::write(operation->operationId, data, len, operation->logger);
 }
 
 bool authorizeOtaRequest(void *context) {
     return MBXServerHandlers::isOtaRequestAuthorized(static_cast<AsyncWebServerRequest *>(context));
+}
+
+bool verifyOtaPassword(const uint8_t *password, size_t passwordLength, void *);
+
+bool authorizeOtaPasswordRequest(const AsyncWebServerRequest *req) {
+    if (!OtaCredentialService::isProtected()) return true;
+    if (req == nullptr || req->authType() != AsyncAuthType::AUTH_BEARER) return false;
+    const String &encoded = req->authChallenge();
+    return OtaAuthorizationCore::authorize(
+        true, encoded.c_str(), encoded.length(), verifyOtaPassword, nullptr);
 }
 
 bool verifyOtaPassword(const uint8_t *password, const size_t passwordLength, void *) {
@@ -325,6 +369,13 @@ OtaUploadState *beginOtaUploadRequest(AsyncWebServerRequest *req) {
         MBXServerHandlers::sendOtaUnauthorized(req);
         return nullptr;
     }
+    uint32_t declaredSize = 0U;
+    if (!OtaCoordinator::validateManualUpload(
+            state->operationId, state->component, declaredSize)) {
+        MBXServerHandlers::sendOtaInProgress(req, HttpResponseCodes::CONFLICT);
+        return nullptr;
+    }
+    state->declaredSize = declaredSize;
     return state;
 }
 
@@ -475,7 +526,9 @@ void sendJson(AsyncWebServerRequest *req, const JsonDocument &doc, const int sta
 namespace {
 
 bool eventStreamReady() {
-    return g_eventsAttached.load(std::memory_order_acquire);
+    return g_eventsAttached.load(std::memory_order_acquire)
+        && !g_normalEventsSuspended.load(std::memory_order_acquire)
+        && OtaCoordinator::ordinaryHttpAllowed();
 }
 
 bool eventStreamHasClients() {
@@ -587,25 +640,67 @@ void sendLogPayload(const String &text, const bool truncated, const char *eventN
     g_events.send(payload.c_str(), eventName, nextEventId());
 }
 
-void sendOtaStatus(const char *stage,
-                   const uint32_t received,
-                   const uint32_t total,
-                   const char *detail) {
-    if (!stage || !eventStreamHasClients()) {
+size_t appendJsonEscaped(char *output, const size_t capacity, size_t offset, const char *input) {
+    if (output == nullptr || capacity == 0U || input == nullptr) return offset;
+    while (*input != '\0' && offset + 2U < capacity) {
+        const unsigned char value = static_cast<unsigned char>(*input++);
+        if (value == '"' || value == '\\') {
+            output[offset++] = '\\';
+            output[offset++] = static_cast<char>(value);
+        } else if (value >= 0x20U && value < 0x7FU) {
+            output[offset++] = static_cast<char>(value);
+        }
+    }
+    output[offset] = '\0';
+    return offset;
+}
+
+bool serializeOtaSnapshot(const OtaProgressCore::Snapshot &snapshot,
+                          char *output, const size_t capacity) {
+    if (output == nullptr || capacity < 64U) return false;
+    char version[OtaProgressCore::TARGET_VERSION_CAPACITY * 2U + 1U]{};
+    char error[OtaProgressCore::ERROR_CODE_CAPACITY * 2U + 1U]{};
+    appendJsonEscaped(version, sizeof(version), 0U, snapshot.targetVersion);
+    appendJsonEscaped(error, sizeof(error), 0U, snapshot.errorCode);
+    const int length = snprintf(
+        output, capacity,
+        "{\"operationId\":%lu,\"sequence\":%lu,\"targetVersion\":\"%s\","
+        "\"state\":\"%s\",\"stage\":\"%s\",\"component\":\"%s\","
+        "\"receivedBytes\":%lu,\"totalBytes\":%lu,"
+        "\"componentPercentKnown\":%s,\"componentPercent\":%u,"
+        "\"overallPercentKnown\":%s,\"overallPercent\":%u,"
+        "\"result\":\"%s\",\"error\":\"%s\"}",
+        static_cast<unsigned long>(snapshot.operationId),
+        static_cast<unsigned long>(snapshot.sequence), version,
+        OtaProgressCore::stateName(snapshot.state), OtaProgressCore::stateName(snapshot.state),
+        OtaProgressCore::componentName(snapshot.component),
+        static_cast<unsigned long>(snapshot.receivedBytes),
+        static_cast<unsigned long>(snapshot.totalBytes),
+        snapshot.componentPercentKnown ? "true" : "false", snapshot.componentPercent,
+        snapshot.overallPercentKnown ? "true" : "false", snapshot.overallPercent,
+        OtaProgressCore::resultName(snapshot.result), error);
+    return length > 0 && static_cast<size_t>(length) < capacity;
+}
+
+void pumpOtaProgressEventStream() {
+    const size_t clients = g_otaEvents.count();
+    if (clients == 0U) return;
+    const auto snapshot = OtaCoordinator::snapshot();
+    const bool force = g_otaProgressForcePublish.exchange(false, std::memory_order_acq_rel);
+    const uint32_t freeHeap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    const uint32_t largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+    if (!g_otaProgressPublisher.shouldPublish(
+            snapshot, millis(), clients, g_otaEvents.avgPacketsWaiting(), freeHeap, largestBlock,
+            OTA_PROGRESS_MIN_INTERNAL_FREE_HEAP, OTA_PROGRESS_MIN_INTERNAL_LARGEST_BLOCK, force)) {
+        // A connect-triggered current snapshot is a retained request, not a
+        // one-shot attempt. Keep retrying it until the queue/heap guard admits
+        // one send; later connects racing this loop set the flag independently.
+        if (force) g_otaProgressForcePublish.store(true, std::memory_order_release);
         return;
     }
-    JsonDocument doc;
-    doc["stage"] = stage;
-    if (received || total) {
-        doc["received"] = received;
-        doc["total"] = total;
-    }
-    if (detail && detail[0] != '\0') {
-        doc["detail"] = detail;
-    }
-    String payload;
-    serializeJson(doc, payload);
-    g_events.send(payload.c_str(), "ota-status", nextEventId());
+    char payload[512];
+    if (!serializeOtaSnapshot(snapshot, payload, sizeof(payload))) return;
+    g_otaEvents.send(payload, "ota-progress", snapshot.sequence, EVENT_RETRY_MS);
 }
 
 void sendInitialLogsToClient(AsyncEventSourceClient *client) {
@@ -687,10 +782,16 @@ void MBXServerHandlers::initEventStream(AsyncWebServer *server, const Logger *lo
         return;
     }
 
-    HttpOtaService::setProgressCallback(sendOtaStatus);
-
+    // Refuse the normal stream during an OTA before the library constructs a
+    // client. ESPAsyncWebServer runs onConnect from inside the client
+    // constructor, so closing a client there releases its connection while the
+    // constructor still uses it and panics the async TCP task.
+    g_events.setFilter([](AsyncWebServerRequest *) { return eventStreamReady(); });
     g_events.onConnect([](AsyncEventSourceClient *client) {
-        if (!client) {
+        // Never close from this callback (see above). A connection that passed
+        // the filter just before quiescence started is closed by
+        // pumpEventStream() from the main loop instead.
+        if (client == nullptr || !eventStreamReady()) {
             return;
         }
         client->send("ready", "ping", nextEventId(), EVENT_RETRY_MS);
@@ -701,9 +802,29 @@ void MBXServerHandlers::initEventStream(AsyncWebServer *server, const Logger *lo
     });
 
     server->addHandler(&g_events);
+    // Stream requests refused by the filter above fall through to this handler.
+    // It matches only while that filter refuses, so requests the library does
+    // not treat as a stream (no Accept: text/event-stream) still reach the
+    // not-found handler outside an OTA.
+    server->on(Routes::EVENTS, HTTP_GET, [](AsyncWebServerRequest *req) {
+        MBXServerHandlers::sendOtaInProgress(req);
+    }).setFilter([](AsyncWebServerRequest *) { return !eventStreamReady(); });
+
+    g_otaEvents.onConnect([](AsyncEventSourceClient *client) {
+        if (client != nullptr) g_otaProgressForcePublish.store(true, std::memory_order_release);
+    });
+    server->addHandler(&g_otaEvents);
 }
 
 void MBXServerHandlers::pumpEventStream() {
+    pumpOtaProgressEventStream();
+    if (g_otaQuiescenceRequested.load(std::memory_order_acquire)) {
+        g_normalEventsSuspended.store(true, std::memory_order_release);
+        // Close on every pass, not only on entry, so a client admitted just
+        // before quiescence started is also closed from this safe context.
+        if (g_events.count() > 0U) g_events.close();
+        return;
+    }
     if (!eventStreamHasClients()) {
         return;
     }
@@ -724,6 +845,99 @@ void MBXServerHandlers::pumpEventStream() {
         g_lastPingAt.store(now, std::memory_order_relaxed);
         g_events.send("ping", "ping", nextEventId());
     }
+}
+
+void MBXServerHandlers::requestOtaQuiescence() {
+    g_runtimeAdmissionOpen.store(false, std::memory_order_release);
+    g_uiFilesystemAdmissionOpen.store(false, std::memory_order_release);
+    g_otaQuiescenceRequested.store(true, std::memory_order_release);
+}
+
+size_t MBXServerHandlers::runtimeJobCount() {
+    if (g_runtimeJobSlots == nullptr) return 0U;
+    const UBaseType_t freeSlots = uxSemaphoreGetCount(g_runtimeJobSlots);
+    return freeSlots >= RUNTIME_HTTP_RESPONSE_QUEUE_DEPTH
+               ? 0U
+               : RUNTIME_HTTP_RESPONSE_QUEUE_DEPTH - freeSlots;
+}
+
+size_t MBXServerHandlers::uiFilesystemLeaseCount() {
+    return g_uiFilesystemLeases.load(std::memory_order_acquire);
+}
+
+size_t MBXServerHandlers::normalEventClientCount() {
+    return g_events.count();
+}
+
+size_t MBXServerHandlers::normalEventPacketsWaiting() {
+    return g_events.avgPacketsWaiting();
+}
+
+size_t MBXServerHandlers::otaEventClientCount() {
+    return g_otaEvents.count();
+}
+
+size_t MBXServerHandlers::otaEventPacketsWaiting() {
+    return g_otaEvents.avgPacketsWaiting();
+}
+
+bool MBXServerHandlers::otaQuiescenceReady() {
+    return g_normalEventsSuspended.load(std::memory_order_acquire)
+        && normalEventClientCount() == 0U
+        && runtimeJobCount() == 0U
+        && uiFilesystemLeaseCount() == 0U
+        && HttpOtaService::transportIdle();
+}
+
+bool MBXServerHandlers::unmountUiFilesystem() {
+    if (g_uiFilesystemAdmissionOpen.load(std::memory_order_acquire)
+        || uiFilesystemLeaseCount() != 0U) return false;
+    if (!g_uiFilesystemMounted.exchange(false, std::memory_order_acq_rel)) return true;
+    SPIFFS.end();
+    return true;
+}
+
+void MBXServerHandlers::resumeAfterOta(const bool uiFilesystemMounted) {
+    g_uiFilesystemMounted.store(uiFilesystemMounted, std::memory_order_release);
+    g_uiFilesystemAdmissionOpen.store(uiFilesystemMounted, std::memory_order_release);
+    g_runtimeAdmissionOpen.store(true, std::memory_order_release);
+    g_otaQuiescenceRequested.store(false, std::memory_order_release);
+    g_normalEventsSuspended.store(false, std::memory_order_release);
+}
+
+bool MBXServerHandlers::tryAcquireUiFilesystemLease(AsyncWebServerRequest *request) {
+    if (request == nullptr || !uiFilesystemAvailable()) return false;
+    if (request->getAttribute(UI_FS_LEASE_ATTRIBUTE, false)) return true;
+    g_uiFilesystemLeases.fetch_add(1U, std::memory_order_acq_rel);
+    if (!uiFilesystemAvailable()) {
+        g_uiFilesystemLeases.fetch_sub(1U, std::memory_order_acq_rel);
+        return false;
+    }
+    request->setAttribute(UI_FS_LEASE_ATTRIBUTE, true);
+    request->onDisconnect([] {
+        g_uiFilesystemLeases.fetch_sub(1U, std::memory_order_acq_rel);
+    });
+    return true;
+}
+
+bool MBXServerHandlers::uiFilesystemAvailable() {
+    return g_uiFilesystemAdmissionOpen.load(std::memory_order_acquire)
+        && g_uiFilesystemMounted.load(std::memory_order_acquire)
+        && OtaCoordinator::uiFilesystemAllowed();
+}
+
+void MBXServerHandlers::handleOtaStatus(AsyncWebServerRequest *request) {
+    if (request == nullptr) return;
+    char payload[512];
+    if (!serializeOtaSnapshot(OtaCoordinator::snapshot(), payload, sizeof(payload))) {
+        request->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON,
+                      R"({"error":"status_serialization_failed"})");
+        return;
+    }
+    AsyncWebServerResponse *response = request->beginResponse(
+        HttpResponseCodes::OK, HttpMediaTypes::JSON, payload);
+    response->addHeader("Cache-Control", "no-store");
+    request->send(response);
 }
 
 void MBXServerHandlers::handleCaptivePortalRedirect(AsyncWebServerRequest *req) {
@@ -1181,6 +1395,10 @@ void MBXServerHandlers::handlePutMqttSecretBody(AsyncWebServerRequest *req, cons
 }
 
 void MBXServerHandlers::handleGetMqttConstraints(AsyncWebServerRequest *req) {
+    if (!OtaCoordinator::ordinaryHttpAllowed()) {
+        sendOtaInProgress(req);
+        return;
+    }
     JsonDocument document;
     document["brokerIpMaxBytes"] = MqttConfigCore::BROKER_MAX_BYTES;
     document["brokerUrlHostMaxBytes"] = MqttConfigCore::BROKER_MAX_BYTES;
@@ -1284,6 +1502,10 @@ void MBXServerHandlers::handleWifiApOff(AsyncWebServerRequest *req, const WifiCo
 
 void MBXServerHandlers::handleSystemReady(AsyncWebServerRequest *req) {
     if (req == nullptr) return;
+    if (!OtaCoordinator::ordinaryHttpAllowed()) {
+        sendOtaInProgress(req);
+        return;
+    }
     auto *response = req->beginResponse(HttpResponseCodes::OK, HttpMediaTypes::JSON, STATION_READY_RESP);
     response->addHeader("Cache-Control", "no-store");
     response->addHeader("Access-Control-Allow-Origin", "*");
@@ -1291,6 +1513,10 @@ void MBXServerHandlers::handleSystemReady(AsyncWebServerRequest *req) {
 }
 
 void MBXServerHandlers::getSystemStats(AsyncWebServerRequest *req, const Logger *logger) {
+    if (!OtaCoordinator::ordinaryHttpAllowed()) {
+        sendOtaInProgress(req);
+        return;
+    }
     logger->logDebug(
         ("MBX Server: Started processing "
          + String(req->methodToString()) + " request on " + req->url()).c_str());
@@ -1309,6 +1535,10 @@ void MBXServerHandlers::getSystemStats(AsyncWebServerRequest *req, const Logger 
 }
 
 void MBXServerHandlers::getLogs(AsyncWebServerRequest *req) {
+    if (!OtaCoordinator::ordinaryHttpAllowed()) {
+        sendOtaInProgress(req);
+        return;
+    }
     if (auto *mem = g_memlog.load(std::memory_order_acquire)) {
         constexpr size_t MAX_LOG_BYTES = 8192;
         const size_t totalSize = mem->flattenedSize();
@@ -1489,11 +1719,10 @@ void MBXServerHandlers::handleDeviceReset(AsyncWebServerRequest *req, const Logg
 }
 
 bool MBXServerHandlers::isOtaRequestAuthorized(const AsyncWebServerRequest *req) {
-    if (!OtaCredentialService::isProtected()) return true;
-    if (req == nullptr || req->authType() != AsyncAuthType::AUTH_BEARER) return false;
-    const String &encoded = req->authChallenge();
-    return OtaAuthorizationCore::authorize(
-        true, encoded.c_str(), encoded.length(), verifyOtaPassword, nullptr);
+    if (req == nullptr) return false;
+    const AsyncWebHeader *header = req->getHeader("X-OTA-Session");
+    return header != nullptr
+        && OtaCoordinator::authorizeSession(header->value().c_str(), header->value().length());
 }
 
 bool MBXServerHandlers::cacheOtaUploadAuthorization(AsyncWebServerRequest *req) {
@@ -1502,6 +1731,18 @@ bool MBXServerHandlers::cacheOtaUploadAuthorization(AsyncWebServerRequest *req) 
     auto *state = static_cast<OtaUploadState *>(calloc(1U, sizeof(OtaUploadState)));
     if (state == nullptr) return false;
     state->magic = OTA_UPLOAD_STATE_MAGIC;
+    state->component = req->url() == Routes::OTA_FIRMWARE
+                           ? OtaProgressCore::Component::Firmware
+                           : OtaProgressCore::Component::Filesystem;
+    const AsyncWebHeader *operationHeader = req->getHeader("X-OTA-Operation");
+    if (operationHeader != nullptr) {
+        const String value = operationHeader->value();
+        char *end = nullptr;
+        const unsigned long parsed = strtoul(value.c_str(), &end, 10);
+        if (end != value.c_str() && end != nullptr && *end == '\0' && parsed <= UINT32_MAX) {
+            state->operationId = static_cast<uint32_t>(parsed);
+        }
+    }
     req->_tempObject = state;
     req->setAttribute(OTA_UPLOAD_STATE_ATTRIBUTE, true);
     return OtaUploadGuardCore::authorize(state->guard, authorizeOtaRequest, req);
@@ -1510,8 +1751,15 @@ bool MBXServerHandlers::cacheOtaUploadAuthorization(AsyncWebServerRequest *req) 
 void MBXServerHandlers::sendOtaUnauthorized(AsyncWebServerRequest *req) {
     if (req == nullptr) return;
     AsyncWebServerResponse *response = req->beginResponse(
-        HttpResponseCodes::UNAUTHORIZED, HttpMediaTypes::JSON, OTA_UNAUTHORIZED_RESP);
-    response->addHeader("WWW-Authenticate", "Bearer realm=\"ota\"");
+        HttpResponseCodes::UNAUTHORIZED, HttpMediaTypes::JSON, OTA_SESSION_UNAUTHORIZED_RESP);
+    response->addHeader("Cache-Control", "no-store");
+    req->send(response);
+}
+
+void MBXServerHandlers::sendOtaInProgress(AsyncWebServerRequest *req, const int status) {
+    if (req == nullptr) return;
+    AsyncWebServerResponse *response = req->beginResponse(
+        status, HttpMediaTypes::JSON, OTA_IN_PROGRESS_RESP);
     response->addHeader("Cache-Control", "no-store");
     req->send(response);
 }
@@ -1524,6 +1772,97 @@ void MBXServerHandlers::sendMutationForbidden(AsyncWebServerRequest *req) {
     req->send(response);
 }
 
+void MBXServerHandlers::handleCreateOtaSession(AsyncWebServerRequest *req) {
+    if (req == nullptr) return;
+    if (!OtaCoordinator::ordinaryHttpAllowed()) {
+        sendOtaInProgress(req);
+        return;
+    }
+    if (!authorizeOtaPasswordRequest(req)) {
+        AsyncWebServerResponse *response = req->beginResponse(
+            HttpResponseCodes::UNAUTHORIZED, HttpMediaTypes::JSON, OTA_UNAUTHORIZED_RESP);
+        response->addHeader("WWW-Authenticate", "Bearer realm=\"ota\"");
+        response->addHeader("Cache-Control", "no-store");
+        req->send(response);
+        return;
+    }
+    char token[65];
+    if (!OtaCoordinator::createSession(token)) {
+        req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::JSON,
+                  R"({"error":"ota_session_unavailable"})");
+        return;
+    }
+    char responseBody[160];
+    snprintf(responseBody, sizeof(responseBody),
+             "{\"token\":\"%s\",\"absoluteExpiresMs\":%lu,\"idleExpiresMs\":%lu}",
+             token, static_cast<unsigned long>(OTA_SESSION_ABSOLUTE_LIFETIME_MS),
+             static_cast<unsigned long>(OTA_SESSION_IDLE_LIFETIME_MS));
+    volatile char *clear = token;
+    for (size_t i = 0U; i < sizeof(token); ++i) clear[i] = '\0';
+    AsyncWebServerResponse *response = req->beginResponse(
+        HttpResponseCodes::OK, HttpMediaTypes::JSON, responseBody);
+    response->addHeader("Cache-Control", "no-store");
+    req->send(response);
+}
+
+void MBXServerHandlers::handleOtaManualStartBody(AsyncWebServerRequest *req,
+                                                 const uint8_t *data, const size_t len,
+                                                 const size_t index, const size_t total,
+                                                 const Logger *logger) {
+    char *body = BodyAccumulator::append(req->_tempObject, data, len, index, total);
+    if (body == nullptr) {
+        if (index + len == total) {
+            req->send(HttpResponseCodes::BAD_REQUEST_HTTP, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        }
+        return;
+    }
+    JsonDocument document;
+    const DeserializationError error = deserializeJson(document, body, total);
+    const char *componentText = document["component"] | "";
+    const uint64_t declared = document["size"] | 0ULL;
+    const OtaProgressCore::Component component = strcmp(componentText, "firmware") == 0
+        ? OtaProgressCore::Component::Firmware
+        : strcmp(componentText, "filesystem") == 0
+              ? OtaProgressCore::Component::Filesystem
+              : OtaProgressCore::Component::None;
+    if (error || component == OtaProgressCore::Component::None
+        || declared == 0U || declared > UINT32_MAX) {
+        req->send(HttpResponseCodes::BAD_REQUEST_HTTP, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        return;
+    }
+    uint32_t operationId = 0U;
+    const auto admission = OtaCoordinator::reserveManual(
+        component, static_cast<uint32_t>(declared), operationId);
+    if (admission == OtaCoordinator::Admission::Busy) {
+        sendOtaInProgress(req, HttpResponseCodes::CONFLICT);
+        return;
+    }
+    if (admission != OtaCoordinator::Admission::Accepted) {
+        req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::JSON,
+                  R"({"error":"ota_unavailable"})");
+        return;
+    }
+    auto *context = new (std::nothrow) ManualQuiesceContext{operationId, logger};
+    if (context == nullptr || xTaskCreatePinnedToCore([](void *parameter) {
+            auto *manual = static_cast<ManualQuiesceContext *>(parameter);
+            if (!OtaCoordinator::quiesce(manual->operationId, true) && manual->logger != nullptr) {
+                manual->logger->logError("Manual OTA quiescence failed");
+            }
+            delete manual;
+            vTaskDelete(nullptr);
+        }, "otaManualStart", 6144, context, 1, nullptr, APP_CPU_NUM) != pdPASS) {
+        delete context;
+        (void)OtaCoordinator::failAsync(operationId, "quiesce_task_unavailable");
+        req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::JSON,
+                  R"({"error":"ota_task_unavailable"})");
+        return;
+    }
+    char responseBody[64];
+    snprintf(responseBody, sizeof(responseBody),
+             "{\"ok\":true,\"operationId\":%lu}", static_cast<unsigned long>(operationId));
+    req->send(HttpResponseCodes::ACCEPTED, HttpMediaTypes::JSON, responseBody);
+}
+
 void MBXServerHandlers::handleOtaFirmwareUpload(AsyncWebServerRequest *r, const String &fn, const size_t index,
                                                 uint8_t *data, const size_t len, const bool final,
                                                 const Logger *logger) {
@@ -1533,7 +1872,7 @@ void MBXServerHandlers::handleOtaFirmwareUpload(AsyncWebServerRequest *r, const 
         if (logger) {
             logger->logInformation((String("OTA firmware upload start: ") + fn).c_str());
         }
-        OtaOperationContext operation{logger, true};
+        OtaOperationContext operation{logger, true, state->operationId, state->declaredSize};
         const auto start = OtaUploadGuardCore::start(
             state->guard, beginOtaOperation, &operation);
         if (start != OtaUploadGuardCore::StartResult::Started) {
@@ -1541,28 +1880,30 @@ void MBXServerHandlers::handleOtaFirmwareUpload(AsyncWebServerRequest *r, const 
                 logger->logError("OTA begin firmware failed");
             }
             r->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, OTA_FW_UPLOAD_BEGIN_FAIL_RESP);
+            (void)OtaCoordinator::failAsync(state->operationId, "firmware_begin_failed");
             return;
         }
     }
     OtaUploadState *state = otaUploadState(r);
     if (state == nullptr || !state->guard.authorized || !state->guard.begun) return;
     if (len) {
-        OtaOperationContext operation{logger, true};
+        OtaOperationContext operation{logger, true, state->operationId, state->declaredSize};
         if (!OtaUploadGuardCore::write(state->guard, writeOtaOperation, &operation, data, len)) {
             if (logger) logger->logError("OTA firmware write failed");
+            state->guard.begun = false;
+            (void)OtaCoordinator::failAsync(state->operationId, "firmware_write_failed");
+            return;
         }
     }
     if (final) {
-        const bool ok = OtaService::end(true, logger);
+        const bool ok = OtaService::end(state->operationId, false, logger);
         if (!ok) {
             r->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON,
                     OTA_END_FAIL_RESP);
+            (void)OtaCoordinator::failAsync(state->operationId, "firmware_end_failed");
         } else {
             r->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, OTA_END_FW_UPLOAD_OK);
-            xTaskCreatePinnedToCore([](void *) {
-                delay(500);
-                ESP.restart();
-            }, "otaReboot", 2048, nullptr, 1, nullptr, APP_CPU_NUM);
+            (void)OtaCoordinator::succeed(state->operationId);
         }
     }
 }
@@ -1574,39 +1915,45 @@ void MBXServerHandlers::handleOtaFilesystemUpload(AsyncWebServerRequest *r, cons
         OtaUploadState *state = beginOtaUploadRequest(r);
         if (state == nullptr || !state->guard.authorized) return;
         if (logger) logger->logInformation((String("OTA filesystem upload start: ") + fn).c_str());
-        OtaOperationContext operation{logger, false};
+        OtaOperationContext operation{logger, false, state->operationId, state->declaredSize};
         const auto start = OtaUploadGuardCore::start(
             state->guard, beginOtaOperation, &operation);
         if (start != OtaUploadGuardCore::StartResult::Started) {
             if (logger) logger->logError("OTA begin fs failed");
             r->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, OTA_FS_UPLOAD_BEGIN_FAIL_RESP);
+            (void)OtaCoordinator::failAsync(state->operationId, "filesystem_begin_failed");
             return;
         }
     }
     OtaUploadState *state = otaUploadState(r);
     if (state == nullptr || !state->guard.authorized || !state->guard.begun) return;
     if (len) {
-        OtaOperationContext operation{logger, false};
+        OtaOperationContext operation{logger, false, state->operationId, state->declaredSize};
         if (!OtaUploadGuardCore::write(state->guard, writeOtaOperation, &operation, data, len)) {
             if (logger) logger->logError("OTA fs write failed");
+            state->guard.begun = false;
+            (void)OtaCoordinator::failAsync(state->operationId, "filesystem_write_failed");
+            return;
         }
     }
     if (final) {
-        const bool ok = OtaService::end(true, logger);
+        const bool ok = OtaService::end(state->operationId, false, logger);
         if (!ok) {
             r->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, OTA_END_FAIL_RESP);
+            (void)OtaCoordinator::failAsync(state->operationId, "filesystem_end_failed");
         } else {
             r->send(HttpResponseCodes::OK, HttpMediaTypes::JSON, OTA_END_FS_UPLOAD_OK);
-            xTaskCreatePinnedToCore([](void *) {
-                delay(500);
-                ESP.restart();
-            }, "otaReboot", 2048, nullptr, 1, nullptr, APP_CPU_NUM);
+            (void)OtaCoordinator::succeed(state->operationId);
         }
     }
 }
 
 void MBXServerHandlers::handleOtaHttpCheck(AsyncWebServerRequest *req, const Logger *logger) {
     (void)logger;
+    if (!OtaCoordinator::ordinaryHttpAllowed()) {
+        sendOtaInProgress(req);
+        return;
+    }
 #if OTA_HTTP_ENABLED
     bool refresh = true;
     if (req->hasParam("refresh")) {
@@ -1641,6 +1988,10 @@ void MBXServerHandlers::handleOtaHttpCheck(AsyncWebServerRequest *req, const Log
 
 void MBXServerHandlers::handleOtaHttpNotes(AsyncWebServerRequest *req, const Logger *logger) {
     (void)logger;
+    if (!OtaCoordinator::ordinaryHttpAllowed()) {
+        sendOtaInProgress(req);
+        return;
+    }
 #if OTA_HTTP_ENABLED
     String version;
     if (!HttpOtaService::hasPendingUpdate(version)) {
@@ -1691,46 +2042,61 @@ void MBXServerHandlers::handleOtaHttpApply(AsyncWebServerRequest *req, const Log
 #if OTA_HTTP_ENABLED
     JsonDocument doc;
     String version;
-    if (!HttpOtaService::hasPendingUpdate(version)) {
+    bool firmwarePending = false;
+    bool filesystemPending = false;
+    if (!HttpOtaService::hasPendingUpdate(version, &firmwarePending, &filesystemPending)) {
         doc["ok"] = false;
         doc["error"] = "no_update";
         sendJson(req, doc);
         return;
     }
 
-    if (g_otaHttpApplying.exchange(true)) {
-        doc["ok"] = false;
-        doc["error"] = "ota_in_progress";
-        sendJson(req, doc);
+    uint32_t operationId = 0U;
+    const auto admission = OtaCoordinator::reserveSigned(
+        version.c_str(), firmwarePending, filesystemPending, operationId);
+    if (admission == OtaCoordinator::Admission::Busy) {
+        sendOtaInProgress(req, HttpResponseCodes::CONFLICT);
         return;
     }
-
-    doc["ok"] = true;
-    doc["started"] = true;
-    if (version.length()) doc["version"] = version;
-    sendJson(req, doc);
-
-    auto *loggerPtr = const_cast<Logger *>(logger);
-    xTaskCreatePinnedToCore([](void *param) {
-        auto *log = static_cast<Logger *>(param);
+    if (admission != OtaCoordinator::Admission::Accepted) {
+        req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::JSON,
+                  R"({"error":"ota_unavailable"})");
+        return;
+    }
+    auto *context = new (std::nothrow) SignedApplyContext{
+        operationId, const_cast<Logger *>(logger)};
+    if (context == nullptr || xTaskCreatePinnedToCore([](void *param) {
+        auto *apply = static_cast<SignedApplyContext *>(param);
+        auto *log = apply->logger;
         if (log) log->logInformation("HTTP-OTA: Apply started");
         String error;
-        const bool ok = HttpOtaService::applyPendingUpdate(error);
+        const bool ok = HttpOtaService::applyPendingUpdate(error, apply->operationId);
         if (!ok) {
             const String msg = "HTTP-OTA: Apply failed: " + error;
             if (log) log->logError(msg.c_str());
             Serial.println(msg);
-            g_otaHttpApplying.store(false, std::memory_order_release);
+            delete apply;
             vTaskDelete(nullptr);
             return;
         }
         if (log) log->logInformation("HTTP-OTA: Apply complete, rebooting");
         Serial.println("HTTP-OTA: Apply complete, rebooting");
-        sendOtaStatus("rebooting", 0, 0, nullptr);
-        g_otaHttpApplying.store(false, std::memory_order_release);
-        delay(500);
-        ESP.restart();
-    }, "otaHttpApply", 8192, loggerPtr, 1, nullptr, APP_CPU_NUM);
+        (void)OtaCoordinator::succeed(apply->operationId);
+        delete apply;
+        vTaskDelete(nullptr);
+    }, "otaHttpApply", 8192, context, 1, nullptr, APP_CPU_NUM) != pdPASS) {
+        delete context;
+        (void)OtaCoordinator::failAsync(operationId, "apply_task_unavailable");
+        req->send(HttpResponseCodes::SERVICE_UNAVAILABLE, HttpMediaTypes::JSON,
+                  R"({"error":"ota_task_unavailable"})");
+        return;
+    }
+
+    doc["ok"] = true;
+    doc["started"] = true;
+    doc["operationId"] = operationId;
+    if (version.length()) doc["version"] = version;
+    sendJson(req, doc, HttpResponseCodes::ACCEPTED);
 #else
     JsonDocument doc;
     doc["ok"] = false;
@@ -1740,6 +2106,10 @@ void MBXServerHandlers::handleOtaHttpApply(AsyncWebServerRequest *req, const Log
 }
 
 void MBXServerHandlers::handleGetOtaHttpSettings(AsyncWebServerRequest *req) {
+    if (!OtaCoordinator::ordinaryHttpAllowed()) {
+        sendOtaInProgress(req);
+        return;
+    }
 #if OTA_HTTP_ENABLED
     JsonDocument doc;
     doc["includePrereleases"] = HttpOtaService::getIncludePrereleases();
@@ -1754,6 +2124,10 @@ void MBXServerHandlers::handleGetOtaHttpSettings(AsyncWebServerRequest *req) {
 
 void MBXServerHandlers::handlePutOtaHttpSettingsBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
                                                     const size_t index, const size_t total) {
+    if (!OtaCoordinator::ordinaryHttpAllowed()) {
+        sendOtaInProgress(req);
+        return;
+    }
 #if OTA_HTTP_ENABLED
     char *body = BodyAccumulator::append(req->_tempObject, data, len, index, total);
     if (body == nullptr) {
@@ -1782,6 +2156,10 @@ void MBXServerHandlers::handlePutOtaHttpSettingsBody(AsyncWebServerRequest *req,
 
 void MBXServerHandlers::handlePutOtaPasswordBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
                                                  const size_t index, const size_t total) {
+    if (!OtaCoordinator::ordinaryHttpAllowed()) {
+        sendOtaInProgress(req);
+        return;
+    }
     char *body = BodyAccumulator::append(req->_tempObject, data, len, index, total);
     if (body == nullptr) {
         if (index + len == total) {
@@ -1800,6 +2178,7 @@ void MBXServerHandlers::handlePutOtaPasswordBody(AsyncWebServerRequest *req, con
     const String password = doc["password"].as<String>();
     switch (OtaCredentialService::setPassword(password)) {
         case OtaCredentialService::SaveResult::Ok:
+            OtaCoordinator::revokeSessions();
             req->send(HttpResponseCodes::NO_CONTENT);
             return;
         case OtaCredentialService::SaveResult::InvalidPassword:
@@ -1816,11 +2195,16 @@ void MBXServerHandlers::handleDeleteOtaPassword(AsyncWebServerRequest *req) {
         req->send(HttpResponseCodes::INTERNAL_SERVER_ERROR, HttpMediaTypes::JSON, OTA_PASSWORD_STORAGE_RESP);
         return;
     }
+    OtaCoordinator::revokeSessions();
     req->send(HttpResponseCodes::NO_CONTENT);
 }
 
 void MBXServerHandlers::handleFactoryResetBody(AsyncWebServerRequest *req, const uint8_t *data, const size_t len,
                                                const size_t index, const size_t total, const Logger *logger) {
+    if (!OtaCoordinator::ordinaryHttpAllowed()) {
+        sendOtaInProgress(req);
+        return;
+    }
     char *body = BodyAccumulator::append(req->_tempObject, data, len, index, total);
     if (body == nullptr) {
         if (index + len == total) {
@@ -1841,6 +2225,8 @@ void MBXServerHandlers::handleFactoryResetBody(AsyncWebServerRequest *req, const
         req->send(HttpResponseCodes::CONFLICT, HttpMediaTypes::JSON, FACTORY_RESET_BUSY_RESP);
         return;
     }
+
+    OtaCoordinator::revokeSessions();
 
     auto *context = new (std::nothrow) FactoryResetContext;
     if (context == nullptr) {

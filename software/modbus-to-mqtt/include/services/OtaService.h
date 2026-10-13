@@ -7,12 +7,11 @@ class Logger;
 
 class OtaService {
 public:
-    static bool beginFirmware(size_t totalSize, const Logger *logger);
-    static bool write(uint8_t *data, size_t len, const Logger *logger);
-    static bool end(bool evenIfHasError, const Logger *logger);
+    static bool beginFirmware(size_t totalSize, uint32_t operationId, const Logger *logger);
+    static bool write(uint32_t operationId, uint8_t *data, size_t len, const Logger *logger);
+    static bool end(uint32_t operationId, bool evenIfHasError, const Logger *logger);
 
-    static bool beginFilesystem(size_t totalSize, const Logger *logger);
+    static bool beginFilesystem(size_t totalSize, uint32_t operationId, const Logger *logger);
 };
 
 #endif
-

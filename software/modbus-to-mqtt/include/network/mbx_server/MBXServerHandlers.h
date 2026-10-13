@@ -71,6 +71,8 @@ public:
 
     static void sendMutationForbidden(AsyncWebServerRequest *req);
 
+    static void sendOtaInProgress(AsyncWebServerRequest *req, int status = 503);
+
     static void handleMqttTestConnection(AsyncWebServerRequest *req);
 
     /**
@@ -91,6 +93,12 @@ public:
 
     static void handleOtaHttpApply(AsyncWebServerRequest *req, const Logger *logger);
 
+    static void handleCreateOtaSession(AsyncWebServerRequest *req);
+
+    static void handleOtaManualStartBody(AsyncWebServerRequest *req, const uint8_t *data,
+                                         size_t len, size_t index, size_t total,
+                                         const Logger *logger);
+
     static void handleGetOtaHttpSettings(AsyncWebServerRequest *req);
 
     static void handlePutOtaHttpSettingsBody(AsyncWebServerRequest *req, const uint8_t *data, size_t len, size_t index,
@@ -106,6 +114,21 @@ public:
 
     static void initEventStream(AsyncWebServer *server, const Logger *logger);
     static void pumpEventStream();
+
+    static void requestOtaQuiescence();
+    static bool otaQuiescenceReady();
+    static size_t runtimeJobCount();
+    static size_t uiFilesystemLeaseCount();
+    static size_t normalEventClientCount();
+    static size_t normalEventPacketsWaiting();
+    static size_t otaEventClientCount();
+    static size_t otaEventPacketsWaiting();
+    static bool unmountUiFilesystem();
+    static void resumeAfterOta(bool uiFilesystemMounted);
+    static bool tryAcquireUiFilesystemLease(AsyncWebServerRequest *request);
+    static bool uiFilesystemAvailable();
+
+    static void handleOtaStatus(AsyncWebServerRequest *request);
 };
 
 #endif

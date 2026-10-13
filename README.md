@@ -12,10 +12,12 @@ An ESP32-based hardware and firmware stack that bridges RS-485/Modbus field devi
   - [Build and Flash](#build-and-flash)
   - [Release Automation](#release-automation)
   - [Local UI Development](#local-ui-development)
+  - [HTTP API](#http-api)
 - [Usage](#usage)
   - [First Boot and Network Setup](#first-boot-and-network-setup)
   - [Configuring Modbus Devices](#configuring-modbus-devices)
   - [MQTT Publishing](#mqtt-publishing)
+  - [OTA Updates](#ota-updates)
 - [Project Structure](#project-structure)
   - [Hardware Documentation](#hardware-documentation)
   - [Software Documentation](#software-documentation)
@@ -42,6 +44,7 @@ The project is split between dedicated hardware design files and a PlatformIO fi
 - Configuration data for the Modbus bus, devices, and MQTT settings is stored in `/conf/*.json` on the dedicated config SPIFFS partition (`cfg`) and hot-reloaded without reflashing.
 - MQTT passwords are stored in NVS preferences; `/conf/mqtt.json` contains non-sensitive fields.
 - Default wiring, RS-485 guard times, Wi-Fi AP Portal credentials, and OTA parameters are centralized in [`Config.h`](software/modbus-to-mqtt/include/Config.h).
+- Signed and manual HTTP updates use a bounded quiescence coordinator and a compiled recovery page; the lifecycle and protocol are documented in [`OTA_LIFECYCLE.md`](OTA_LIFECYCLE.md).
 
 ## Getting Started
 
@@ -92,7 +95,16 @@ cd software/modbus-to-mqtt
 python scripts/run_test_webserver.py
 # Visit http://127.0.0.1:8000
 ```
-It injects correct MIME types, disables caching, and emulates `/api/stats/system`, `/api/events`, `/api/logs`, and `/api/system/reboot` for the SPA.
+It injects correct MIME types, disables caching, and emulates the SPA's system, OTA, and administrative API behavior, including mutation-request protection.
+
+Use `--provisioning-scenario delayed`, `temporary`, `completion-unavailable`, `readiness-html`, or another listed scenario to exercise captive handoff failures. Running the mock on port 80 allows its loopback station address to complete the full dashboard handoff.
+
+Use `--ota-scenario success`, `failure`, or `sse-loss` to exercise OTA
+admission, lifecycle progress, status-poll fallback, recovery, and reboot UI.
+
+### HTTP API
+
+See the [HTTP API request contract](HTTP_API.md) for the route and method matrix, browser cross-site protections, OTA authorization behavior, and non-browser client examples.
 
 ## Usage
 
@@ -100,7 +112,7 @@ It injects correct MIME types, disables caching, and emulates `/api/stats/system
 1. Power the gateway; it will advertise a Wi-Fi AP using the defaults defined in `Config.h` (`MODBUS-MQTT-BRIDGE` / `you-shall-not-pass`).
 2. Connect to the AP. The ESP will try getting 192.168.4.1 from DHCP. If supported on your OS, you will be prompted to open the Captive Portal and redirected automatically. If these fail, check your router for the device's IP address, and use your browser to open the configuration page `http://192.168.4.1/`. 
 3. Follow the on-screen guidance to scan, join, or provision hidden networks, optionally specifying static IP parameters before saving.
-4. After a successful network connection is established, reboot the device.
+4. After a saved network connection succeeds, the portal requests an acknowledged reboot, waits for the device to return in station mode, and opens the dashboard at the reported address. Temporary connections remain in the portal until a saved attempt succeeds.
 
 ### Configuring Modbus Devices
 - Use **Configure Modbus** to edit the RS-485 bus, add devices, and define datapoints. Modbus configurations are stored in the config partition at `/conf/config.json` and can be applied live without rebooting.
@@ -135,8 +147,25 @@ It injects correct MIME types, disables caching, and emulates `/api/stats/system
 
 ### MQTT Publishing
 - Configure broker host, port, credentials, and optional root topic via the **Configure MQTT** page or by editing `/conf/mqtt.json`. The firmware automatically extracts hostnames from URLs and persists the MQTT password in NVS preferences.
-- When Modbus reads succeed, datapoint values are published to MQTT using either the per-datapoint topic override or the default pattern `<root>/<device>/<datapointId>` with slugified datapoint names as datapoint IDs.
+- When Modbus reads succeed, datapoint values are published to MQTT using either the exact per-datapoint topic override or the default pattern `<root>/<device>/<datapoint>` with slugified device and datapoint names.
+- A writable datapoint treats its configured `topic` as a base and subscribes only to `<base>/set`; an empty base uses the same default resolution as a readable datapoint before `/set` is appended. Commands must be published without MQTT retain. There is deliberately no subscription on the legacy base/state topic.
+- Existing state consumers require no changes. Existing command publishers and automations must migrate from `<base>` to `<base>/set`; retained state left on `<base>` is safe because the gateway no longer subscribes there.
+- Home Assistant sensors advertise the resolved state topic. Switches and numbers advertise the derived `/set` command topic and use a readable datapoint with the same resolved base as state feedback, or remain optimistic when no matching read exists.
+- FC5 coil commands accept only `0`, `1`, `false`, or `true` after surrounding whitespace is removed; the words are case-insensitive.
+- FC6 and the current single-register FC16 command path accept a complete decimal value with an optional sign, fraction, and decimal exponent. Examples include `12`, `+12.5`, `.5`, `1.`, `1e3`, and `-2.5E-2`. Hexadecimal, `NaN`, infinity, and partially numeric text are rejected.
+- Holding-register commands use `engineering = raw × scale`, where `raw` is an unsigned register in `0..65535`. The command value is divided by the configured finite, non-zero scale, rejected if the unrounded result is outside that range, and otherwise rounded to the nearest raw integer with exact halves rounded upward. Negative scales are supported.
+- Rejected MQTT commands do not reach the Modbus bus. Their warning contains the command topic, function, address, and a stable reason code, but never echoes the rejected payload.
 - MQTT connectivity, Modbus statistics, and recent logs are visible on the dashboard.
+
+### OTA Updates
+
+- Release checks and notes retrieval leave normal services running. Applying a release or starting a manual upload first stops ordinary HTTP/SPIFFS activity, Modbus transactions, MQTT reconnect/publication work, and the normal statistics/log stream within bounded deadlines.
+- When connected, MQTT publishes the configured retained availability payload before its graceful disconnect. A failed best-effort signal or an already-disconnected broker cannot delay entry indefinitely.
+- The dashboard authenticates once into a short-lived RAM-only OTA session, then shows OTA-only SSE progress with public status polling as a fallback. Passwords and session tokens are not stored in the browser.
+- Manual firmware and filesystem uploads use a preflight operation and wait for `awaiting_upload` before sending image data. A successful operation remains quiescent until reboot; a recoverable failure restores only services that were enabled beforehand.
+- If the UI filesystem is unavailable, `/` serves a self-contained recovery page compiled into firmware. The single filesystem partition is not transactional, so an interrupted filesystem write can still require that recovery path.
+
+See [OTA lifecycle and recovery](OTA_LIFECYCLE.md) and the [HTTP API request contract](HTTP_API.md) for exact waits, memory guards, headers, progress fields, and response codes.
 
 ## Project Structure
 ```

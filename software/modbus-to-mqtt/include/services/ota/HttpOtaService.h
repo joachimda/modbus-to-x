@@ -9,11 +9,6 @@ class Logger;
 
 class HttpOtaService {
 public:
-    using ProgressCallback = void (*)(const char *stage,
-                                      uint32_t received,
-                                      uint32_t total,
-                                      const char *detail);
-
     static void begin(Logger *logger,
                       const char *manifestUrl,
                       const char *device,
@@ -26,13 +21,14 @@ public:
 
     static void setIntervalMs(uint32_t intervalMs);
 
-    static void setProgressCallback(ProgressCallback cb);
-
     static bool checkForUpdate(String &errorOut, bool &updateAvailable, String &versionOut);
 
-    static bool applyPendingUpdate(String &errorOut);
+    static bool applyPendingUpdate(String &errorOut, uint32_t operationId);
 
-    static bool hasPendingUpdate(String &versionOut);
+    static bool hasPendingUpdate(String &versionOut, bool *firmwarePending = nullptr,
+                                 bool *filesystemPending = nullptr);
+
+    static bool transportIdle();
 
     static bool isCheckPending();
 
@@ -47,11 +43,6 @@ public:
     static void setIncludePrereleases(bool include);
 
 private:
-    static void emitProgress(const char *stage,
-                             uint32_t received,
-                             uint32_t total,
-                             const char *detail);
-
     static bool fetchManifest(String &outJson);
 
     static bool processManifestAndMaybeUpdate(const String &json);
@@ -71,7 +62,8 @@ private:
     static bool downloadVerifyAndFlash(const String &url,
                                        const String &expectedSha256Hex,
                                        int updateCommand,
-                                       const char *partitionLabel);
+                                       const char *partitionLabel,
+                                       uint32_t operationId);
 
     static bool verifyEcdsaP256Signature(const String &payload,
                                          const String &sigB64,
@@ -92,8 +84,6 @@ private:
     static const char *s_device;
     static const char *s_currentVersion;
     static const char *s_caCertPem;
-
-    static ProgressCallback s_progressCb;
 
     static uint32_t s_intervalMs;
     static uint32_t s_lastCheckMs;

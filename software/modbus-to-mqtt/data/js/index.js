@@ -1,4 +1,5 @@
-import {API, mbxFetch, safeGet, safeJson, reboot} from "app";
+import {API, safeGet, safeJson, reboot} from "app";
+import {OtaController, formatOtaSnapshot} from "./ota_controller.mjs";
 
 const $ = (sel) => document.querySelector(sel);
 const kv = (k, v) => `<div class="key">${k}</div><div>${v ?? "—"}</div>`;
@@ -28,33 +29,19 @@ let statsState = {};
 const MAX_LOG_CHARS = 16000;
 const otaState = { available: false, version: "" };
 let otaPasswordProtected = false;
-let otaPassword = null;
 let otaCheckTimer = null;
 let otaNotesTimer = null;
 let otaRebootTimer = null;
 let otaRebootState = null;
 let otaApplying = false;
-const OTA_STAGE_LABELS = {
-    start: "Preparing update...",
-    fs_download: "Downloading filesystem",
-    fs_install: "Installing filesystem",
-    fs_skip: "Filesystem already up to date",
-    fw_download: "Downloading firmware",
-    fw_install: "Installing firmware",
-    fw_skip: "Firmware already up to date",
-    complete: "Update applied. Rebooting...",
-    rebooting: "Rebooting...",
-    error: "Update failed",
-};
-const OTA_SPINNER_STAGES = new Set([
-    "start",
-    "fs_download",
-    "fs_install",
-    "fw_download",
-    "fw_install",
-    "complete",
-    "rebooting",
-]);
+
+const otaController = new OtaController({
+    api: API,
+    closeNormalStream: stopEventStream,
+    resumeNormalStream: startEventStream,
+    onSnapshot: handleOtaSnapshot,
+    onReboot: startOtaRebootMonitor,
+});
 
 window.initIndex = async function initIndex() {
     $("#btn-reboot").addEventListener("click", reboot);
@@ -87,7 +74,6 @@ function startEventStream() {
     });
     eventSource.addEventListener("logs", (ev) => handleLogEvent(ev, true));
     eventSource.addEventListener("log", (ev) => handleLogEvent(ev, false));
-    eventSource.addEventListener("ota-status", (ev) => handleOtaStatusEvent(ev));
     eventSource.addEventListener("error", () => {
         const subtitle = $("#device-subtitle");
         if (subtitle && !subtitle.dataset.streamWarned) {
@@ -95,6 +81,11 @@ function startEventStream() {
             subtitle.textContent = `${subtitle.textContent || "Device"} • live stream reconnecting…`;
         }
     });
+}
+
+function stopEventStream() {
+    if (eventSource) eventSource.close();
+    eventSource = null;
 }
 
 function handleLogEvent(ev, replace) {
@@ -117,44 +108,14 @@ function handleStatsEvent(ev) {
     }
 }
 
-function formatOtaStageMessage(stage, payload) {
-    let label = OTA_STAGE_LABELS[stage] || payload?.detail || "Update status";
-    if (stage === "error") {
-        if (payload?.detail) {
-            label = `${OTA_STAGE_LABELS.error}: ${payload.detail}`;
-        }
-        return label;
-    }
-    if (stage.endsWith("_download")) {
-        const received = Number(payload?.received);
-        const total = Number(payload?.total);
-        if (Number.isFinite(received) && Number.isFinite(total) && total > 0) {
-            const pct = Math.min(100, Math.floor((received / total) * 100));
-            label = `${label} (${pct}%)`;
-        } else if (Number.isFinite(received) && received > 0) {
-            label = `${label} (${prettyBytes(received)})`;
-        }
-    }
-    return label;
-}
-
-function handleOtaStatusEvent(ev) {
-    let payload = {};
-    try {
-        payload = JSON.parse(ev.data || "{}");
-    } catch (err) {
-        console.error("Failed to parse OTA status event", err);
-        return;
-    }
-    const stage = payload?.stage;
-    if (!stage) return;
-
-    const msg = formatOtaStageMessage(stage, payload);
-    const spinning = OTA_SPINNER_STAGES.has(stage);
+function handleOtaSnapshot(payload) {
+    const stage = payload?.state;
+    const msg = formatOtaSnapshot(payload, prettyBytes);
+    const spinning = stage !== "failed" && stage !== "idle";
     setOtaNotesStatus(msg, spinning);
     setOtaStatus(msg, spinning);
 
-    if (stage === "error") {
+    if (stage === "failed") {
         otaApplying = false;
         setOtaButtons({ checking: false, applying: false });
         setOtaModalButtons({ applying: false });
@@ -165,9 +126,6 @@ function handleOtaStatusEvent(ev) {
     setOtaButtons({ checking: false, applying: true });
     setOtaModalButtons({ applying: true });
 
-    if (stage === "rebooting" || stage === "complete") {
-        startOtaRebootMonitor();
-    }
 }
 
 function updateStats(partial) {
@@ -272,7 +230,7 @@ async function setupOtaPrereleaseToggle() {
         cb.disabled = true;
         const desired = cb.checked;
         try {
-            await safeJson(API.OTA_HTTP_SETTINGS, {
+            await otaFetchJson(API.OTA_HTTP_SETTINGS, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ includePrereleases: desired }),
@@ -349,45 +307,8 @@ function closeOtaModal() {
     }
 }
 
-function getOtaAuthHeader() {
-    return otaPassword == null ? null : `Bearer ${encodeOtaPassword(otaPassword)}`;
-}
-
-function encodeOtaPassword(value) {
-    const bytes = new TextEncoder().encode(value);
-    let binary = "";
-    for (const byte of bytes) binary += String.fromCharCode(byte);
-    return btoa(binary);
-}
-
-async function requestOtaAuth() {
-    const pass = prompt("OTA password:");
-    if (pass == null || pass === "") return null;
-    otaPassword = pass;
-    return `Bearer ${encodeOtaPassword(pass)}`;
-}
-
-async function otaFetchJson(url, init) {
-    const headers = new Headers(init?.headers || {});
-    const auth = getOtaAuthHeader();
-    if (auth) headers.set("Authorization", auth);
-
-    const first = await mbxFetch(url, { cache: "no-store", ...init, headers });
-    if (first.status === 401) {
-        otaPassword = null;
-        const retryAuth = await requestOtaAuth();
-        if (!retryAuth) {
-            throw new Error("auth_required");
-        }
-        headers.set("Authorization", retryAuth);
-        const second = await mbxFetch(url, { cache: "no-store", ...init, headers });
-        if (!second.ok) throw new Error(`${second.status} ${second.statusText}`);
-        if (second.status === 204) return {};
-        return await second.json();
-    }
-    if (!first.ok) throw new Error(`${first.status} ${first.statusText}`);
-    if (first.status === 204) return {};
-    return await first.json();
+async function otaFetchJson(url, init = {}) {
+    return otaController.requestJson(url, init);
 }
 
 async function refreshOtaProtectionState() {
@@ -421,34 +342,28 @@ async function saveOtaPassword() {
         setOtaStatus("The OTA password must be 8–128 UTF-8 bytes.");
         return;
     }
-    if (otaPasswordProtected && !getOtaAuthHeader() && !(await requestOtaAuth())) return;
     try {
         await otaFetchJson(API.OTA_PASSWORD, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ password }),
         });
-        otaPassword = null;
         $("#ota-new-password").value = "";
         $("#ota-confirm-password").value = "";
         setOtaStatus("OTA password saved.");
         await refreshOtaProtectionState();
     } catch (err) {
-        otaPassword = null;
         setOtaStatus(`Failed to save OTA password: ${err?.message || err}`);
     }
 }
 
 async function clearOtaPassword() {
     if (!otaPasswordProtected || !confirm("Clear the OTA password and leave updates unprotected?")) return;
-    if (!getOtaAuthHeader() && !(await requestOtaAuth())) return;
     try {
         await otaFetchJson(API.OTA_PASSWORD, { method: "DELETE" });
-        otaPassword = null;
         setOtaStatus("OTA password cleared. Updates are now unprotected.");
         await refreshOtaProtectionState();
     } catch (err) {
-        otaPassword = null;
         setOtaStatus(`Failed to clear OTA password: ${err?.message || err}`);
     }
 }
@@ -465,22 +380,13 @@ async function uploadOtaImage(type) {
         ? "The configured OTA password will be required."
         : "WARNING: OTA protection is not configured.";
     if (!confirm(`Upload ${file.name} as the ${type} image?\n\n${protection}\nThe device will reboot after a successful upload.`)) return;
-    if (otaPasswordProtected && !getOtaAuthHeader() && !(await requestOtaAuth())) return;
-
-    const form = new FormData();
-    form.append(type, file, file.name);
-    setOtaStatus(`Uploading ${type} image...`, true);
+    setOtaStatus(`Preparing ${type} upload...`, true);
     try {
-        const result = await otaFetchJson(firmware ? API.OTA_FIRMWARE : API.OTA_FILESYSTEM, {
-            method: "POST",
-            body: form,
-        });
+        const result = await otaController.manualUpload(type, file);
         setOtaStatus(result.ok ? `${type} upload complete. Device is rebooting...` : `${type} upload failed.`);
         if (input) input.value = "";
     } catch (err) {
         setOtaStatus(`${type} upload failed: ${err?.message || err}`);
-    } finally {
-        otaPassword = null;
     }
 }
 
@@ -488,17 +394,14 @@ async function factoryReset() {
     if (!confirm("Factory reset this device? All Wi-Fi, MQTT, Modbus, OTA, and password settings will be erased.")) return;
     const typed = prompt('Type "factory-reset" to confirm:');
     if (typed !== "factory-reset") return;
-    if (otaPasswordProtected && !getOtaAuthHeader() && !(await requestOtaAuth())) return;
     try {
         await otaFetchJson(API.FACTORY_RESET, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ confirm: "factory-reset" }),
         });
-        otaPassword = null;
         alert("Factory reset started. The device will reboot into setup mode.");
     } catch (err) {
-        otaPassword = null;
         alert(`Factory reset failed: ${err?.message || err}`);
     }
 }
@@ -563,7 +466,7 @@ async function confirmOtaApply() {
     setOtaModalButtons({ applying: true });
     setOtaNotesStatus("Applying update...", true);
     try {
-        const res = await otaFetchJson(API.OTA_HTTP_APPLY, { method: "POST" });
+        const res = await otaController.apply();
         if (!res.ok) {
             setOtaNotesStatus(`Apply failed: ${res.error || "unknown"}`);
             setOtaButtons({ checking: false, applying: false });
@@ -572,13 +475,8 @@ async function confirmOtaApply() {
             return;
         }
         otaApplying = true;
-        if (res.started) {
-            setOtaNotesStatus("Update started. Waiting for device to reboot...", true);
-            setOtaStatus("Update in progress. Waiting for reboot...", true);
-        } else {
-            setOtaNotesStatus("Update applied. Rebooting...", true);
-            setOtaStatus("Update applied. Rebooting...", true);
-        }
+        setOtaNotesStatus("Update admitted. Preparing device services...", true);
+        setOtaStatus("Update admitted. Preparing device services...", true);
         otaState.available = false;
         otaState.version = "";
     } catch (err) {

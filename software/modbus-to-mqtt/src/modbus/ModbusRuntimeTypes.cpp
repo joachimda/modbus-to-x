@@ -10,6 +10,7 @@ const char *modbusOperationResultToString(const ModbusOperationResult result) {
         case ModbusOperationResult::StaleGeneration: return "stale_generation";
         case ModbusOperationResult::ActivationFailed: return "activation_failed";
         case ModbusOperationResult::Superseded: return "superseded";
+        case ModbusOperationResult::OtaInProgress: return "ota_in_progress";
     }
     return "unknown";
 }

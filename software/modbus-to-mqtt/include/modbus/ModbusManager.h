@@ -47,6 +47,14 @@ public:
 
     ModbusOperationResult setEnabled(bool enabled);
 
+    ModbusOperationResult requestQuiesceForOta(uint32_t operationId);
+
+    ModbusOperationResult requestResumeFromOta(uint32_t operationId);
+
+    void cancelOtaQuiesceRequest(uint32_t operationId);
+
+    bool otaControlActive() const;
+
     ModbusRuntimeSnapshot getRuntimeSnapshot() const;
 
     ModbusOperationResult submitPublicationCompletion(
@@ -74,9 +82,15 @@ private:
 
     ModbusOperationResult submitAsync(Command *command);
 
+    ModbusOperationResult submitControl(Command *command);
+
     void drainCommands();
 
     void processCommand(Command &command);
+
+    void quiesceForOtaOwned(uint32_t operationId, ModbusOperationResult &result);
+
+    void resumeFromOtaOwned(uint32_t operationId, ModbusOperationResult &result);
 
     ModbusCommandResult executeOwned(const ModbusCommandRequest &request);
 
@@ -99,12 +113,19 @@ private:
     ConfigurationRoot _modbusRoot{};
     MqttManager *_mqtt{nullptr};
     uint32_t _generation{0U};
+    bool _otaQuiesced{false};
+    bool _busActiveBeforeOta{false};
+    uint32_t _otaOperationId{0U};
+    ModbusOtaQuiesceResult _otaQuiesceResult{ModbusOtaQuiesceResult::None};
     LatestRevisionCore _configurationRevisions;
     std::vector<ModbusDatapoint *> _dueScratch;
     QueueHandle_t _commandQueue{nullptr};
+    QueueHandle_t _controlQueue{nullptr};
     TaskHandle_t _ownerTaskHandle{nullptr};
     std::atomic<bool> _ownerAvailable{false};
     std::atomic<bool> _shuttingDown{false};
+    std::atomic<bool> _ordinaryAdmissionOpen{true};
+    std::atomic<uint32_t> _otaAdmissionOperation{0U};
     CoherentSnapshotCore<ModbusRuntimeSnapshot> _runtimeSnapshot;
     std::atomic<uint32_t> _ownerViolationCount{0U};
     std::atomic<uint32_t> _commandFailureCount{0U};

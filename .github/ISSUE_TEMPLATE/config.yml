@@ -1,0 +1,6 @@
+# Blank issues stay enabled so questions have somewhere to go; the repository has no Discussions.
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/joachimda/modbus-to-x#readme
+    about: Setup, configuration, MQTT and OTA guides. The HTTP API contract is in HTTP_API.md.

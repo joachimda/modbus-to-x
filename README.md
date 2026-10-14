@@ -162,17 +162,22 @@ See the [HTTP API request contract](HTTP_API.md) for the route and method matrix
 The Wavin AHC 9000 floor-heating controller (also sold as Jablotron AC-116) uses Modbus RTU framing but answers only its own function codes, so standard reads return `IllegalFunction`. Use function `67` (0x43, read) and `68` (0x44, write). These address a register by `category`, `page` and a register index, which goes in `address`, each 0-255. Reads cover up to 32 registers; writes set one 16-bit register and follow the FC6 rules.
 
 - Bus: 38400 baud, `8N1`. The controller always answers slave address 1.
-- Commonly used registers, as reverse engineered by the community ([niklascp/Wavin-AHC-9000-mqtt](https://github.com/niklascp/Wavin-AHC-9000-mqtt), [spiff42/wavin-python](https://github.com/spiff42/wavin-python)):
+- Commonly used registers, as reverse engineered by the community ([niklascp/Wavin-AHC-9000-mqtt](https://github.com/niklascp/Wavin-AHC-9000-mqtt), [spiff42/wavin-python](https://github.com/spiff42/wavin-python)) and checked on an AHC 9000 with wireless thermostats. Thermostats (elements) and channels are numbered from 0; a channel's page is its output number minus one.
 
   | Category | Page | Index | Value |
   | --- | --- | --- | --- |
+  | 1 (elements) | element/thermostat number | 2 | Channel assignment, bitmask of the channels this thermostat drives |
   | 1 (elements) | element/thermostat number | 4 | Air temperature, `int16` × 0.1 °C |
-  | 1 (elements) | element/thermostat number | 10 | Battery status |
+  | 1 (elements) | element/thermostat number | 8 | Status; bit `0x8000` is set while the thermostat is alive |
+  | 1 (elements) | element/thermostat number | 10 | Battery in 10 % steps (9 = 90 %); 0 until the thermostat has reported |
+  | 1 (elements) | element/thermostat number | 11 | Primary channel (sync group) |
   | 2 (packed data) | channel number | 0 | Manual setpoint, `int16` × 0.1 °C (writable) |
+  | 2 (packed data) | channel number | 1, 2 | Comfort and eco setpoints, `int16` × 0.1 °C |
   | 2 (packed data) | channel number | 4 | Standby setpoint, `int16` × 0.1 °C (writable) |
   | 2 (packed data) | channel number | 7 | Configuration; low 3 bits are the mode (0 manual, 1 standby) |
+  | 2 (packed data) | channel number | 8, 9 | Minimum and maximum setpoint, `int16` × 0.1 °C |
   | 3 (channels) | channel number | 0 | Timer event; bit `0x0010` is set while the output is on |
-  | 3 (channels) | channel number | 2 | Primary element; low 6 bits are the element number, `0x0400` means all thermostats lost |
+  | 3 (channels) | channel number | 2 | Primary element **plus one** in the low 6 bits (`0x00C1` = element 0, 0 = no thermostat); `0x0400` means all thermostats lost. The high bits (`0x00C0`, and `0x4000` on a channel that shares another channel's thermostat) are undocumented |
 
   ```json
   {

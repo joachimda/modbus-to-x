@@ -1,17 +1,83 @@
 name: CI
 
+# Only the firmware project under software/, this workflow and the composite
+# action it uses feed the build and the tests. Hardware sources, the root docs
+# and the configuration examples skip CI entirely.
+#
+# The ruleset on main does not require these checks, so a skipped workflow
+# does not block a merge. If required status checks are ever added, move the
+# filtering to job-level `if:` conditions instead: a skipped job counts as
+# passing, while a workflow filtered out by `paths` never reports at all.
 on:
   pull_request:
     branches: [ "main" ]
+    paths:
+      - "software/**"
+      - "!software/**/*.md"
+      - "!software/modbus-to-mqtt/docs/**"
+      - ".github/workflows/ci.yml"
+      - ".github/actions/**"
   push:
     branches: [ "main" ]
+    paths:
+      - "software/**"
+      - "!software/**/*.md"
+      - "!software/modbus-to-mqtt/docs/**"
+      - ".github/workflows/ci.yml"
+      - ".github/actions/**"
+
+# The jobs only build and test; nothing here needs to write to the repository.
+permissions:
+  contents: read
+
+# A newer push to a pull request cancels the run it supersedes. Runs on main
+# always finish so every commit on main keeps its own result.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PROJECT_DIR: software/modbus-to-mqtt
 
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      PROJECT_DIR: software/modbus-to-mqtt
       PIO_ENV: mbx-custom-board-dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-platformio
+        with:
+          cache-name: esp32
+          project-dir: ${{ env.PROJECT_DIR }}
+
+      - name: Build firmware
+        run: pio run --project-dir "${PROJECT_DIR}" -e "${PIO_ENV}"
+
+      - name: Build filesystem
+        run: pio run --project-dir "${PROJECT_DIR}" -e "${PIO_ENV}" -t buildfs
+
+  # Host-side Unity tests (test/sample_test.cpp) built with the native platform.
+  native-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-platformio
+        with:
+          cache-name: native
+          project-dir: ${{ env.PROJECT_DIR }}
+
+      - name: Run native unit tests
+        run: pio test --project-dir "${PROJECT_DIR}" -e native-test
+
+  # Node tests for the web UI modules under data/js. One test starts
+  # scripts/run_test_webserver.py (stdlib only), so Python is pinned here too.
+  web-tests:
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -20,21 +86,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install PlatformIO
-        run: pip install -U platformio
-
-      - name: Cache PlatformIO
-        uses: actions/cache@v4
+      - uses: actions/setup-node@v4
         with:
-          path: |
-            ~/.platformio
-            ${{ env.PROJECT_DIR }}/.pio
-          key: ${{ runner.os }}-pio-${{ hashFiles(format('{0}/platformio.ini', env.PROJECT_DIR), format('{0}/platformio.lock', env.PROJECT_DIR)) }}
-          restore-keys: |
-            ${{ runner.os }}-pio-
+          node-version: "24"
 
-      - name: Build firmware
-        run: pio run --project-dir "${PROJECT_DIR}" -e "${PIO_ENV}"
-
-      - name: Build filesystem
-        run: pio run --project-dir "${PROJECT_DIR}" -e "${PIO_ENV}" -t buildfs
+      - name: Run web UI tests
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: node --test test/web/*.test.mjs

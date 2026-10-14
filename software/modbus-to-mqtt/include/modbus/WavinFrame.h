@@ -21,11 +21,11 @@ namespace WavinFrame {
 constexpr uint8_t kReadFunction = 0x43;
 constexpr uint8_t kWriteFunction = 0x44;
 
-// Registers per request; one byte count in the reply covers at most 127
-// words. The controller answers some requests with fewer registers than asked
-// for (22 is the most it has been seen to return); such replies are accepted
-// and their actual count reported.
-constexpr uint8_t kMaxRegisters = 32U;
+// Registers per request: Wavin's Modbus description for the AHC 9000
+// (2013-08-14, sections 4.1/4.3) allows N = 0x01..0x16 for 0x43 and 0x44.
+// The controller answers some requests with fewer registers than asked for;
+// such replies are accepted and their actual count reported.
+constexpr uint8_t kMaxRegisters = 22U;
 constexpr size_t kReadRequestSize = 8U;
 constexpr size_t kMaxWriteRequestSize = 8U + 2U * 4U;
 // Largest reply: header (3) + data + CRC (2).

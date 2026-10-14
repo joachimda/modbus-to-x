@@ -29,7 +29,7 @@ export const WORD_WIDTH = Object.freeze({
 // register index within a category and page, each one byte on the wire.
 export const WAVIN_READ = 67;
 export const WAVIN_WRITE = 68;
-export const WAVIN_MAX_REGISTERS = 32;
+export const WAVIN_MAX_REGISTERS = 22;
 
 export function isWavinFunction(functionCode) {
     const fn = Number(functionCode);

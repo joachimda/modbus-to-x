@@ -4101,13 +4101,14 @@ void test_wavin_frame_locates_reply_among_other_traffic(void) {
     TEST_ASSERT_EQUAL_UINT8(2U, located.wordCount);
     TEST_ASSERT_EQUAL_UINT16(210U, words[0]);
 
-    // Stale bytes at the head that claim a 64-register frame must not hide
-    // the write reply behind them: the reply is found, not timed out.
+    // Stale bytes at the head that claim the largest frame (22 registers,
+    // 44 data bytes) must not hide the write reply behind them: the reply is
+    // found, not timed out.
     uint8_t writeReply[] = {0x01, 0x44, 0x02, 0x00, 0xD2, 0x00, 0x00};
     const uint16_t writeCrc = WavinFrame::crc16(writeReply, 5U);
     writeReply[5] = static_cast<uint8_t>(writeCrc & 0xFFU);
     writeReply[6] = static_cast<uint8_t>(writeCrc >> 8U);
-    uint8_t stale[3U + sizeof writeReply] = {0x01, 0x44, 0x40};
+    uint8_t stale[3U + sizeof writeReply] = {0x01, 0x44, 2U * WavinFrame::kMaxRegisters};
     std::memcpy(stale + 3U, writeReply, sizeof writeReply);
     located = WavinFrame::locateResponse(stale, 3U, 1U, 0x44U, 0U, nullptr, 0U);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(located.status));

@@ -233,9 +233,11 @@ int compareMagnitude(const DecimalMagnitude &left, const DecimalMagnitude &right
     return 0;
 }
 
+// Plain aggregate (no default member initialisers): the firmware builds as
+// gnu++11, where a struct with them cannot be brace-assigned.
 struct RawRange {
-    int64_t minimum{0};
-    uint64_t maximum{0U};
+    int64_t minimum;
+    uint64_t maximum;
 };
 
 bool rawRangeForType(const ModbusDataType type, RawRange &range) {
@@ -269,7 +271,7 @@ struct RawLimits {
 
 RawLimits rawLimitsForType(const ModbusDataType type, const double scale) {
     RawLimits limits;
-    RawRange range;
+    RawRange range{};
     if (!rawRangeForType(type, range) || !isValidWritableScale(scale)) return limits;
     limits.valid = true;
     limits.positive = scaledMagnitude(scale, range.maximum);
@@ -420,7 +422,7 @@ NumberDiscoveryBounds numberDiscoveryBounds(const double scale, const ModbusData
         high = magnitude;
         result.step = MINIMUM_DISCOVERY_STEP;
     } else {
-        RawRange range;
+        RawRange range{};
         if (!rawRangeForType(dataType, range)) {
             result.rejection = RejectionReason::UnsupportedDataType;
             return result;

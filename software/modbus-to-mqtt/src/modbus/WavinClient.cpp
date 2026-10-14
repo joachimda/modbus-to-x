@@ -20,12 +20,11 @@ uint8_t WavinClient::readRegisters(const uint8_t slave, const uint8_t category, 
                                                 sizeof request);
     if (length == 0U) return ModbusMaster::ku8MBIllegalDataValue;
     // A wall display polling the same bus occasionally collides with a
-    // request. Reads have no side effects, so they are retried; writes are not.
+    // request. Reads have no side effects, so they are retried.
     uint8_t status = WavinFrame::kResponseTimedOut;
-    for (uint8_t attempt = 0U; attempt < WAVIN_READ_ATTEMPTS; ++attempt) {
+    for (uint8_t attempt = 0U; attempt < WAVIN_READ_ATTEMPTS && isRetryable(status); ++attempt) {
         status = transact(request, length, slave, WavinFrame::kReadFunction, count, words,
                           wordCapacity, receivedCount);
-        if (status != WavinFrame::kResponseTimedOut && status != WavinFrame::kInvalidCrc) break;
     }
     return status;
 }
@@ -36,10 +35,19 @@ uint8_t WavinClient::writeRegisters(const uint8_t slave, const uint8_t category,
     const size_t length = WavinFrame::buildWrite(slave, category, index, page, words, count, request,
                                                  sizeof request);
     if (length == 0U) return ModbusMaster::ku8MBIllegalDataValue;
-    // The reply's content is not specified beyond its framing, so any word
-    // count is accepted and discarded.
+    // 0x44 sets registers to absolute values, so repeating a write whose reply
+    // was lost to a collision leaves the same result: it is retried like a
+    // read. The reply echoes the written data; any word count is accepted.
     uint8_t ignored = 0U;
-    return transact(request, length, slave, WavinFrame::kWriteFunction, 0U, nullptr, 0U, ignored);
+    uint8_t status = WavinFrame::kResponseTimedOut;
+    for (uint8_t attempt = 0U; attempt < WAVIN_WRITE_ATTEMPTS && isRetryable(status); ++attempt) {
+        status = transact(request, length, slave, WavinFrame::kWriteFunction, 0U, nullptr, 0U, ignored);
+    }
+    return status;
+}
+
+bool WavinClient::isRetryable(const uint8_t status) {
+    return status == WavinFrame::kResponseTimedOut || status == WavinFrame::kInvalidCrc;
 }
 
 uint8_t WavinClient::transact(const uint8_t *request, const size_t requestLength, const uint8_t slave,

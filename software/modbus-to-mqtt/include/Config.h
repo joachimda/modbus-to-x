@@ -66,6 +66,12 @@
 #define WAVIN_READ_ATTEMPTS 2U
 #endif
 
+// Attempts per Wavin 0x44 write, same rule and bound as reads. A retry after a
+// lost reply rewrites the same absolute values, so it cannot double-apply.
+#ifndef WAVIN_WRITE_ATTEMPTS
+#define WAVIN_WRITE_ATTEMPTS 2U
+#endif
+
 /****************************************************
  * PREFERENCE STORAGE
  ****************************************************/

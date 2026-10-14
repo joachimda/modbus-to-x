@@ -24,6 +24,10 @@ public:
                            const uint16_t *words, uint8_t count);
 
 private:
+    // Timeouts and CRC errors (typically a collision with another master);
+    // exception replies from the controller are final.
+    static bool isRetryable(uint8_t status);
+
     uint8_t transact(const uint8_t *request, size_t requestLength, uint8_t slave,
                      uint8_t function, uint8_t expectedWords, uint16_t *words,
                      size_t wordCapacity, uint8_t &receivedCount);

@@ -208,7 +208,7 @@ The Wavin AHC 9000 floor-heating controller (also sold as Jablotron AC-116) uses
   }
   ```
 - The clock (category 5, page 0: year, month, day, weekday with 0 = Monday, hour, minute, second) must be read or written as one 7-register page; single-register writes are not answered.
-- A wall display (DS-9000) may share the bus as a second master. Bytes that cannot be the reply to the outstanding request (another slave or function, more registers than requested, the display's own requests, or a bad CRC) are skipped while waiting, and a read that still times out or fails its CRC is retried once (`WAVIN_READ_ATTEMPTS`). Writes are never retried. A reply carrying fewer registers than requested is accepted; only the registers received are decoded.
+- A wall display (DS-9000) may share the bus as a second master. Bytes that cannot be the reply to the outstanding request (another slave or function, more registers than requested, the display's own requests, or a bad CRC) are skipped while waiting, and a read or 0x44 write that still times out or fails its CRC is retried once (`WAVIN_READ_ATTEMPTS`, `WAVIN_WRITE_ATTEMPTS`). A 0x44 write sets absolute values, so repeating it after a lost reply cannot double-apply. A reply carrying fewer registers than requested is accepted; only the registers received are decoded.
 
 ### MQTT Publishing
 - Configure broker host, port, credentials, and optional root topic via the **Configure MQTT** page or by editing `/conf/mqtt.json`. The firmware automatically extracts hostnames from URLs and persists the MQTT password in NVS preferences.

@@ -48,6 +48,15 @@ succeeds, a missing, invalid, expired, or revoked token returns HTTP 401.
 
 Modbus and MQTT configuration replacements validate the fully resolved MQTT topic plan before writing either configuration file. A rejected command-topic wildcard, duplicate, or state/command collision returns HTTP 400 with `error`, `reason`, `topic`, and the affected device/datapoint identities. The persisted configuration and active bridge remain unchanged.
 
+### Ad hoc Modbus execution
+
+`POST /api/modbus/execute` takes the query parameters `devId`, `dpId`, `func_code` (1-6 or 16), `addr`, `len`, optionally `slave` (1-247) and, for writes, `value`. When `dpId` names a configured datapoint, its data type, scale, register slice and word order are used to interpret register values.
+
+- Reads (FC1-FC4) return `result.raw` (the registers received) and `result.value`: the ASCII text for `TEXT`, otherwise the engineering value decoded by the datapoint's data type and scale, formatted exactly like the MQTT publication (a JSON number such as `-2.00`; `nan` is returned as a string). A read shorter than the data type's width omits `value` and returns `result.valueError` = `insufficient_registers` together with `result.width`. Without datapoint metadata, `value` is the first raw register.
+- FC5 takes `value` as `0`, `1`, `false` or `true`.
+- FC6 and FC16 take `value` as an engineering value with the same grammar as MQTT commands. It is converted with the saved datapoint's data type, scale and word order (an unknown datapoint uses `uint16` and scale `1`); FC16 writes the type's register width regardless of `len`. A value that cannot be encoded returns HTTP 400 with `error` = `invalid_write_value` and `reason` (`empty`, `invalid_syntax`, `non_finite`, `invalid_scale`, `out_of_range` or `unsupported_data_type`) without touching the bus. A successful register write echoes the written registers in `result.raw` and the engineering value they encode in `result.value`.
+- Every executed command answers with `ok`, `code`, `state`, `devId`, `dpId` and the echoed `request`; a bus error keeps HTTP 200 with `ok` false and the Modbus exception in `code`/`state`.
+
 `GET /reset` is not supported. Network reset is available only through guarded `POST /api/wifi/reset`.
 
 An admitted reboot request returns HTTP 202 and `{"ok":true,"rebooting":true}` before the device restarts. While that reboot is pending, another request returns HTTP 409 and `{"ok":false,"error":"reboot_pending"}` without changing the original deadline. If the reboot task cannot be scheduled, the request returns HTTP 503 and `{"ok":false,"error":"reboot_unavailable"}` without restarting.

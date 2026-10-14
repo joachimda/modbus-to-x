@@ -1,10 +1,28 @@
 name: CI
 
+# Only the firmware project under software/ and this workflow feed the build
+# and the tests. Hardware sources, the root docs and the configuration
+# examples skip CI entirely.
+#
+# The ruleset on main does not require these checks, so a skipped workflow
+# does not block a merge. If required status checks are ever added, move the
+# filtering to job-level `if:` conditions instead: a skipped job counts as
+# passing, while a workflow filtered out by `paths` never reports at all.
 on:
   pull_request:
     branches: [ "main" ]
+    paths:
+      - "software/**"
+      - "!software/**/*.md"
+      - "!software/modbus-to-mqtt/docs/**"
+      - ".github/workflows/ci.yml"
   push:
     branches: [ "main" ]
+    paths:
+      - "software/**"
+      - "!software/**/*.md"
+      - "!software/modbus-to-mqtt/docs/**"
+      - ".github/workflows/ci.yml"
 
 env:
   PROJECT_DIR: software/modbus-to-mqtt

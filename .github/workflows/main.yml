@@ -3,6 +3,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without the leading v (e.g. 8.0.5-beta). Tag v<version> is created on the selected ref."
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -19,18 +25,75 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      # Tag push: the version is the pushed tag without its "v" prefix.
+      # Manual dispatch: the version is the "version" input, validated here so a
+      # bad value fails before anything is built, tagged, or released.
+      - name: Resolve version (tag push or manual dispatch)
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            VERSION="${INPUT_VERSION}"
+            if [ -z "${VERSION}" ]; then
+              echo "::error::The 'version' input must not be empty (expected e.g. 8.0.5-beta)."
+              exit 1
+            fi
+            case "${VERSION}" in
+              v*|V*)
+                echo "::error::The 'version' input must not start with 'v' (got '${VERSION}'); the tag is created as v<version>."
+                exit 1
+                ;;
+            esac
+            # Same shape as every existing release (N.N.N or N.N.N-suffix). The device's
+            # compareVersions() only reads major.minor.patch, and VERSION is spliced
+            # unquoted into the manifest JSON, the download URLs and FW_VERSION, so
+            # anything else is refused before a tag exists.
+            if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+              echo "::error::The 'version' input must look like 8.0.5 or 8.0.5-beta.1 (got '${VERSION}')."
+              exit 1
+            fi
+            if ! git check-ref-format "refs/tags/v${VERSION}"; then
+              echo "::error::'${VERSION}' does not form a valid tag name (v${VERSION})."
+              exit 1
+            fi
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          echo "APP_VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          echo "Releasing v${VERSION} (${GITHUB_EVENT_NAME} on ${GITHUB_REF_NAME} @ ${GITHUB_SHA})"
+
+      # The tag must exist locally before the build: scripts/gen_version.py derives
+      # FW_VERSION from `git describe --tags`, so without it the firmware would report
+      # "<previous tag>-N-g<sha>" instead of "v<version>". It is pushed in the release
+      # step, once there is a release to attach it to.
+      - name: Create release tag (manual dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          TAG="v${VERSION}"
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null \
+             || git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null; then
+            echo "::error::Tag ${TAG} already exists (locally or on origin). Pick a new version, or delete it with 'git push origin :refs/tags/${TAG}' and dispatch again."
+            exit 1
+          fi
+          # With several tags on one commit, `git describe --tags` returns the first one
+          # in name order rather than the newest, so a HEAD that is already tagged (e.g.
+          # the tip of main right after a release) could embed the older tag in FW_VERSION.
+          EXISTING="$(git tag --points-at HEAD | xargs)"
+          if [ -n "${EXISTING}" ]; then
+            echo "::error::HEAD is already tagged (${EXISTING}); git describe --tags could embed that in FW_VERSION instead of ${TAG}. Dispatch on a commit that has no tags."
+            exit 1
+          fi
+          git tag "${TAG}" HEAD
+          echo "Created tag ${TAG} at $(git rev-parse HEAD); it is pushed in the release step"
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
       - name: Install PlatformIO
         run: pip install -U platformio
-
-      - name: Set version from tag
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Build firmware
         run: pio run --project-dir "${PROJECT_DIR}" -e "${PIO_ENV}"
@@ -41,7 +104,7 @@ jobs:
           APP_BIN="${PROJECT_DIR}/.pio/build/${PIO_ENV}/firmware.bin"
           cp "$APP_BIN" "${DEVICE}.bin"
           APP_SHA256="$(sha256sum "${DEVICE}.bin" | awk '{print $1}')"
-          echo "APP_SHA256=$APP_SHA256" >> $GITHUB_ENV
+          echo "APP_SHA256=$APP_SHA256" >> "${GITHUB_ENV}"
 
           FS_BIN_SPIFFS="${PROJECT_DIR}/.pio/build/${PIO_ENV}/spiffs.bin"
           FS_BIN_LITTLEFS="${PROJECT_DIR}/.pio/build/${PIO_ENV}/littlefs.bin"
@@ -57,11 +120,14 @@ jobs:
           fi
 
           FS_SHA256="$(sha256sum "${DEVICE}.fs.bin" | awk '{print $1}')"
-          echo "FS_SHA256=$FS_SHA256" >> $GITHUB_ENV
+          echo "FS_SHA256=$FS_SHA256" >> "${GITHUB_ENV}"
       - name: Generate release notes
         run: |
           NOTES_FILE="${DEVICE}.notes.txt"
-          PREV_TAG="$(git describe --tags --abbrev=0 --match "v*" "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          # HEAD is the released commit in both modes (checkout lands on the pushed tag,
+          # or on the dispatched ref that was tagged v${VERSION} above), so the previous
+          # release is the newest v* tag reachable from its parent.
+          PREV_TAG="$(git describe --tags --abbrev=0 --match "v*" "HEAD^" 2>/dev/null || true)"
           if [ -n "$PREV_TAG" ]; then
             git log --pretty=format:'- %s (%h)' "${PREV_TAG}..HEAD" > "$NOTES_FILE"
           else
@@ -71,7 +137,7 @@ jobs:
             echo "Initial release." > "$NOTES_FILE"
           fi
           NOTES_SHA256="$(sha256sum "$NOTES_FILE" | awk '{print $1}')"
-          echo "NOTES_SHA256=$NOTES_SHA256" >> $GITHUB_ENV
+          echo "NOTES_SHA256=$NOTES_SHA256" >> "${GITHUB_ENV}"
       - name: Load signing key
         run: |
           printf "%s" "${{ secrets.OTA_SIGNING_KEY_PEM }}" > ota_signing.key
@@ -105,6 +171,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Manual dispatch: push the tag created earlier now that there is a release to
+          # attach to it, so a failed build leaves nothing behind on origin. A push made
+          # with GITHUB_TOKEN does not start another "Release OTA" run.
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            git push origin "refs/tags/v${VERSION}"
+          fi
+
           PRERELEASE=""
           if [[ "${VERSION}" == *"-"* ]]; then
             PRERELEASE="--prerelease"

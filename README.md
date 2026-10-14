@@ -88,6 +88,8 @@ Pushing a `v*` tag triggers the GitHub Actions workflow in `.github/workflows/ma
 - `modbus-to-x.notes.txt` (release notes generated from the commit log since the previous tag)
 - `modbus-to-x.manifest.json` (includes SHA-256 hashes and a signature generated from `OTA_SIGNING_KEY_PEM` and `KID`).
 
+The same workflow can also be started manually (Actions → "Release OTA" → "Run workflow", or `gh workflow run "Release OTA" --ref main -f version=8.0.5-beta`). Enter the bare version without the `v` (`8.0.5` or `8.0.5-beta.1`); the workflow creates the tag `v<version>` on the selected ref (`gh` uses the repository's default branch when `--ref` is omitted), builds exactly as a tag push would, and pushes the tag together with the release. It refuses to run if that tag already exists or if the selected commit already carries a tag.
+
 ### Local UI Development
 The `scripts/run_test_webserver.py` helper serves the `data/` directory with mocked API responses so you can iterate on the HTML/JS bundle without flashing the device:
 ```bash

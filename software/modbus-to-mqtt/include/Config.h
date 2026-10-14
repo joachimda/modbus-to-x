@@ -53,23 +53,30 @@
 #define MODBUS_SLAVE_ID 1
 
 // How long a Wavin (0x43/0x44) request waits for its reply. The controller
-// answers within a few milliseconds; the margin covers a wall display that
-// shares the bus as a second master.
+// answers within a few milliseconds; a request lost to a collision with the
+// wall display (a second master on the bus) gets no reply at all, so a short
+// timeout plus a retry recovers faster than a long one.
 #ifndef WAVIN_RESPONSE_TIMEOUT_MS
-#define WAVIN_RESPONSE_TIMEOUT_MS 1000U
+#define WAVIN_RESPONSE_TIMEOUT_MS 500U
 #endif
 
-// Attempts per Wavin read when the reply times out or fails its CRC. Attempts
-// x WAVIN_RESPONSE_TIMEOUT_MS stays within the two seconds the OTA quiescence
-// allows for one Modbus transaction.
+// Attempts per Wavin read and 0x44 write when the reply times out or fails its
+// CRC. 0x44 sets absolute values, so repeating a write whose reply was lost
+// cannot double-apply.
 #ifndef WAVIN_READ_ATTEMPTS
-#define WAVIN_READ_ATTEMPTS 2U
+#define WAVIN_READ_ATTEMPTS 3U
+#endif
+#ifndef WAVIN_WRITE_ATTEMPTS
+#define WAVIN_WRITE_ATTEMPTS 3U
 #endif
 
-// Attempts per Wavin 0x44 write, same rule and bound as reads. A retry after a
-// lost reply rewrites the same absolute values, so it cannot double-apply.
-#ifndef WAVIN_WRITE_ATTEMPTS
-#define WAVIN_WRITE_ATTEMPTS 2U
+// Random pause before each retry, so it does not land in the same burst of
+// display traffic that swallowed the previous attempt.
+#ifndef WAVIN_RETRY_BACKOFF_MIN_MS
+#define WAVIN_RETRY_BACKOFF_MIN_MS 100U
+#endif
+#ifndef WAVIN_RETRY_BACKOFF_MAX_MS
+#define WAVIN_RETRY_BACKOFF_MAX_MS 250U
 #endif
 
 /****************************************************

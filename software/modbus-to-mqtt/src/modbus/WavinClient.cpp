@@ -2,11 +2,27 @@
 
 #include <Arduino.h>
 #include <cstring>
+#include <esp_random.h>
 
 #include "Config.h"
 #include "ModbusMaster.h"
 #include "modbus/ModbusBus.h"
 #include "modbus/WavinFrame.h"
+
+namespace {
+
+constexpr uint32_t worstCaseMs(const uint32_t attempts) {
+    return attempts * WAVIN_RESPONSE_TIMEOUT_MS + (attempts - 1U) * WAVIN_RETRY_BACKOFF_MAX_MS;
+}
+
+// The OTA quiescence allows about one ModbusMaster transaction (two seconds)
+// for the Modbus owner to finish its current request.
+static_assert(WAVIN_READ_ATTEMPTS >= 1U && WAVIN_WRITE_ATTEMPTS >= 1U, "at least one attempt");
+static_assert(WAVIN_RETRY_BACKOFF_MIN_MS <= WAVIN_RETRY_BACKOFF_MAX_MS, "backoff range");
+static_assert(worstCaseMs(WAVIN_READ_ATTEMPTS) <= 2000U && worstCaseMs(WAVIN_WRITE_ATTEMPTS) <= 2000U,
+              "Wavin retries must fit one Modbus transaction of the OTA quiescence budget");
+
+}  // namespace
 
 WavinClient::WavinClient(ModbusBus &bus) : _bus(bus) {
 }
@@ -23,6 +39,7 @@ uint8_t WavinClient::readRegisters(const uint8_t slave, const uint8_t category, 
     // request. Reads have no side effects, so they are retried.
     uint8_t status = WavinFrame::kResponseTimedOut;
     for (uint8_t attempt = 0U; attempt < WAVIN_READ_ATTEMPTS && isRetryable(status); ++attempt) {
+        if (attempt > 0U) backOff();
         status = transact(request, length, slave, WavinFrame::kReadFunction, count, words,
                           wordCapacity, receivedCount);
     }
@@ -41,9 +58,15 @@ uint8_t WavinClient::writeRegisters(const uint8_t slave, const uint8_t category,
     uint8_t ignored = 0U;
     uint8_t status = WavinFrame::kResponseTimedOut;
     for (uint8_t attempt = 0U; attempt < WAVIN_WRITE_ATTEMPTS && isRetryable(status); ++attempt) {
+        if (attempt > 0U) backOff();
         status = transact(request, length, slave, WavinFrame::kWriteFunction, 0U, nullptr, 0U, ignored);
     }
     return status;
+}
+
+void WavinClient::backOff() {
+    const uint32_t span = WAVIN_RETRY_BACKOFF_MAX_MS - WAVIN_RETRY_BACKOFF_MIN_MS + 1U;
+    delay(WAVIN_RETRY_BACKOFF_MIN_MS + esp_random() % span);
 }
 
 bool WavinClient::isRetryable(const uint8_t status) {

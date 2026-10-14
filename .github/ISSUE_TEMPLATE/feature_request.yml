@@ -1,0 +1,55 @@
+name: Feature request
+description: Propose a new capability or a change to existing behaviour.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a Modbus device that does not work with the current firmware, use the "Modbus device support" template instead.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what stops you today? Describe the use case, not only the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: How should it work? Mention the configuration fields, MQTT topics, API routes or UI pages involved if you have an opinion.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you tried, or other ways this could be solved.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Modbus polling or value decoding
+        - MQTT publishing or Home Assistant discovery
+        - MQTT write commands (/set)
+        - Web UI or configuration
+        - Wi-Fi, captive portal or provisioning
+        - OTA updates
+        - HTTP API
+        - Hardware
+        - Documentation
+        - Other
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Can you work on this?
+      options:
+        - Yes, I can open a pull request
+        - Yes, with guidance on the approach
+        - No
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links, screenshots, related issues.

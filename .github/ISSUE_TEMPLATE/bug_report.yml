@@ -1,0 +1,86 @@
+name: Bug report
+description: The firmware, web UI, MQTT integration or hardware does not behave as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. The more of the fields below you fill in, the faster the bug can be reproduced.
+        Remove Wi-Fi and MQTT credentials, OTA passwords and public IP addresses from anything you paste.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happens, and what did you expect?
+      description: Include exact error text, HTTP status codes and JSON responses where you have them.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Modbus polling or value decoding
+        - MQTT publishing or Home Assistant discovery
+        - MQTT write commands (/set)
+        - Web UI or configuration
+        - Wi-Fi, captive portal or provisioning
+        - OTA updates
+        - HTTP API
+        - Hardware
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Configure a datapoint with ...
+        2. Publish ... to ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware version
+      description: Shown as "MBX Version" on the dashboard, or `fwVersion` from `GET /api/stats/system`. For a self-built firmware, give the commit hash.
+      placeholder: 8.0.3-beta, or main at 5bd1e38
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware
+      description: MBX board revision (see `hardware/releases/`), or the ESP32 board and RS-485 transceiver you use instead.
+      placeholder: MBX v0.2-alpha
+    validations:
+      required: true
+  - type: input
+    id: modbus-device
+    attributes:
+      label: Modbus device and bus settings
+      description: Manufacturer and model, baud rate, parity, stop bits and slave ID, when the bug involves the bus.
+      placeholder: Nilan CTS602, 19200 8E1, slave 30
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration excerpt
+      description: The relevant devices and datapoints from `/conf/config.json`, or the MQTT settings without the password.
+      render: json
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and diagnostics
+      description: Dashboard log lines or `GET /api/logs`, the serial console at 115200 baud, or the `rx_dump` from `POST /api/modbus/execute`.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues and this is not a duplicate.
+          required: true
+        - label: I removed credentials, passwords and keys from the configuration and logs above.
+          required: true

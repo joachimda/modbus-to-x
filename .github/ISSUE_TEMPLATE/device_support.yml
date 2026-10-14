@@ -1,0 +1,84 @@
+name: Modbus device support
+description: A Modbus device that cannot be read or written with the current firmware, or a tested configuration you want to share.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Devices that use the standard Modbus function codes usually need only a configuration, not a firmware change.
+        Try the **Configure Modbus** page and its test read button first, and include what you saw below.
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: Manufacturer, model and, when known, the device firmware version.
+      placeholder: Wavin AHC 9000 (also sold as Jablotron AC-116)
+    validations:
+      required: true
+  - type: input
+    id: bus
+    attributes:
+      label: Bus settings
+      description: Baud rate, data bits, parity, stop bits and the slave ID the device answers on.
+      placeholder: 38400 8N1, slave 1
+    validations:
+      required: true
+  - type: dropdown
+    id: gap
+    attributes:
+      label: What is missing?
+      options:
+        - A working configuration or register map for a standard Modbus device
+        - Non-standard function codes or framing
+        - A data type, word order or encoding the firmware cannot decode
+        - Write support for a device that can already be read
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: tested
+    attributes:
+      label: What you tested and what the device answered
+      description: Requests sent with the UI test button or `POST /api/modbus/execute`, and the responses including `rx_dump`. A table of function code, address, length and reply works well.
+      placeholder: |
+        | Request | Response | Meaning |
+        |---|---|---|
+        | FC03, addr 100, len 1 | `01 83 01 80 f0` | Illegal Function |
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware version and hardware
+      placeholder: 8.0.3-beta on MBX v0.2-alpha
+    validations:
+      required: true
+  - type: textarea
+    id: protocol
+    attributes:
+      label: Protocol documentation
+      description: Links to the vendor's Modbus documentation or to community implementations. Say whether each source is official or reverse engineered.
+  - type: textarea
+    id: registers
+    attributes:
+      label: Register map
+      description: The registers you care about, with function code, address, data type, scale and unit. Paste a datapoint configuration if you have one that works.
+  - type: dropdown
+    id: hardware-access
+    attributes:
+      label: Can you test changes on the real device?
+      description: The maintainers do not own every device. A contributor who can flash a development build and report back is often what makes support possible.
+      options:
+        - Yes, I can flash development builds and report results
+        - Only occasionally
+        - No
+    validations:
+      required: true
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Can you work on this?
+      options:
+        - Yes, I can open a pull request
+        - Yes, with guidance on the approach
+        - No

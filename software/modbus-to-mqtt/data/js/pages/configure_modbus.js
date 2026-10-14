@@ -1,5 +1,15 @@
 import {API, safeJson, STATIC_FILES} from "app";
 import {parseConfiguredScale, validateDatapointScale} from "./modbus_scale.mjs";
+import {
+    SHAPE_MESSAGES,
+    coerceRegisterCount,
+    isMultiWordType,
+    nextAddress,
+    normalizeDataType,
+    normalizeWordOrder,
+    validateDatapointShape,
+    wordWidth,
+} from "./modbus_types.mjs";
 
 window.initConfigureModbus = async function initConfigureModbus() {
     await load().catch(err);
@@ -66,7 +76,8 @@ function schemaToUi(json) {
                 addrFormat: inferredFormat,
                 slice: normalizeRegisterSlice(p.registerSlice),
                 length: Number(p.numOfRegisters ?? 1) || 1,
-                type: String(p.dataType || "uint16"),
+                type: normalizeDataType(p.dataType),
+                order: normalizeWordOrder(p.wordOrder),
                 scale: parseConfiguredScale(p.scale),
                 unit: (typeof p.unit === "string") ? p.unit : "",
                 topic: (typeof p.topic === "string") ? p.topic.trim() : "",
@@ -106,19 +117,26 @@ function uiToSchema(uiModel) {
             device.dataPoints = (d.datapoints || []).map(p => {
                 const topic = (typeof p.topic === "string") ? p.topic.trim() : "";
                 const slice = normalizeRegisterSlice(p.slice);
+                const func = Number(p.func) || 3;
+                const type = normalizeDataType(p.type);
+                const order = normalizeWordOrder(p.order);
                 const dp = {
                     id: p.id,
                     name: p.name,
-                    function: Number(p.func) || 3,
+                    function: func,
                     address: toModbusAddress(p.address),
-                    numOfRegisters: Number(p.length) || 1,
-                    dataType: String(p.type || "uint16"),
+                    numOfRegisters: coerceRegisterCount(func, type, Number(p.length) || 1).length,
+                    dataType: type,
                     scale: parseConfiguredScale(p.scale),
                     unit: p.unit || "",
                     ...(Number.isFinite(Number(p.poll_secs)) && Number(p.poll_secs) > 0 ? { poll_interval: Number(p.poll_secs) } : {})
                 };
-                if (slice !== "full") {
+                // Byte slices apply to 16-bit types only; word order to multi-register types only.
+                if (slice !== "full" && wordWidth(type) === 1) {
                     dp.registerSlice = slice;
+                }
+                if (isMultiWordType(type) && order !== "big") {
+                    dp.wordOrder = order;
                 }
                 if (topic.length) {
                     dp.topic = topic;
@@ -131,7 +149,6 @@ function uiToSchema(uiModel) {
 }
 function validateSchemaConfig(cfg) {
     const errors = [];
-    const isWriteFunction = (fn) => fn === 5 || fn === 6 || fn === 16;
     // bus
     if (!cfg.bus || typeof cfg.bus !== "object") {
         errors.push("Missing bus");
@@ -174,9 +191,6 @@ function validateSchemaConfig(cfg) {
             if (p.registerSlice != null && !REGISTER_SLICES.has(String(p.registerSlice))) {
                 errors.push(`Datapoint ${p.id}: registerSlice invalid`);
             }
-            if (p.registerSlice && p.registerSlice !== "full" && Number(p.numOfRegisters) !== 1) {
-                errors.push(`Datapoint ${p.id}: registerSlice requires numOfRegisters = 1`);
-            }
             if (!Number.isInteger(p.function) || (p.function < 1) || (p.function > 6 && p.function !== 16)) {
                 errors.push(`Datapoint ${p.id}: function 1-6 or 16`);
             }
@@ -195,8 +209,11 @@ function validateSchemaConfig(cfg) {
             if (!Number.isInteger(p.numOfRegisters) || p.numOfRegisters < 1 || p.numOfRegisters > 125) {
                 errors.push(`Datapoint ${p.id}: numOfRegisters 1-125`);
             }
-            if (isWriteFunction(p.function) && p.numOfRegisters !== 1) {
-                errors.push(`Datapoint ${p.id}: write functions must use numOfRegisters = 1`);
+            if (p.function === 5 && p.numOfRegisters !== 1) {
+                errors.push(`Datapoint ${p.id}: coil writes must use numOfRegisters = 1`);
+            }
+            for (const code of validateDatapointShape(p)) {
+                errors.push(`Datapoint ${p.id}: ${SHAPE_MESSAGES[code] || code}`);
             }
             const scaleError = validateDatapointScale(p.function, p.scale);
             if (scaleError === 'finite') {
@@ -390,6 +407,7 @@ function addDatapointToCurrentDevice(inherit = {}) {
         slice: "full",
         length: 1,
         type: "uint16",
+        order: "big",
         scale: 1,
         unit: "",
         topic: "",
@@ -579,6 +597,8 @@ function showDatapointEditor() {
     setAddressPlaceholder();
     $("#dp-len").value = datapoint.length ?? 1;
     $("#dp-type").value = datapoint.type || "uint16";
+    const wordOrderSel = $("#dp-word-order");
+    if (wordOrderSel) wordOrderSel.value = datapoint.order || "big";
     $("#dp-scale").value = datapoint.scale ?? 1;
     $("#dp-unit").value = datapoint.unit || "";
     $("#dp-topic").value = datapoint.topic || "";
@@ -609,8 +629,38 @@ function showDatapointEditor() {
             lenEl.disabled = isWrite;
             lenEl.classList.toggle("field-disabled", isWrite);
             if (isWrite) {
-                lenEl.value = 1;
-                datapoint.length = 1;
+                // FC5 writes one coil; FC6/FC16 write the data type's register width.
+                const length = func === 5 ? 1 : (wordWidth($("#dp-type").value) || 1);
+                lenEl.value = length;
+                datapoint.length = length;
+            }
+        }
+    };
+    const applyTypeFieldsState = () => {
+        const type = normalizeDataType($("#dp-type").value);
+        const func = Number($("#dp-func").value);
+        const multiWord = isMultiWordType(type);
+        // Word order only matters for 32-bit and 64-bit values.
+        const wordOrderLabel = $("#dp-word-order-label");
+        if (wordOrderLabel) wordOrderLabel.style.display = multiWord ? "" : "none";
+        if (wordOrderSel) wordOrderSel.style.display = multiWord ? "" : "none";
+        // Byte slices only apply to 16-bit types.
+        const sliceEl = $("#dp-slice");
+        if (sliceEl) {
+            sliceEl.disabled = multiWord;
+            sliceEl.classList.toggle("field-disabled", multiWord);
+            if (multiWord) {
+                sliceEl.value = "full";
+                datapoint.slice = "full";
+            }
+        }
+        // Reads need at least the type's register width.
+        const lenEl = $("#dp-len");
+        if (lenEl && !WRITE_FUNCTIONS.has(func)) {
+            const coerced = coerceRegisterCount(func, type, Number(lenEl.value));
+            if (coerced.changed) {
+                lenEl.value = coerced.length;
+                datapoint.length = coerced.length;
             }
         }
     };
@@ -626,9 +676,11 @@ function showDatapointEditor() {
         datapoint.func = Number($("#dp-func").value) || 3;
         updateTestValueVisibility();
         applyWriteFieldsState();
+        applyTypeFieldsState();
     };
     updateTestValueVisibility();
     applyWriteFieldsState();
+    applyTypeFieldsState();
     $("#dp-func").onchange = onFunctionChange;
 
     const updateAddressField = (num) => {
@@ -654,12 +706,11 @@ function showDatapointEditor() {
     const btnAddNext = $("#btn-dp-add-next");
     if (btnAddNext) {
         btnAddNext.onclick = () => {
-            const nextAddress = (Number.isInteger(datapoint.address) && datapoint.address >= 0)
-                ? datapoint.address + 1
-                : 0;
+            // Skip every register this datapoint occupies (type width or length).
+            const followingAddress = nextAddress(datapoint.address, datapoint.type, datapoint.length);
             addDatapointToCurrentDevice({
                 addrFormat: currentAddressFormat,
-                address: nextAddress,
+                address: followingAddress,
                 poll_secs: datapoint.poll_secs
             });
             // focus name field of the newly added datapoint editor
@@ -719,9 +770,13 @@ function showDatapointEditor() {
         try {
             const r = await safeJson(`${API.POST_MODBUS_EXECUTE}?${q.toString()}`, { method: 'POST' });
             const raw = r?.result?.raw;
-            const value = (r?.result && (r.result.value ?? r.result?.raw?.[0])) ?? r.value ?? '(n/a)';
+            const isWrite = func === 5 || func === 6 || func === 16;
+            let value = (r?.result && (r.result.value ?? r.result?.raw?.[0])) ?? r.value ?? '(n/a)';
+            if (r?.result?.valueError) {
+                value = `${r.result.valueError} (needs ${r.result.width} registers)`;
+            }
 
-            let msg = `OK: ${value} ${datapoint.unit || ""}`;
+            let msg = `${isWrite ? "Written" : "OK"}: ${value} ${datapoint.unit || ""}`;
             if (Array.isArray(raw)) {
                 msg += ` raw=[${raw.join(', ')}]`;
             }
@@ -796,9 +851,17 @@ function showDatapointEditor() {
             datapoint.length = v;
         }
     };
+    $("#dp-len").onchange = () => applyTypeFieldsState();
     $("#dp-type").onchange = () => {
-        datapoint.type = $("#dp-type").value;
+        datapoint.type = normalizeDataType($("#dp-type").value);
+        applyWriteFieldsState();
+        applyTypeFieldsState();
     };
+    if (wordOrderSel) {
+        wordOrderSel.onchange = () => {
+            datapoint.order = normalizeWordOrder(wordOrderSel.value);
+        };
+    }
     $("#dp-scale").oninput = () => {
         const v = Number($("#dp-scale").value);
         if (!Number.isNaN(v)) datapoint.scale = v;

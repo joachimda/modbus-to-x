@@ -57,6 +57,8 @@ MqttBridgePlan ModbusMqttBridge::buildBridgePlan(const ConfigurationRoot &root,
             context.address = address;
             context.registerCount = registerCount;
             context.scale = scale;
+            context.dataType = datapoint.dataType;
+            context.wordOrder = datapoint.wordOrder;
             context.modbusGeneration = modbusGeneration;
             const auto handler = ModbusMqttWriteCore::buildMessageHandler(
                 context,
@@ -69,7 +71,9 @@ MqttBridgePlan ModbusMqttBridge::buildBridgePlan(const ConfigurationRoot &root,
                     request.function = static_cast<int>(command.function);
                     request.address = command.address;
                     request.length = command.registerCount;
-                    request.writeValue = command.rawValue;
+                    request.writeValue = command.coilValue ? 1U : 0U;
+                    request.writeWords = command.words;
+                    request.writeCount = command.wordCount;
                     request.hasWriteValue = true;
                     request.expectedGeneration = command.modbusGeneration;
                     const ModbusOperationResult result = _modbus->submitWriteCommand(request);
@@ -336,7 +340,8 @@ void ModbusMqttBridge::publishHomeAssistantDiscovery(ModbusDevice &device,
             if (stateTopic.length()) document["state_topic"] = stateTopic;
             else document["optimistic"] = true;
             if (datapoint.unit.length()) document["unit_of_measurement"] = datapoint.unit;
-            const auto bounds = ModbusMqttWriteCore::numberDiscoveryBounds(datapoint.scale);
+            const auto bounds = ModbusMqttWriteCore::numberDiscoveryBounds(datapoint.scale,
+                                                                             datapoint.dataType);
             if (!bounds.valid()) {
                 if (_logger != nullptr) {
                     _logger->logWarning((String("[MQTT][HA] Number discovery rejected: function=")

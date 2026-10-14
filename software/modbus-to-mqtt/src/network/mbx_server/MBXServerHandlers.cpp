@@ -41,6 +41,8 @@
 #include "services/IndicatorService.h"
 #include "modbus/ModbusManager.h"
 #include "modbus/ModbusConfigLoader.h"
+#include "modbus/ModbusMqttWriteCore.h"
+#include "modbus/ModbusValueCodec.h"
 
 auto constexpr OTA_FS_UPLOAD_BEGIN_FAIL_RESP = R"({"error":"ota_begin_failed"})";
 auto constexpr OTA_FW_UPLOAD_BEGIN_FAIL_RESP = R"({"error":"ota_begin_failed"})";
@@ -1618,7 +1620,9 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
         return;
     }
 
-    // Optional value for write operations (ignored here but echoed back)
+    // Optional value for write operations. FC5 takes 0/1/false/true; FC6 and
+    // FC16 take the engineering value, which the Modbus owner converts with
+    // the saved datapoint's data type, scale and word order.
     String sValue;
     if (req->hasParam("value")) sValue = req->getParam("value")->value();
 
@@ -1634,15 +1638,20 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
 
     uint16_t writeVal = 0;
     bool hasWriteVal = false;
+    String writeText;
     if (sValue.length()) {
-        if (sValue.equalsIgnoreCase("true") || sValue == "1") writeVal = 1;
-        else if (sValue.equalsIgnoreCase("false") || sValue == "0") writeVal = 0;
-        else writeVal = static_cast<uint16_t>(sValue.toInt());
         hasWriteVal = true;
+        if (func == 5) {
+            if (sValue.equalsIgnoreCase("true") || sValue == "1") writeVal = 1;
+            else if (sValue.equalsIgnoreCase("false") || sValue == "0") writeVal = 0;
+            else writeVal = static_cast<uint16_t>(sValue.toInt());
+        } else {
+            writeText = sValue;
+        }
     }
 
-    if (func == 5 || func == 6 || func == 16) {
-        len = 1; // single write workaround even for FC16
+    if (func == 5 || func == 6) {
+        len = 1;  // single writes; FC16 writes the data type's register width
     }
 
     ModbusCommandRequest command;
@@ -1654,6 +1663,7 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
     command.address = static_cast<uint16_t>(addr);
     command.length = static_cast<uint16_t>(len);
     command.writeValue = writeVal;
+    command.writeText = writeText;
     command.hasWriteValue = hasWriteVal;
     if (!scheduleRuntimeJob(req,
             [mb, command, devId, dpId, sValue, func, addr, len]
@@ -1668,26 +1678,54 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
                     return;
                 }
 
-                response["ok"] = result.busStatus == 0;
-                response["code"] = result.busStatus;
-                response["state"] = ModbusManager::statusToString(result.busStatus);
                 response["devId"] = devId;
                 response["dpId"] = dpId;
                 response["request"]["func_code"] = func;
                 response["request"]["addr"] = addr;
                 response["request"]["len"] = len;
                 if (sValue.length()) response["request"]["value"] = sValue;
+                if (result.writeRejection != ModbusMqttWriteCore::RejectionReason::None) {
+                    const char *reason = ModbusMqttWriteCore::rejectionReasonToString(result.writeRejection);
+                    response["ok"] = false;
+                    response["error"] = "invalid_write_value";
+                    response["reason"] = reason;
+                    response["message"] = String("Write value rejected: ") + reason;
+                    setRuntimeJsonResponse(runtimeResponse, response, HttpResponseCodes::BAD_REQUEST_HTTP);
+                    return;
+                }
+
+                response["ok"] = result.busStatus == 0;
+                response["code"] = result.busStatus;
+                response["state"] = ModbusManager::statusToString(result.busStatus);
                 if (result.rxDump.length()) response["rx_dump"] = result.rxDump;
                 if (result.count > 0U) {
+                    // Reads: the registers received. Register writes: the
+                    // words that were written, so the encoding can be checked.
                     JsonArray raw = response["result"]["raw"].to<JsonArray>();
                     for (uint16_t i = 0; i < result.count; ++i) (void)raw.add(result.words[i]);
                     if (result.hasDatapointMetadata && result.dataType == TEXT) {
                         response["result"]["value"] =
                             ModbusManager::registersToAscii(result.words.data(), result.count);
                     } else if (result.hasDatapointMetadata) {
-                        const uint16_t sliced = ModbusManager::sliceRegister(
-                            result.words[0], result.registerSlice);
-                        response["result"]["value"] = static_cast<float>(sliced) * result.scale;
+                        const bool bitFunction = func == 1 || func == 2;
+                        const ModbusDataType type = bitFunction ? UINT16 : result.dataType;
+                        const ModbusValueCodec::DecodedValue decoded = ModbusValueCodec::decode(
+                            result.words.data(), result.count, type, result.registerSlice,
+                            result.wordOrder);
+                        if (decoded.ok) {
+                            // Same text as the MQTT publication; emitted as a
+                            // JSON number literal when finite.
+                            char text[64];
+                            const ModbusValueCodec::Formatted formatted =
+                                ModbusValueCodec::formatEngineering(
+                                    ModbusValueCodec::engineeringValue(decoded, result.scale), type,
+                                    result.scale, text, sizeof text);
+                            if (formatted.finite) response["result"]["value"] = serialized(String(text));
+                            else response["result"]["value"] = String(text);
+                        } else {
+                            response["result"]["valueError"] = "insufficient_registers";
+                            response["result"]["width"] = ModbusValueCodec::wordWidth(type);
+                        }
                     } else {
                         response["result"]["value"] = result.words[0];
                     }

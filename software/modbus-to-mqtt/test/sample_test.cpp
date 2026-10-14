@@ -2746,6 +2746,118 @@ void test_modbus_mqtt_holding_payload_grammar_and_conversion(void) {
     }
 }
 
+void test_modbus_mqtt_typed_holding_conversion(void) {
+    using ModbusMqttWriteCore::RejectionReason;
+    constexpr auto Big = ModbusWordOrder::Big;
+    constexpr auto Little = ModbusWordOrder::Little;
+    struct TypedCase {
+        const char *payload;
+        double scale;
+        ModbusDataType dataType;
+        ModbusWordOrder order;
+        ModbusFunctionType function;
+        bool accepted;
+        uint8_t wordCount;
+        uint16_t words[4];
+        RejectionReason rejection;
+    };
+    const double scale001 = static_cast<double>(0.01F);
+    const double scale01 = static_cast<double>(0.1F);
+    const TypedCase cases[] = {
+        // int16: negative values are two's complement; halves round upward.
+        {"-2", scale001, INT16, Big, WRITE_HOLDING, true, 1U, {0xFF38U}, RejectionReason::None},
+        {"-2", -scale001, INT16, Big, WRITE_HOLDING, true, 1U, {0x00C8U}, RejectionReason::None},
+        {"-2.5", 1.0, INT16, Big, WRITE_MULTIPLE_HOLDING, true, 1U, {0xFFFEU}, RejectionReason::None},
+        {"-32768", 1.0, INT16, Big, WRITE_HOLDING, true, 1U, {0x8000U}, RejectionReason::None},
+        {"32767", 1.0, INT16, Big, WRITE_HOLDING, true, 1U, {0x7FFFU}, RejectionReason::None},
+        {"-32769", 1.0, INT16, Big, WRITE_HOLDING, false, 0U, {0U}, RejectionReason::OutOfRange},
+        {"32768", 1.0, INT16, Big, WRITE_HOLDING, false, 0U, {0U}, RejectionReason::OutOfRange},
+        {"-327.6799", scale001, INT16, Big, WRITE_HOLDING, true, 1U, {0x8000U}, RejectionReason::None},
+        {"-327.68", scale001, INT16, Big, WRITE_HOLDING, false, 0U, {0U}, RejectionReason::OutOfRange},
+        {"16384", -0.5, INT16, Big, WRITE_HOLDING, true, 1U, {0x8000U}, RejectionReason::None},
+        {"-16384", -0.5, INT16, Big, WRITE_HOLDING, false, 0U, {0U}, RejectionReason::OutOfRange},
+        // uint16 keeps rejecting negative values.
+        {"-1", 1.0, UINT16, Big, WRITE_HOLDING, false, 0U, {0U}, RejectionReason::OutOfRange},
+        {"65535", 1.0, UINT16, Little, WRITE_HOLDING, true, 1U, {0xFFFFU}, RejectionReason::None},
+        // 32-bit integers occupy two registers in the configured word order.
+        {"4294967295", 1.0, UINT32, Big, WRITE_MULTIPLE_HOLDING, true, 2U, {0xFFFFU, 0xFFFFU},
+         RejectionReason::None},
+        {"4294967296", 1.0, UINT32, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::OutOfRange},
+        {"-1", 1.0, UINT32, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U}, RejectionReason::OutOfRange},
+        {"65536", 1.0, UINT32, Little, WRITE_MULTIPLE_HOLDING, true, 2U, {0x0000U, 0x0001U},
+         RejectionReason::None},
+        {"-2147483648", 1.0, INT32, Big, WRITE_MULTIPLE_HOLDING, true, 2U, {0x8000U, 0x0000U},
+         RejectionReason::None},
+        {"-2147483648", 1.0, INT32, Little, WRITE_MULTIPLE_HOLDING, true, 2U, {0x0000U, 0x8000U},
+         RejectionReason::None},
+        {"2147483647", 1.0, INT32, Big, WRITE_MULTIPLE_HOLDING, true, 2U, {0x7FFFU, 0xFFFFU},
+         RejectionReason::None},
+        {"2147483648", 1.0, INT32, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::OutOfRange},
+        {"-2147483649", 1.0, INT32, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::OutOfRange},
+        {"-100000", 1.0, INT32, Big, WRITE_MULTIPLE_HOLDING, true, 2U, {0xFFFEU, 0x7960U},
+         RejectionReason::None},
+        {"-1000", scale01, INT32, Big, WRITE_MULTIPLE_HOLDING, true, 2U, {0xFFFFU, 0xD8F0U},
+         RejectionReason::None},
+        // 64-bit integers occupy four registers; the exact decimal check still
+        // applies beyond double precision.
+        {"9223372036854775807", 1.0, INT64, Big, WRITE_MULTIPLE_HOLDING, true, 4U,
+         {0x7FFFU, 0xFFFFU, 0xFFFFU, 0xFFFFU}, RejectionReason::None},
+        {"9223372036854775808", 1.0, INT64, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::OutOfRange},
+        {"-9223372036854775808", 1.0, INT64, Big, WRITE_MULTIPLE_HOLDING, true, 4U,
+         {0x8000U, 0x0000U, 0x0000U, 0x0000U}, RejectionReason::None},
+        {"-9223372036854775809", 1.0, INT64, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::OutOfRange},
+        {"18446744073709551615", 1.0, UINT64, Big, WRITE_MULTIPLE_HOLDING, true, 4U,
+         {0xFFFFU, 0xFFFFU, 0xFFFFU, 0xFFFFU}, RejectionReason::None},
+        {"18446744073709551616", 1.0, UINT64, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::OutOfRange},
+        {"1", 1.0, UINT64, Little, WRITE_MULTIPLE_HOLDING, true, 4U, {0x0001U, 0U, 0U, 0U},
+         RejectionReason::None},
+        // float32: raw must fit a float; no rounding to integers.
+        {"3.14", 1.0, FLOAT32, Big, WRITE_MULTIPLE_HOLDING, true, 2U, {0x4048U, 0xF5C3U},
+         RejectionReason::None},
+        {"3.14", 1.0, FLOAT32, Little, WRITE_MULTIPLE_HOLDING, true, 2U, {0xF5C3U, 0x4048U},
+         RejectionReason::None},
+        {"-100", scale01, FLOAT32, Big, WRITE_MULTIPLE_HOLDING, true, 2U, {0xC47AU, 0x0000U},
+         RejectionReason::None},
+        {"1e39", 1.0, FLOAT32, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::OutOfRange},
+        {"1e-50", 1.0, FLOAT32, Big, WRITE_MULTIPLE_HOLDING, true, 2U, {0x0000U, 0x0000U},
+         RejectionReason::None},
+        {"nan", 1.0, FLOAT32, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::InvalidSyntax},
+        // FC6 writes one register: 16-bit types only. TEXT is never a number.
+        {"1", 1.0, UINT16, Big, WRITE_HOLDING, true, 1U, {0x0001U}, RejectionReason::None},
+        {"1", 1.0, INT32, Big, WRITE_HOLDING, false, 0U, {0U}, RejectionReason::UnsupportedDataType},
+        {"1", 1.0, FLOAT32, Big, WRITE_HOLDING, false, 0U, {0U}, RejectionReason::UnsupportedDataType},
+        {"1", 1.0, TEXT, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::UnsupportedDataType},
+    };
+
+    for (const auto &testCase : cases) {
+        const auto result = ModbusMqttWriteCore::convertPayload(
+            testCase.function, testCase.payload, testCase.scale, testCase.dataType, testCase.order);
+        TEST_ASSERT_EQUAL_MESSAGE(testCase.accepted, result.accepted(), testCase.payload);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(static_cast<int>(testCase.rejection),
+                                      static_cast<int>(result.rejection), testCase.payload);
+        TEST_ASSERT_EQUAL_UINT8_MESSAGE(testCase.wordCount, result.wordCount, testCase.payload);
+        for (uint8_t index = 0U; index < testCase.wordCount; ++index) {
+            TEST_ASSERT_EQUAL_UINT16_MESSAGE(testCase.words[index], result.words[index],
+                                             testCase.payload);
+        }
+        if (testCase.accepted) {
+            TEST_ASSERT_EQUAL_UINT16_MESSAGE(testCase.words[0], result.rawValue, testCase.payload);
+        }
+    }
+    TEST_ASSERT_EQUAL_STRING("unsupported_data_type",
+                             ModbusMqttWriteCore::rejectionReasonToString(
+                                 RejectionReason::UnsupportedDataType));
+}
+
 void test_modbus_mqtt_production_handler_submits_only_accepted_commands(void) {
     ModbusMqttWriteCore::CommandContext context;
     context.slaveId = 7U;
@@ -2753,6 +2865,8 @@ void test_modbus_mqtt_production_handler_submits_only_accepted_commands(void) {
     context.address = 321U;
     context.registerCount = 8U;
     context.scale = 1.0;
+    context.dataType = INT32;
+    context.wordOrder = ModbusWordOrder::Big;
     context.modbusGeneration = 42U;
 
     std::vector<ModbusMqttWriteCore::WriteCommand> submissions;
@@ -2762,40 +2876,61 @@ void test_modbus_mqtt_production_handler_submits_only_accepted_commands(void) {
         [&](const ModbusMqttWriteCore::WriteCommand &command) { submissions.push_back(command); },
         [&](const std::string &warning) { warnings.push_back(warning); });
 
-    handler("root/device/write", "secret-invalid-payload");
+    handler("root/device/write/set", "secret-invalid-payload");
     TEST_ASSERT_TRUE(submissions.empty());
     TEST_ASSERT_EQUAL_UINT(1U, warnings.size());
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[0].find("topic=root/device/write"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[0].find("topic=root/device/write/set"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[0].find("function=16"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[0].find("address=321"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[0].find("reason=invalid_syntax"));
     TEST_ASSERT_EQUAL(std::string::npos, warnings[0].find("secret-invalid-payload"));
 
-    handler("root/device/write", "-1e-9999");
-    handler("root/device/write", "65535.0000000000000001");
+    handler("root/device/write/set", "-2147483648.5");
+    handler("root/device/write/set", "2147483647.0000000000000001");
     TEST_ASSERT_TRUE(submissions.empty());
     TEST_ASSERT_EQUAL_UINT(3U, warnings.size());
     TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[1].find("reason=out_of_range"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[2].find("reason=out_of_range"));
-    TEST_ASSERT_EQUAL(std::string::npos, warnings[1].find("-1e-9999"));
+    TEST_ASSERT_EQUAL(std::string::npos, warnings[1].find("-2147483648.5"));
     TEST_ASSERT_EQUAL(std::string::npos,
-                      warnings[2].find("65535.0000000000000001"));
+                      warnings[2].find("2147483647.0000000000000001"));
 
-    handler("root/device/write", "10");
+    handler("root/device/write/set", "10");
     TEST_ASSERT_EQUAL_UINT(1U, submissions.size());
-    TEST_ASSERT_EQUAL_STRING("root/device/write", submissions[0].sourceTopic.c_str());
+    TEST_ASSERT_EQUAL_STRING("root/device/write/set", submissions[0].sourceTopic.c_str());
     TEST_ASSERT_EQUAL_UINT8(7U, submissions[0].slaveId);
     TEST_ASSERT_EQUAL_INT(16, static_cast<int>(submissions[0].function));
     TEST_ASSERT_EQUAL_UINT16(321U, submissions[0].address);
-    TEST_ASSERT_EQUAL_UINT8(1U, submissions[0].registerCount);
-    TEST_ASSERT_EQUAL_UINT16(10U, submissions[0].rawValue);
+    TEST_ASSERT_EQUAL_UINT8(2U, submissions[0].registerCount);
+    TEST_ASSERT_EQUAL_UINT8(2U, submissions[0].wordCount);
+    TEST_ASSERT_EQUAL_UINT16(0U, submissions[0].words[0]);
+    TEST_ASSERT_EQUAL_UINT16(10U, submissions[0].words[1]);
+    TEST_ASSERT_FALSE(submissions[0].coilValue);
     TEST_ASSERT_EQUAL_UINT32(42U, submissions[0].modbusGeneration);
 
-    handler("root/device/write", "65536");
-    handler("root/device/write", "1");
+    handler("root/device/write/set", "4294967296");
+    handler("root/device/write/set", "-1");
     TEST_ASSERT_EQUAL_UINT(2U, submissions.size());
-    TEST_ASSERT_EQUAL_UINT16(1U, submissions[1].rawValue);
+    TEST_ASSERT_EQUAL_UINT16(0xFFFFU, submissions[1].words[0]);
+    TEST_ASSERT_EQUAL_UINT16(0xFFFFU, submissions[1].words[1]);
     TEST_ASSERT_EQUAL_UINT(4U, warnings.size());
+
+    // Coils keep the configured register count and carry the state as a flag.
+    ModbusMqttWriteCore::CommandContext coilContext;
+    coilContext.function = WRITE_COIL;
+    coilContext.address = 5U;
+    coilContext.registerCount = 1U;
+    const auto coilHandler = ModbusMqttWriteCore::buildMessageHandler(
+        coilContext,
+        [&](const ModbusMqttWriteCore::WriteCommand &command) { submissions.push_back(command); },
+        [&](const std::string &warning) { warnings.push_back(warning); });
+    coilHandler("root/device/coil/set", "true");
+    coilHandler("root/device/coil/set", "0");
+    TEST_ASSERT_EQUAL_UINT(4U, submissions.size());
+    TEST_ASSERT_TRUE(submissions[2].coilValue);
+    TEST_ASSERT_FALSE(submissions[3].coilValue);
+    TEST_ASSERT_EQUAL_UINT8(1U, submissions[2].registerCount);
+    TEST_ASSERT_EQUAL_UINT8(0U, submissions[2].wordCount);
 }
 
 std::string modbusConfigurationWithScale(const int function, const char *scale,
@@ -2973,22 +3108,61 @@ void test_modbus_configuration_rejects_noninvertible_writable_scales_atomically(
 
 void test_modbus_home_assistant_number_bounds_follow_scale_direction(void) {
     const double positiveScale = static_cast<double>(0.1F);
-    const auto positive = ModbusMqttWriteCore::numberDiscoveryBounds(positiveScale);
+    const auto positive = ModbusMqttWriteCore::numberDiscoveryBounds(positiveScale, UINT16);
     TEST_ASSERT_TRUE(positive.valid());
     TEST_ASSERT_TRUE(std::fabs(positive.minimum) < 0.0000001);
     TEST_ASSERT_TRUE(std::fabs(positive.maximum - (65535.0 * positiveScale)) < 0.000001);
     TEST_ASSERT_TRUE(std::fabs(positive.step - positiveScale) < 0.0000001);
 
     const double negativeScale = static_cast<double>(-0.25F);
-    const auto negative = ModbusMqttWriteCore::numberDiscoveryBounds(negativeScale);
+    const auto negative = ModbusMqttWriteCore::numberDiscoveryBounds(negativeScale, UINT16);
     TEST_ASSERT_TRUE(negative.valid());
     TEST_ASSERT_TRUE(std::fabs(negative.minimum - (65535.0 * negativeScale)) < 0.000001);
     TEST_ASSERT_TRUE(std::fabs(negative.maximum) < 0.0000001);
     TEST_ASSERT_TRUE(std::fabs(negative.step - 0.25) < 0.0000001);
 
-    TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(0.0).valid());
-    TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(INFINITY).valid());
-    TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(NAN).valid());
+    TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(0.0, UINT16).valid());
+    TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(INFINITY, UINT16).valid());
+    TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(NAN, UINT16).valid());
+
+    // Signed types span both signs; a negative scale mirrors the range.
+    const double centi = static_cast<double>(0.01F);
+    const auto int16Bounds = ModbusMqttWriteCore::numberDiscoveryBounds(centi, INT16);
+    TEST_ASSERT_TRUE(int16Bounds.valid());
+    TEST_ASSERT_TRUE(std::fabs(int16Bounds.minimum - (-32768.0 * centi)) < 0.000001);
+    TEST_ASSERT_TRUE(std::fabs(int16Bounds.maximum - (32767.0 * centi)) < 0.000001);
+    TEST_ASSERT_TRUE(std::fabs(int16Bounds.step - centi) < 0.0000001);
+    const auto mirrored = ModbusMqttWriteCore::numberDiscoveryBounds(-centi, INT16);
+    TEST_ASSERT_TRUE(mirrored.valid());
+    TEST_ASSERT_TRUE(std::fabs(mirrored.minimum - (-32767.0 * centi)) < 0.000001);
+    TEST_ASSERT_TRUE(std::fabs(mirrored.maximum - (32768.0 * centi)) < 0.000001);
+    TEST_ASSERT_TRUE(std::fabs(mirrored.step - centi) < 0.0000001);
+
+    const auto uint32Bounds = ModbusMqttWriteCore::numberDiscoveryBounds(1.0, UINT32);
+    TEST_ASSERT_TRUE(uint32Bounds.valid());
+    TEST_ASSERT_TRUE(std::fabs(uint32Bounds.minimum) < 0.0000001);
+    TEST_ASSERT_TRUE(std::fabs(uint32Bounds.maximum - 4294967295.0) < 0.000001);
+    TEST_ASSERT_TRUE(std::fabs(uint32Bounds.step - 1.0) < 0.0000001);
+    const auto int64Bounds = ModbusMqttWriteCore::numberDiscoveryBounds(1.0, INT64);
+    TEST_ASSERT_TRUE(int64Bounds.valid());
+    TEST_ASSERT_TRUE(int64Bounds.minimum < -9.2e18 && int64Bounds.maximum > 9.2e18);
+
+    const auto floatBounds = ModbusMqttWriteCore::numberDiscoveryBounds(1.0, FLOAT32);
+    TEST_ASSERT_TRUE(floatBounds.valid());
+    TEST_ASSERT_TRUE(floatBounds.minimum == -static_cast<double>(std::numeric_limits<float>::max()));
+    TEST_ASSERT_TRUE(floatBounds.maximum == static_cast<double>(std::numeric_limits<float>::max()));
+    TEST_ASSERT_TRUE(std::fabs(floatBounds.step - 0.001) < 0.0000001);
+
+    // Home Assistant accepts no step below 0.001.
+    const auto fineBounds = ModbusMqttWriteCore::numberDiscoveryBounds(0.0001, UINT16);
+    TEST_ASSERT_TRUE(fineBounds.valid());
+    TEST_ASSERT_TRUE(std::fabs(fineBounds.step - 0.001) < 0.0000001);
+    TEST_ASSERT_TRUE(std::fabs(fineBounds.maximum - 6.5535) < 0.000001);
+
+    const auto textBounds = ModbusMqttWriteCore::numberDiscoveryBounds(1.0, TEXT);
+    TEST_ASSERT_FALSE(textBounds.valid());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusMqttWriteCore::RejectionReason::UnsupportedDataType),
+                          static_cast<int>(textBounds.rejection));
 }
 
 void test_modbus_command_topics_derive_from_the_state_base(void) {
@@ -3604,6 +3778,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_production_snapshot_core_never_returns_mixed_runtime_fields);
     RUN_TEST(test_modbus_mqtt_coil_payload_contract);
     RUN_TEST(test_modbus_mqtt_holding_payload_grammar_and_conversion);
+    RUN_TEST(test_modbus_mqtt_typed_holding_conversion);
     RUN_TEST(test_modbus_mqtt_production_handler_submits_only_accepted_commands);
     RUN_TEST(test_modbus_configuration_rejects_noninvertible_writable_scales_atomically);
     RUN_TEST(test_modbus_configuration_coerces_register_shape_per_data_type);

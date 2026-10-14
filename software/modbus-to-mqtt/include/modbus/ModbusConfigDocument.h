@@ -28,8 +28,9 @@ struct ValidationError {
 enum class ParseMode : uint8_t {
     // Reject the document (API submissions: the caller can fix it).
     Strict = 0,
-    // Narrow the data type to its 16-bit counterpart and report a notice, so
-    // a configuration saved by an earlier firmware keeps loading at boot.
+    // Treat the data type as uint16 (the encoding every FC6 value had before
+    // data types were honoured) and report a notice, so a configuration
+    // saved by an earlier firmware keeps loading and behaving as before.
     Lenient,
 };
 
@@ -45,9 +46,9 @@ enum class ParseWarning : uint8_t {
     TextWriteCoercedToUint16,
     // numOfRegisters exceeded the Modbus maximum of 125 and was clamped.
     RegisterCountClamped,
-    // FC6 with a 32-bit or 64-bit data type was narrowed to int16/uint16
-    // (lenient mode only).
-    DataTypeCoercedTo16Bit,
+    // FC6 with a 32-bit or 64-bit data type was treated as uint16 (lenient
+    // mode only).
+    DataTypeCoercedToUint16,
 };
 
 struct ParseNotice {

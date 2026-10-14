@@ -3012,16 +3012,17 @@ void test_modbus_configuration_coerces_register_shape_per_data_type(void) {
                              ModbusConfigDocument::reasonToString(
                                  ModbusConfigDocument::ValidationReason::InvalidRegisterCount));
 
-    // At boot (lenient mode) the same combination keeps loading with the
-    // 16-bit counterpart, so one datapoint saved by an earlier firmware
-    // cannot stop Modbus on every device.
+    // At boot (lenient mode) the same combination keeps loading as uint16,
+    // the encoding every FC6 value had before data types were honoured, so a
+    // datapoint saved by an earlier firmware neither stops Modbus on every
+    // device nor changes its accepted range.
     struct Narrowing {
         const char *name;
         ModbusDataType wide;
         ModbusDataType narrowed;
     };
     const Narrowing narrowings[] = {
-        {"int32", INT32, INT16},   {"int64", INT64, INT16},     {"uint32", UINT32, UINT16},
+        {"int32", INT32, UINT16},   {"int64", INT64, UINT16},     {"uint32", UINT32, UINT16},
         {"uint64", UINT64, UINT16}, {"float32", FLOAT32, UINT16},
     };
     for (const auto &narrowing : narrowings) {
@@ -3034,15 +3035,27 @@ void test_modbus_configuration_coerces_register_shape_per_data_type(void) {
         TEST_ASSERT_EQUAL_INT(static_cast<int>(narrowing.narrowed), static_cast<int>(point().dataType));
         TEST_ASSERT_EQUAL_UINT8(1U, point().numOfRegisters);
         TEST_ASSERT_EQUAL_UINT(1U, notices.size());
-        TEST_ASSERT_EQUAL_INT(static_cast<int>(ParseWarning::DataTypeCoercedTo16Bit),
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(ParseWarning::DataTypeCoercedToUint16),
                               static_cast<int>(notices[0].warning));
         TEST_ASSERT_EQUAL_UINT(0U, notices[0].deviceIndex);
         TEST_ASSERT_EQUAL_UINT(0U, notices[0].datapointIndex);
         TEST_ASSERT_EQUAL_UINT16(static_cast<uint16_t>(narrowing.wide), notices[0].previous);
         TEST_ASSERT_EQUAL_UINT16(static_cast<uint16_t>(narrowing.narrowed), notices[0].coerced);
+        // The upgrade path keeps the v8.0.4 write behaviour: 0..65535 x scale.
+        const ModbusMqttWriteCore::NumberDiscoveryBounds bounds =
+            ModbusMqttWriteCore::numberDiscoveryBounds(static_cast<double>(point().scale), point().dataType);
+        TEST_ASSERT_TRUE(bounds.valid());
+        TEST_ASSERT_TRUE(std::fabs(bounds.minimum) < 0.000001);
+        TEST_ASSERT_TRUE(std::fabs(bounds.maximum - 6553.5) < 0.001);
+        TEST_ASSERT_TRUE(ModbusMqttWriteCore::convertPayload(WRITE_HOLDING, "4000", point().scale,
+                                                             point().dataType, point().wordOrder).accepted());
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusMqttWriteCore::RejectionReason::OutOfRange),
+                              static_cast<int>(ModbusMqttWriteCore::convertPayload(
+                                                   WRITE_HOLDING, "-0.5", point().scale, point().dataType,
+                                                   point().wordOrder).rejection));
     }
-    TEST_ASSERT_EQUAL_STRING("data_type_coerced_to_16_bit",
-                             ModbusConfigDocument::warningToString(ParseWarning::DataTypeCoercedTo16Bit));
+    TEST_ASSERT_EQUAL_STRING("data_type_coerced_to_uint16",
+                             ModbusConfigDocument::warningToString(ParseWarning::DataTypeCoercedToUint16));
     // Lenient mode changes nothing else: FC16 keeps its wide type and width.
     {
         const std::string json = modbusConfigurationWithScale(16, "1", "int32", 2);

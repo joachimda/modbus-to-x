@@ -10,7 +10,7 @@ namespace {
 String noticeValueToString(const ModbusConfigDocument::ParseWarning warning, const uint16_t value) {
     using ModbusConfigDocument::ParseWarning;
     if (warning == ParseWarning::TextWriteCoercedToUint16
-        || warning == ParseWarning::DataTypeCoercedTo16Bit) {
+        || warning == ParseWarning::DataTypeCoercedToUint16) {
         return String(ModbusValueCodec::dataTypeName(static_cast<ModbusDataType>(value)));
     }
     return String(value);
@@ -50,8 +50,8 @@ bool ModbusConfigLoader::loadConfiguration(Logger *logger, const char *path, Con
     f.close();
 
     // A stored document must keep loading: one datapoint an earlier firmware
-    // accepted (FC6 with a 32/64-bit type) is narrowed and logged rather
-    // than stopping Modbus on every device.
+    // accepted (FC6 with a 32/64-bit type) keeps its old uint16 encoding and
+    // is logged rather than stopping Modbus on every device.
     return parseConfiguration(logger, json.c_str(), json.length(), outConfig, nullptr,
                               ModbusConfigDocument::ParseMode::Lenient);
 }

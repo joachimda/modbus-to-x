@@ -55,7 +55,8 @@ void stripNegativeZero(char *buffer) {
 
 // The shortest of 7, 8 or 9 significant digits that reproduces the float32
 // value: 0.1f prints as "0.1", 16777215.0f as "16777215" (where "%.7g"
-// gives 1.677722e+07) and 1234567.75f as "1234567.75".
+// gives 1.677722e+07) and 1234567.75f as "1234567.8", the shortest text
+// that reads back as that float32.
 int formatShortestFloat(const double value, char *buffer, const size_t capacity) {
     if (std::fabs(value) > static_cast<double>(std::numeric_limits<float>::max())) {
         // raw * scale overflowed float32; print the double as it is.

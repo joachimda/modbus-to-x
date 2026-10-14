@@ -121,17 +121,10 @@ void notice(std::vector<ParseNotice> *notices, const ParseWarning warning,
     notices->push_back(entry);
 }
 
-// FC6 writes one register. A stored configuration that combines it with a
-// wider type loads with the 16-bit counterpart, which is what the firmware
-// wrote before data types were honoured.
-ModbusDataType sixteenBitCounterpart(const ModbusDataType type) {
-    return ModbusValueCodec::isSignedInteger(type) ? INT16 : UINT16;
-}
-
 // Makes numOfRegisters, registerSlice and dataType consistent with the
 // function code and the data type's register width. FC6 with a
-// multi-register type is rejected in strict mode and narrowed to a 16-bit
-// type in lenient mode.
+// multi-register type is rejected in strict mode and treated as uint16 in
+// lenient mode.
 bool applyRegisterShapeRules(ModbusDatapoint &datapoint, const long requestedCount,
                              const size_t deviceIndex, const size_t datapointIndex,
                              const ParseMode mode, ValidationError *error,
@@ -161,10 +154,13 @@ bool applyRegisterShapeRules(ModbusDatapoint &datapoint, const long requestedCou
             if (mode == ParseMode::Strict) {
                 return fail(error, ValidationReason::InvalidRegisterCount, deviceIndex, datapointIndex);
             }
-            const ModbusDataType narrowed = sixteenBitCounterpart(datapoint.dataType);
-            notice(notices, ParseWarning::DataTypeCoercedTo16Bit, deviceIndex, datapointIndex,
-                   static_cast<uint16_t>(datapoint.dataType), static_cast<uint16_t>(narrowed));
-            datapoint.dataType = narrowed;
+            // Before data types were honoured every FC6 value was encoded as
+            // uint16 (0..65535 x scale, negatives rejected, Home Assistant
+            // bounds to match). Keeping that encoding means the upgrade
+            // changes nothing for a stored datapoint.
+            notice(notices, ParseWarning::DataTypeCoercedToUint16, deviceIndex, datapointIndex,
+                   static_cast<uint16_t>(datapoint.dataType), static_cast<uint16_t>(UINT16));
+            datapoint.dataType = UINT16;
             width = 1U;
         }
         coercedCount = 1U;
@@ -323,7 +319,7 @@ const char *warningToString(const ParseWarning warning) {
         case ParseWarning::RegisterSliceIgnored: return "register_slice_ignored";
         case ParseWarning::TextWriteCoercedToUint16: return "text_write_coerced_to_uint16";
         case ParseWarning::RegisterCountClamped: return "register_count_clamped";
-        case ParseWarning::DataTypeCoercedTo16Bit: return "data_type_coerced_to_16_bit";
+        case ParseWarning::DataTypeCoercedToUint16: return "data_type_coerced_to_uint16";
         case ParseWarning::None: break;
     }
     return "none";

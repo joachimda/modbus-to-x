@@ -6,8 +6,10 @@
 #include <utility>
 
 #include "Config.h"
+#include "modbus/ModbusFunctionUtils.h"
 #include "modbus/ModbusMqttWriteCore.h"
 #include "modbus/ModbusValueCodec.h"
+#include "modbus/WavinFrame.h"
 #include "modbus/config_structs/ModbusDatapoint.h"
 #include "utils/StringUtils.h"
 
@@ -23,6 +25,8 @@ ModbusFunctionType parseFunction(const int function) {
         case 5: return WRITE_COIL;
         case 6: return WRITE_HOLDING;
         case 16: return WRITE_MULTIPLE_HOLDING;
+        case WAVIN_READ: return WAVIN_READ;
+        case WAVIN_WRITE: return WAVIN_WRITE;
         default: return READ_HOLDING;
     }
 }
@@ -93,10 +97,24 @@ ModbusWordOrder parseWordOrder(const JsonVariant &value) {
 
 bool isRegisterFunction(const ModbusFunctionType function) {
     return function == READ_HOLDING || function == READ_INPUT
-           || function == WRITE_HOLDING || function == WRITE_MULTIPLE_HOLDING;
+           || function == WRITE_HOLDING || function == WRITE_MULTIPLE_HOLDING
+           || function == WAVIN_READ || function == WAVIN_WRITE;
 }
 
 constexpr long MAX_REGISTER_COUNT = 125L;
+constexpr long MAX_WAVIN_FIELD = 255L;
+
+// A Wavin register index, category or page: an integer in 0-255, or absent
+// (0). Anything else is rejected rather than read as 0.
+bool readWavinField(const JsonVariantConst value, long &out) {
+    if (value.isNull()) {
+        out = 0L;
+        return true;
+    }
+    if (!value.is<long>()) return false;
+    out = value.as<long>();
+    return out >= 0L && out <= MAX_WAVIN_FIELD;
+}
 
 bool fail(ValidationError *error, const ValidationReason reason,
           const size_t deviceIndex = 0U, const size_t datapointIndex = 0U) {
@@ -130,11 +148,14 @@ bool applyRegisterShapeRules(ModbusDatapoint &datapoint, const long requestedCou
                              const ParseMode mode, ValidationError *error,
                              std::vector<ParseNotice> *notices) {
     long count = requestedCount < 0L ? 0L : requestedCount;
-    if (count > MAX_REGISTER_COUNT) {
+    const long maximum = isWavinFunction(datapoint.function)
+                             ? static_cast<long>(WavinFrame::kMaxRegisters)
+                             : MAX_REGISTER_COUNT;
+    if (count > maximum) {
         notice(notices, ParseWarning::RegisterCountClamped, deviceIndex, datapointIndex,
                static_cast<uint16_t>(count > 0xFFFFL ? 0xFFFFL : count),
-               static_cast<uint16_t>(MAX_REGISTER_COUNT));
-        count = MAX_REGISTER_COUNT;
+               static_cast<uint16_t>(maximum));
+        count = maximum;
     }
     datapoint.numOfRegisters = static_cast<uint8_t>(count);
     if (!isRegisterFunction(datapoint.function)) return true;
@@ -149,7 +170,7 @@ bool applyRegisterShapeRules(ModbusDatapoint &datapoint, const long requestedCou
 
     uint8_t width = ModbusValueCodec::wordWidth(datapoint.dataType);
     uint8_t coercedCount = datapoint.numOfRegisters;
-    if (datapoint.function == WRITE_HOLDING) {
+    if (isSingleRegisterWrite(datapoint.function)) {
         if (width != 1U) {
             if (mode == ParseMode::Strict) {
                 return fail(error, ValidationReason::InvalidRegisterCount, deviceIndex, datapointIndex);
@@ -237,7 +258,24 @@ bool parse(const char *json, const size_t length, ConfigurationRoot &outConfig,
                     datapoint.id = String(point["id"] | "");
                     datapoint.name = String(point["name"] | "");
                     datapoint.function = parseFunction(point["function"] | 3);
-                    datapoint.address = static_cast<uint16_t>(point["address"] | 0);
+                    long address = point["address"] | 0L;
+                    datapoint.address = static_cast<uint16_t>(address);
+                    if (isWavinFunction(datapoint.function)) {
+                        // The register index, category and page are one byte
+                        // each on the wire; truncating would address another
+                        // register, and so would reading a value that is not
+                        // an integer as 0.
+                        long category = 0L;
+                        long page = 0L;
+                        if (!readWavinField(point["address"], address)
+                            || !readWavinField(point["category"], category)
+                            || !readWavinField(point["page"], page)) {
+                            return fail(validationError, ValidationReason::InvalidWavinAddress,
+                                        deviceIndex, datapointIndex);
+                        }
+                        datapoint.category = static_cast<uint8_t>(category);
+                        datapoint.page = static_cast<uint8_t>(page);
+                    }
                     const long requestedCount = point["numOfRegisters"] | 1L;
 
                     const JsonVariant scaleValue = point["scale"];
@@ -296,6 +334,7 @@ const char *reasonToString(const ValidationReason reason) {
         case ValidationReason::InvalidJson: return "invalid_json";
         case ValidationReason::InvalidScale: return "invalid_scale";
         case ValidationReason::InvalidRegisterCount: return "invalid_register_count";
+        case ValidationReason::InvalidWavinAddress: return "invalid_wavin_address";
         case ValidationReason::None: break;
     }
     return "none";
@@ -307,7 +346,9 @@ const char *reasonDescription(const ValidationReason reason) {
         case ValidationReason::InvalidScale:
             return "Writable holding-register scale must be finite and non-zero";
         case ValidationReason::InvalidRegisterCount:
-            return "FC6 writes exactly one register; use FC16 for 32-bit and 64-bit data types";
+            return "FC6 and Wavin 0x44 write exactly one register; use FC16 for 32-bit and 64-bit data types";
+        case ValidationReason::InvalidWavinAddress:
+            return "Wavin functions need address (register index), category and page in 0-255";
         case ValidationReason::None: break;
     }
     return "";

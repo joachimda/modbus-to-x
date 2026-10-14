@@ -53,6 +53,7 @@
 #include "../src/modbus/ModbusValueCodec.cpp"
 #include "../src/modbus/ModbusConfigDocument.cpp"
 #include "../src/modbus/ModbusTopicBuilder.cpp"
+#include "../src/modbus/WavinFrame.cpp"
 
 namespace {
 
@@ -3950,6 +3951,313 @@ void test_ota_ui_filesystem_gate_prevents_access_until_safe_remount(void) {
     TEST_ASSERT_EQUAL_UINT(2U, openCalls);
 }
 
+void test_wavin_frame_crc_matches_controller_replies(void) {
+    // Exception replies captured from an AHC 9000 answering FC3, FC1 and FC4.
+    const uint8_t fc3[] = {0x01, 0x83, 0x01};
+    const uint8_t fc1[] = {0x01, 0x81, 0x01};
+    const uint8_t fc4[] = {0x01, 0x84, 0x01};
+    TEST_ASSERT_EQUAL_HEX16(0xF080U, WavinFrame::crc16(fc3, sizeof fc3));
+    TEST_ASSERT_EQUAL_HEX16(0x9081U, WavinFrame::crc16(fc1, sizeof fc1));
+    TEST_ASSERT_EQUAL_HEX16(0xC082U, WavinFrame::crc16(fc4, sizeof fc4));
+}
+
+void test_wavin_frame_builds_read_and_write_requests(void) {
+    uint8_t frame[WavinFrame::kMaxWriteRequestSize] = {};
+    // Read element 0's air temperature: category 1, index 4, page 0.
+    TEST_ASSERT_EQUAL_UINT(8U, WavinFrame::buildRead(1U, 1U, 4U, 0U, 1U, frame, sizeof frame));
+    const uint8_t expectedRead[] = {0x01, 0x43, 0x01, 0x04, 0x00, 0x01, 0xC5, 0xF8};
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expectedRead, frame, sizeof expectedRead);
+
+    // Write 21.0 C (210) to channel 3's manual setpoint: category 2, index 0, page 3.
+    const uint16_t value = 210U;
+    TEST_ASSERT_EQUAL_UINT(10U, WavinFrame::buildWrite(1U, 2U, 0U, 3U, &value, 1U, frame, sizeof frame));
+    const uint8_t expectedWrite[] = {0x01, 0x44, 0x02, 0x00, 0x03, 0x01, 0x00, 0xD2, 0x55, 0xF8};
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expectedWrite, frame, sizeof expectedWrite);
+
+    // Counts the frame cannot carry, and buffers that are too small.
+    TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildRead(1U, 1U, 4U, 0U, 0U, frame, sizeof frame));
+    TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildRead(1U, 1U, 4U, 0U, WavinFrame::kMaxRegisters + 1U,
+                                                     frame, sizeof frame));
+    TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildRead(1U, 1U, 4U, 0U, 1U, frame, 7U));
+    const uint16_t five[5] = {};
+    TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildWrite(1U, 2U, 0U, 3U, five, 5U, frame, sizeof frame));
+    TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildWrite(1U, 2U, 0U, 3U, &value, 1U, frame, 9U));
+}
+
+void test_wavin_frame_scans_replies_and_exceptions(void) {
+    using WavinFrame::ScanStatus;
+    uint16_t words[4] = {};
+
+    const uint8_t reply[] = {0x01, 0x43, 0x04, 0x00, 0xD2, 0x01, 0x2C, 0x54, 0x87};
+    for (size_t partial = 1U; partial < sizeof reply; ++partial) {
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete),
+                              static_cast<int>(WavinFrame::scanResponse(reply, partial, 1U, 0x43U, 2U,
+                                                                        words, 4U).status));
+    }
+    WavinFrame::ScanResult scan = WavinFrame::scanResponse(reply, sizeof reply, 1U, 0x43U, 2U, words, 4U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(scan.status));
+    TEST_ASSERT_EQUAL_UINT(sizeof reply, scan.frameLength);
+    TEST_ASSERT_EQUAL_UINT8(2U, scan.wordCount);
+    TEST_ASSERT_EQUAL_UINT16(210U, words[0]);
+    TEST_ASSERT_EQUAL_UINT16(300U, words[1]);
+
+    // A reply with more words than requested is not ours (a second master's
+    // traffic); one with fewer is what the controller answers on some pages.
+    scan = WavinFrame::scanResponse(reply, sizeof reply, 1U, 0x43U, 1U, words, 4U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip), static_cast<int>(scan.status));
+    TEST_ASSERT_FALSE(scan.crcMismatch);
+    words[0] = words[1] = 0U;
+    scan = WavinFrame::scanResponse(reply, sizeof reply, 1U, 0x43U, 4U, words, 4U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(scan.status));
+    TEST_ASSERT_EQUAL_UINT8(2U, scan.wordCount);
+    TEST_ASSERT_EQUAL_UINT16(210U, words[0]);
+    TEST_ASSERT_EQUAL_UINT16(300U, words[1]);
+    // Writes accept any word count.
+    uint8_t writeReply[] = {0x01, 0x44, 0x02, 0x00, 0xD2, 0x00, 0x00};
+    const uint16_t writeCrc = WavinFrame::crc16(writeReply, 5U);
+    writeReply[5] = static_cast<uint8_t>(writeCrc & 0xFFU);
+    writeReply[6] = static_cast<uint8_t>(writeCrc >> 8U);
+    scan = WavinFrame::scanResponse(writeReply, sizeof writeReply, 1U, 0x44U, 0U, words, 4U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(scan.status));
+    TEST_ASSERT_EQUAL_UINT(sizeof writeReply, scan.frameLength);
+
+    // Corrupted CRC.
+    uint8_t corrupted[sizeof reply];
+    std::memcpy(corrupted, reply, sizeof reply);
+    corrupted[4] ^= 0x01U;
+    scan = WavinFrame::scanResponse(corrupted, sizeof corrupted, 1U, 0x43U, 2U, words, 4U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip), static_cast<int>(scan.status));
+    TEST_ASSERT_TRUE(scan.crcMismatch);
+
+    // Other slaves and other functions are skipped byte by byte.
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip),
+                          static_cast<int>(WavinFrame::scanResponse(reply, sizeof reply, 2U, 0x43U, 2U,
+                                                                    words, 4U).status));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip),
+                          static_cast<int>(WavinFrame::scanResponse(reply, sizeof reply, 1U, 0x44U, 0U,
+                                                                    words, 4U).status));
+
+    // Exception reply from the controller.
+    const uint8_t exception[] = {0x01, 0xC3, 0x02, 0x00, 0x00};
+    uint8_t exceptionFrame[sizeof exception];
+    std::memcpy(exceptionFrame, exception, sizeof exception);
+    const uint16_t crc = WavinFrame::crc16(exceptionFrame, 3U);
+    exceptionFrame[3] = static_cast<uint8_t>(crc & 0xFFU);
+    exceptionFrame[4] = static_cast<uint8_t>(crc >> 8U);
+    scan = WavinFrame::scanResponse(exceptionFrame, sizeof exceptionFrame, 1U, 0x43U, 2U, words, 4U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Exception), static_cast<int>(scan.status));
+    TEST_ASSERT_EQUAL_UINT8(0x02U, scan.exceptionCode);
+
+    // Our reply after another master's request to the same slave: the request
+    // (byte count taken from its category) fails its CRC as a reply, is
+    // recognised by its own CRC and skipped whole, without counting as a
+    // corrupted reply.
+    uint8_t stream[8U + sizeof reply];
+    WavinFrame::buildRead(1U, 0x02U, 0x00U, 0x05U, 0x0BU, stream, 8U);
+    std::memcpy(stream + 8U, reply, sizeof reply);
+    scan = WavinFrame::scanResponse(stream, sizeof stream, 1U, 0x43U, 2U, words, 4U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip), static_cast<int>(scan.status));
+    TEST_ASSERT_EQUAL_UINT(8U, scan.frameLength);
+    TEST_ASSERT_FALSE(scan.crcMismatch);
+    scan = WavinFrame::scanResponse(stream + 8U, sizeof stream - 8U, 1U, 0x43U, 2U, words, 4U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(scan.status));
+
+    // Until the whole request has arrived, its failed reply CRC is not yet a
+    // corrupted reply; once no more bytes can come, it is.
+    scan = WavinFrame::scanResponse(stream, 7U, 1U, 0x43U, 2U, words, 4U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(scan.status));
+    scan = WavinFrame::scanResponse(stream, 7U, 1U, 0x43U, 2U, words, 4U, true);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip), static_cast<int>(scan.status));
+    TEST_ASSERT_TRUE(scan.crcMismatch);
+    // The same for a write request from the display (10 bytes for one word).
+    uint8_t writeRequest[WavinFrame::kMaxWriteRequestSize];
+    const uint16_t setpoint = 215U;
+    TEST_ASSERT_EQUAL_UINT(10U, WavinFrame::buildWrite(1U, 0x02U, 0x00U, 0x05U, &setpoint, 1U,
+                                                       writeRequest, sizeof writeRequest));
+    scan = WavinFrame::scanResponse(writeRequest, 9U, 1U, 0x44U, 0U, words, 4U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(scan.status));
+    scan = WavinFrame::scanResponse(writeRequest, 10U, 1U, 0x44U, 0U, words, 4U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip), static_cast<int>(scan.status));
+    TEST_ASSERT_EQUAL_UINT(10U, scan.frameLength);
+    TEST_ASSERT_FALSE(scan.crcMismatch);
+}
+
+void test_wavin_frame_locates_reply_among_other_traffic(void) {
+    using WavinFrame::ScanStatus;
+    uint16_t words[4] = {};
+    const uint8_t reply[] = {0x01, 0x43, 0x04, 0x00, 0xD2, 0x01, 0x2C, 0x54, 0x87};
+
+    // The reply alone, byte by byte.
+    for (size_t partial = 1U; partial < sizeof reply; ++partial) {
+        const WavinFrame::LocateResult located =
+            WavinFrame::locateResponse(reply, partial, 1U, 0x43U, 2U, words, 4U);
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(located.status));
+        TEST_ASSERT_EQUAL_UINT(0U, located.dropCount);
+        TEST_ASSERT_FALSE(located.crcMismatch);
+    }
+    WavinFrame::LocateResult located =
+        WavinFrame::locateResponse(reply, sizeof reply, 1U, 0x43U, 2U, words, 4U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(located.status));
+    TEST_ASSERT_EQUAL_UINT8(2U, located.wordCount);
+    TEST_ASSERT_EQUAL_UINT16(210U, words[0]);
+
+    // Stale bytes at the head that claim the largest frame (22 registers,
+    // 44 data bytes) must not hide the write reply behind them: the reply is
+    // found, not timed out.
+    uint8_t writeReply[] = {0x01, 0x44, 0x02, 0x00, 0xD2, 0x00, 0x00};
+    const uint16_t writeCrc = WavinFrame::crc16(writeReply, 5U);
+    writeReply[5] = static_cast<uint8_t>(writeCrc & 0xFFU);
+    writeReply[6] = static_cast<uint8_t>(writeCrc >> 8U);
+    uint8_t stale[3U + sizeof writeReply] = {0x01, 0x44, 2U * WavinFrame::kMaxRegisters};
+    std::memcpy(stale + 3U, writeReply, sizeof writeReply);
+    located = WavinFrame::locateResponse(stale, 3U, 1U, 0x44U, 0U, nullptr, 0U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(located.status));
+    TEST_ASSERT_EQUAL_UINT(0U, located.dropCount);
+    located = WavinFrame::locateResponse(stale, sizeof stale, 1U, 0x44U, 0U, nullptr, 0U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(located.status));
+    TEST_ASSERT_FALSE(located.crcMismatch);
+
+    // The display's request to the same slave, then nothing: a timeout, not
+    // a CRC error, and the request's bytes are dropped once recognised.
+    uint8_t request[8];
+    WavinFrame::buildRead(1U, 0x02U, 0x00U, 0x05U, 0x0BU, request, sizeof request);
+    located = WavinFrame::locateResponse(request, 7U, 1U, 0x43U, 1U, words, 4U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(located.status));
+    TEST_ASSERT_FALSE(located.crcMismatch);
+    located = WavinFrame::locateResponse(request, sizeof request, 1U, 0x43U, 1U, words, 4U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(located.status));
+    TEST_ASSERT_EQUAL_UINT(sizeof request, located.dropCount);
+    TEST_ASSERT_FALSE(located.crcMismatch);
+    located = WavinFrame::locateResponse(request, sizeof request, 1U, 0x43U, 1U, words, 4U, true);
+    TEST_ASSERT_FALSE(located.crcMismatch);
+
+    // A reply of ours with a flipped bit is a CRC error, also when it arrived
+    // behind other traffic, and its bytes are dropped.
+    uint8_t corrupted[sizeof reply];
+    std::memcpy(corrupted, reply, sizeof reply);
+    corrupted[4] ^= 0x01U;
+    located = WavinFrame::locateResponse(corrupted, sizeof corrupted, 1U, 0x43U, 2U, words, 4U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(located.status));
+    TEST_ASSERT_TRUE(located.crcMismatch);
+    TEST_ASSERT_EQUAL_UINT(sizeof corrupted, located.dropCount);
+    uint8_t mixed[sizeof request + sizeof corrupted];
+    std::memcpy(mixed, request, sizeof request);
+    std::memcpy(mixed + sizeof request, corrupted, sizeof corrupted);
+    located = WavinFrame::locateResponse(mixed, sizeof mixed, 1U, 0x43U, 2U, words, 4U, true);
+    TEST_ASSERT_TRUE(located.crcMismatch);
+
+    // A short corrupted reply (one register, 7 bytes) could be the start of a
+    // request until the line goes quiet.
+    uint8_t shortReply[] = {0x01, 0x43, 0x02, 0x00, 0xD2, 0x00, 0x00};
+    const uint16_t shortCrc = WavinFrame::crc16(shortReply, 5U);
+    shortReply[5] = static_cast<uint8_t>(shortCrc & 0xFFU);
+    shortReply[6] = static_cast<uint8_t>((shortCrc >> 8U) ^ 0x01U);
+    located = WavinFrame::locateResponse(shortReply, sizeof shortReply, 1U, 0x43U, 1U, words, 4U);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(located.status));
+    TEST_ASSERT_FALSE(located.crcMismatch);
+    TEST_ASSERT_EQUAL_UINT(0U, located.dropCount);
+    located = WavinFrame::locateResponse(shortReply, sizeof shortReply, 1U, 0x43U, 1U, words, 4U, true);
+    TEST_ASSERT_TRUE(located.crcMismatch);
+}
+
+void test_modbus_configuration_parses_wavin_datapoints(void) {
+    ConfigurationRoot parsed;
+    ModbusConfigDocument::ValidationError error;
+    std::vector<ModbusConfigDocument::ParseNotice> notices;
+    const auto parse = [&](const std::string &json) {
+        return ModbusConfigDocument::parse(json.c_str(), json.size(), parsed, &error, &notices);
+    };
+
+    TEST_ASSERT_TRUE(parse(modbusConfigurationWithScale(0x43, "0.1", "int16", 1,
+                                                        R"(,"category":1,"page":3)")));
+    const ModbusDatapoint &read = parsed.devices[0].datapoints[0];
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(WAVIN_READ), static_cast<int>(read.function));
+    TEST_ASSERT_EQUAL_UINT16(10U, read.address);
+    TEST_ASSERT_EQUAL_UINT8(1U, read.category);
+    TEST_ASSERT_EQUAL_UINT8(3U, read.page);
+    TEST_ASSERT_TRUE(isReadOnlyFunction(read.function));
+    TEST_ASSERT_TRUE(notices.empty());
+
+    TEST_ASSERT_TRUE(parse(modbusConfigurationWithScale(0x44, "0.1", "uint16", 2,
+                                                        R"(,"category":2,"page":0)")));
+    const ModbusDatapoint &write = parsed.devices[0].datapoints[0];
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(WAVIN_WRITE), static_cast<int>(write.function));
+    TEST_ASSERT_EQUAL_UINT8(1U, write.numOfRegisters);
+    TEST_ASSERT_TRUE(isWriteFunction(write.function));
+    TEST_ASSERT_TRUE(ModbusMqttWriteCore::isWritableHoldingFunction(write.function));
+
+    // Wavin writes carry one 16-bit register, like FC6.
+    TEST_ASSERT_FALSE(parse(modbusConfigurationWithScale(0x44, "1", "int32", 2,
+                                                         R"(,"category":2,"page":0)")));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusConfigDocument::ValidationReason::InvalidRegisterCount),
+                          static_cast<int>(error.reason));
+
+    // Reads are limited to what one reply carries.
+    TEST_ASSERT_TRUE(parse(modbusConfigurationWithScale(0x43, "1", "uint16", 100,
+                                                        R"(,"category":2,"page":0)")));
+    TEST_ASSERT_EQUAL_UINT8(WavinFrame::kMaxRegisters, parsed.devices[0].datapoints[0].numOfRegisters);
+    TEST_ASSERT_EQUAL_UINT(1U, notices.size());
+
+    // Index, category and page are one byte each on the wire.
+    const char *outOfRange[] = {R"(,"category":256,"page":0)", R"(,"category":1,"page":-1)"};
+    for (const char *fields : outOfRange) {
+        TEST_ASSERT_FALSE(parse(modbusConfigurationWithScale(0x43, "1", "uint16", 1, fields)));
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusConfigDocument::ValidationReason::InvalidWavinAddress),
+                              static_cast<int>(error.reason));
+    }
+    std::string wideIndex = modbusConfigurationWithScale(0x43, "1", "uint16", 1, R"(,"category":1,"page":0)");
+    wideIndex.replace(wideIndex.find("\"address\":10"), 12, "\"address\":300");
+    TEST_ASSERT_FALSE(parse(wideIndex));
+    TEST_ASSERT_EQUAL_STRING("invalid_wavin_address",
+                             ModbusConfigDocument::reasonToString(error.reason));
+
+    // A location that is not an integer is rejected, not read as 0.
+    const char *notIntegers[] = {R"(,"category":"2","page":0)", R"(,"category":1,"page":1.5)",
+                                 R"(,"category":true,"page":0)"};
+    for (const char *fields : notIntegers) {
+        TEST_ASSERT_FALSE(parse(modbusConfigurationWithScale(0x43, "1", "uint16", 1, fields)));
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusConfigDocument::ValidationReason::InvalidWavinAddress),
+                              static_cast<int>(error.reason));
+    }
+    // Absent category and page mean 0.
+    TEST_ASSERT_TRUE(parse(modbusConfigurationWithScale(0x43, "1", "uint16", 1, "")));
+    TEST_ASSERT_EQUAL_UINT8(0U, parsed.devices[0].datapoints[0].category);
+    TEST_ASSERT_EQUAL_UINT8(0U, parsed.devices[0].datapoints[0].page);
+
+    // Standard functions ignore the Wavin fields.
+    TEST_ASSERT_TRUE(parse(modbusConfigurationWithScale(3, "1", "uint16", 1, R"(,"category":999)")));
+    TEST_ASSERT_EQUAL_UINT8(0U, parsed.devices[0].datapoints[0].category);
+}
+
+void test_modbus_mqtt_wavin_write_carries_register_location(void) {
+    ModbusMqttWriteCore::CommandContext context;
+    context.slaveId = 1U;
+    context.function = WAVIN_WRITE;
+    context.address = 0U;
+    context.category = 2U;
+    context.page = 5U;
+    context.scale = 0.1;
+    context.dataType = INT16;
+
+    std::vector<ModbusMqttWriteCore::WriteCommand> submissions;
+    const auto handler = ModbusMqttWriteCore::buildMessageHandler(
+        context,
+        [&](const ModbusMqttWriteCore::WriteCommand &command) { submissions.push_back(command); },
+        nullptr);
+    handler("root/wavin/setpoint/set", "21.5");
+    TEST_ASSERT_EQUAL_UINT(1U, submissions.size());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(WAVIN_WRITE), static_cast<int>(submissions[0].function));
+    TEST_ASSERT_EQUAL_UINT8(2U, submissions[0].category);
+    TEST_ASSERT_EQUAL_UINT8(5U, submissions[0].page);
+    TEST_ASSERT_EQUAL_UINT8(1U, submissions[0].wordCount);
+    TEST_ASSERT_EQUAL_UINT16(215U, submissions[0].words[0]);
+
+    // Like FC6, a Wavin write never encodes a multi-register type.
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusMqttWriteCore::RejectionReason::UnsupportedDataType),
+                          static_cast<int>(ModbusMqttWriteCore::convertPayload(
+                              WAVIN_WRITE, "1", 1.0, INT32, ModbusWordOrder::Big).rejection));
+}
+
 int main(int /*argc*/, char ** /*argv*/) {
     UNITY_BEGIN();
     RUN_TEST(test_single_chunk_returns_full_buffer);
@@ -4044,5 +4352,11 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_ota_progress_publisher_coalesces_and_applies_queue_heap_guards);
     RUN_TEST(test_ota_admission_gate_waits_for_existing_ui_lease_and_restores_selectively);
     RUN_TEST(test_ota_ui_filesystem_gate_prevents_access_until_safe_remount);
+    RUN_TEST(test_wavin_frame_crc_matches_controller_replies);
+    RUN_TEST(test_wavin_frame_builds_read_and_write_requests);
+    RUN_TEST(test_wavin_frame_scans_replies_and_exceptions);
+    RUN_TEST(test_wavin_frame_locates_reply_among_other_traffic);
+    RUN_TEST(test_modbus_configuration_parses_wavin_datapoints);
+    RUN_TEST(test_modbus_mqtt_wavin_write_carries_register_location);
     return UNITY_END();
 }

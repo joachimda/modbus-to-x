@@ -2,8 +2,11 @@ import {API, safeJson, STATIC_FILES} from "app";
 import {parseConfiguredScale, validateDatapointScale} from "./modbus_scale.mjs";
 import {
     SHAPE_MESSAGES,
+    WAVIN_READ,
+    WAVIN_WRITE,
     coerceRegisterCount,
     isMultiWordType,
+    isWavinFunction,
     nextAddress,
     normalizeDataType,
     normalizeWordOrder,
@@ -24,7 +27,8 @@ let selection = { kind: "bus", deviceId: null, datapointId: null };
 * * */
 const SERIAL_FORMATS = new Set(["7N1","7N2","7O1","7O2","7E1","7E2","8N1","8N2","8E1","8E2","8O1","8O2"]);
 const REGISTER_SLICES = new Set(["full","low_byte","high_byte"]);
-const WRITE_FUNCTIONS = new Set([5, 6, 16]);
+const WRITE_FUNCTIONS = new Set([5, 6, 16, WAVIN_WRITE]);
+const FUNCTIONS = new Set([1, 2, 3, 4, 5, 6, 16, WAVIN_READ, WAVIN_WRITE]);
 function toSerialParts(fmt) {
     const def = { data_bits: 8, parity: "N", stop_bits: 1 };
     if (!fmt || typeof fmt !== "string" || fmt.length < 3) return def;
@@ -42,6 +46,15 @@ function toSerialFormat(db, p, sb) {
     const pr = (p || "N").toUpperCase();
     const fmt = `${(dbn===7||dbn===8)?dbn:8}${["N","E","O"].includes(pr)?pr:"N"}${(sbn===1||sbn===2)?sbn:1}`;
     return SERIAL_FORMATS.has(fmt) ? fmt : "8N1";
+}
+// Wavin category/page: integers as entered (validateDatapointShape rejects
+// those outside 0-255 so the user sees why); anything else becomes 0.
+function toByteField(value) {
+    const n = Number(value ?? 0);
+    return Number.isInteger(n) ? n : 0;
+}
+function isByteField(value) {
+    return Number.isInteger(value) && value >= 0 && value <= 255;
 }
 function schemaToUi(json) {
     // Expect current schema shape: { version, bus, devices }
@@ -81,6 +94,8 @@ function schemaToUi(json) {
                 scale: parseConfiguredScale(p.scale),
                 unit: (typeof p.unit === "string") ? p.unit : "",
                 topic: (typeof p.topic === "string") ? p.topic.trim() : "",
+                category: toByteField(p.category),
+                page: toByteField(p.page),
                 poll_secs: (Number.isFinite(Number(p?.poll_interval))
                     ? Number(p.poll_interval)
                     : (Number.isFinite(Number(p?.poll_interval_ms)) ? Math.round(Number(p.poll_interval_ms)/1000) : 0))
@@ -138,6 +153,11 @@ function uiToSchema(uiModel) {
                 if (isMultiWordType(type) && order !== "big") {
                     dp.wordOrder = order;
                 }
+                // Wavin functions address address as a register index within category/page.
+                if (isWavinFunction(func)) {
+                    dp.category = toByteField(p.category);
+                    dp.page = toByteField(p.page);
+                }
                 if (topic.length) {
                     dp.topic = topic;
                 }
@@ -191,8 +211,8 @@ function validateSchemaConfig(cfg) {
             if (p.registerSlice != null && !REGISTER_SLICES.has(String(p.registerSlice))) {
                 errors.push(`Datapoint ${p.id}: registerSlice invalid`);
             }
-            if (!Number.isInteger(p.function) || (p.function < 1) || (p.function > 6 && p.function !== 16)) {
-                errors.push(`Datapoint ${p.id}: function 1-6 or 16`);
+            if (!Number.isInteger(p.function) || !FUNCTIONS.has(p.function)) {
+                errors.push(`Datapoint ${p.id}: function 1-6, 16, 67 (Wavin read) or 68 (Wavin write)`);
             }
             if (p.topic != null && typeof p.topic !== "string") {
                 errors.push(`Datapoint ${p.id}: topic must be a string`);
@@ -372,7 +392,7 @@ function buildTree() {
             dpNode.style.marginLeft = "2rem";
             dpNode.innerHTML =
                 `<div class="mono">${p.name}</div>
-                 <div class="meta">${p.id} • F${p.func} @ 0x${numberToHex(p.address)} | ${p.address}</div>`;
+                 <div class="meta">${p.id} • F${p.func} @ ${isWavinFunction(p.func) ? `cat ${p.category ?? 0} / idx ${p.address} / page ${p.page ?? 0}` : `0x${numberToHex(p.address)} | ${p.address}`}</div>`;
             dpNode.onclick = () => {
                 selection = {
                     kind:"dp", deviceId:d.id, datapointId:p.id
@@ -594,6 +614,10 @@ function showDatapointEditor() {
     addrInput.value = addressInputValue(datapoint.address, currentAddressFormat);
     datapoint.addrFormat = currentAddressFormat;
     $("#dp-slice").value = datapoint.slice || "full";
+    const categoryInput = $("#dp-category");
+    const pageInput = $("#dp-page");
+    if (categoryInput) categoryInput.value = datapoint.category ?? 0;
+    if (pageInput) pageInput.value = datapoint.page ?? 0;
     setAddressPlaceholder();
     $("#dp-len").value = datapoint.length ?? 1;
     $("#dp-type").value = datapoint.type || "uint16";
@@ -672,15 +696,26 @@ function showDatapointEditor() {
         if (input) input.style.display = isWrite ? "" : "none";
         if (label) label.style.display = "none"; // keep label hidden; placeholder explains usage
     };
+    // Category and page only apply to Wavin functions (0x43/0x44).
+    const applyWavinFieldsState = () => {
+        const wavin = isWavinFunction($("#dp-func").value);
+        document.querySelectorAll(".dp-wavin-field").forEach(el => {
+            el.style.display = wavin ? "" : "none";
+        });
+        const addrLabel = $("#dp-addr-label");
+        if (addrLabel) addrLabel.textContent = wavin ? "Index" : "Address";
+    };
     const onFunctionChange = () => {
         datapoint.func = Number($("#dp-func").value) || 3;
         updateTestValueVisibility();
         applyWriteFieldsState();
         applyTypeFieldsState();
+        applyWavinFieldsState();
     };
     updateTestValueVisibility();
     applyWriteFieldsState();
     applyTypeFieldsState();
+    applyWavinFieldsState();
     $("#dp-func").onchange = onFunctionChange;
 
     const updateAddressField = (num) => {
@@ -759,18 +794,27 @@ function showDatapointEditor() {
         if (Number.isInteger(slaveId) && slaveId > 0) {
             q.set("slave", String(slaveId));
         }
-        if ((func === 5 || func === 6 || func === 16) && writeVal.length) {
+        if (isWavinFunction(func)) {
+            const category = toByteField(datapoint.category);
+            const page = toByteField(datapoint.page);
+            if (!isByteField(addr) || !isByteField(category) || !isByteField(page)) {
+                return alert("Wavin index, category and page must be 0-255");
+            }
+            q.set("category", String(category));
+            q.set("page", String(page));
+        }
+        const isWrite = WRITE_FUNCTIONS.has(func);
+        if (isWrite && writeVal.length) {
             q.set('value', writeVal);
         }
 
         const btn = $("#btn-dp-test-read");
         const resEl = $("#dp-test-result");
         btn.disabled = true;
-        resEl.textContent = (func === 5 || func === 6 || func === 16) ? "Writing…" : "Reading…";
+        resEl.textContent = isWrite ? "Writing…" : "Reading…";
         try {
             const r = await safeJson(`${API.POST_MODBUS_EXECUTE}?${q.toString()}`, { method: 'POST' });
             const raw = r?.result?.raw;
-            const isWrite = func === 5 || func === 6 || func === 16;
             let value = (r?.result && (r.result.value ?? r.result?.raw?.[0])) ?? r.value ?? '(n/a)';
             if (r?.result?.valueError) {
                 value = `${r.result.valueError} (needs ${r.result.width} registers)`;
@@ -845,6 +889,16 @@ function showDatapointEditor() {
     $("#dp-slice").onchange = () => {
         datapoint.slice = normalizeRegisterSlice($("#dp-slice").value);
     };
+    if (categoryInput) {
+        categoryInput.oninput = () => {
+            datapoint.category = toByteField(categoryInput.value);
+        };
+    }
+    if (pageInput) {
+        pageInput.oninput = () => {
+            datapoint.page = toByteField(pageInput.value);
+        };
+    }
     $("#dp-len").oninput = () => {
         const v = Number($("#dp-len").value);
         if (Number.isInteger(v) && v > 0) {

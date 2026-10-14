@@ -7,6 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include "modbus/ModbusFunctionUtils.h"
+
 namespace ModbusMqttWriteCore {
 namespace {
 
@@ -327,7 +329,7 @@ ConversionResult convertPayloadWithBoundary(const ModbusFunctionType function,
 
     if (!isWritableHoldingFunction(function)) return reject(RejectionReason::InvalidSyntax);
     if (!ModbusValueCodec::isNumeric(dataType)
-        || (function == WRITE_HOLDING && ModbusValueCodec::wordWidth(dataType) != 1U)) {
+        || (isSingleRegisterWrite(function) && ModbusValueCodec::wordWidth(dataType) != 1U)) {
         return reject(RejectionReason::UnsupportedDataType);
     }
 
@@ -391,7 +393,7 @@ ConversionResult convertPayloadWithBoundary(const ModbusFunctionType function,
 }  // namespace
 
 bool isWritableHoldingFunction(const ModbusFunctionType function) {
-    return function == WRITE_HOLDING || function == WRITE_MULTIPLE_HOLDING;
+    return function == WRITE_HOLDING || function == WRITE_MULTIPLE_HOLDING || function == WAVIN_WRITE;
 }
 
 bool isValidWritableScale(const double scale) {
@@ -491,6 +493,8 @@ MessageHandler buildMessageHandler(const CommandContext &context,
             command.slaveId = context.slaveId;
             command.function = context.function;
             command.address = context.address;
+            command.category = context.category;
+            command.page = context.page;
             command.registerCount = context.function == WRITE_COIL
                                         ? context.registerCount
                                         : conversion.wordCount;

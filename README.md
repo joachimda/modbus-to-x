@@ -158,6 +158,58 @@ See the [HTTP API request contract](HTTP_API.md) for the route and method matrix
   }
   ```
 
+#### Wavin AHC 9000
+The Wavin AHC 9000 floor-heating controller (also sold as Jablotron AC-116) uses Modbus RTU framing but answers only its own function codes, so standard reads return `IllegalFunction`. Use function `67` (0x43, read) and `68` (0x44, write). These address a register by `category`, `page` and a register index, which goes in `address`, each 0-255. Reads cover up to 22 registers; writes set one 16-bit register and follow the FC6 rules.
+
+- Bus: 38400 baud, `8N1`. The controller always answers slave address 1.
+- Commonly used registers, from Wavin's Modbus description for the AHC 9000 (14-08-2013, [copy in jascdk/wavin_ahc9000_advanced_mqtt](https://github.com/jascdk/wavin_ahc9000_advanced_mqtt/tree/main/Modbus%20Documentation)) and the community projects ([niklascp/Wavin-AHC-9000-mqtt](https://github.com/niklascp/Wavin-AHC-9000-mqtt), [spiff42/wavin-python](https://github.com/spiff42/wavin-python)), checked on an AHC 9000 with wireless thermostats. Thermostats (elements) and channels are numbered from 0; a channel's page is its output number minus one.
+
+  | Category | Page | Index | Value |
+  | --- | --- | --- | --- |
+  | 1 (elements) | element/thermostat number | 2 | Channel assignment, bitmask of the channels this thermostat drives |
+  | 1 (elements) | element/thermostat number | 4 | Air temperature, `int16` × 0.1 °C |
+  | 1 (elements) | element/thermostat number | 8 | Status; bit `0x8000` alive, `0x0800` lost, `0x0200` low battery, `0x0010` is a thermostat |
+  | 1 (elements) | element/thermostat number | 9 | RSSI: high byte at the thermostat, low byte at the controller; signed, 0 = -74 dBm, 0.5 dB per step |
+  | 1 (elements) | element/thermostat number | 10 | Battery in 10 % steps (9 = 90 %); 0 until the thermostat has reported |
+  | 1 (elements) | element/thermostat number | 11 | Primary channel (sync group) |
+  | 2 (packed data) | channel number | 0 | Manual setpoint, `int16` × 0.1 °C (writable) |
+  | 2 (packed data) | channel number | 1, 2 | Comfort and eco setpoints, `int16` × 0.1 °C |
+  | 2 (packed data) | channel number | 4 | Standby setpoint, `int16` × 0.1 °C (writable) |
+  | 2 (packed data) | channel number | 7 | Configuration; low 3 bits are the mode (0 manual, 1 permanent standby, 2 eco, 3 comfort, 4 party, 5 holiday) and bit `0x0008` enables the week schedule |
+  | 2 (packed data) | channel number | 8, 9 | Minimum and maximum setpoint the user can set on the thermostat, `int16` × 0.1 °C. The controller does not clamp 0x44 writes to this range |
+  | 2 (packed data) | channel number | 16 | Desired temperature the channel currently heats to, `int16` × 0.1 °C (read only) |
+  | 3 (channels) | channel number | 0 | Timer event; bit `0x0010` is set while the output is on, the low 4 bits are the current timer event (1 idle, 7 output on) |
+  | 3 (channels) | channel number | 1 | Actuator current in 0.54 mA units |
+  | 3 (channels) | channel number | 2 | Primary element **plus one** in the low 6 bits (`0x00C1` = element 0, 0 = no thermostat); `0x0400` means all thermostats lost; `0x0080`/`0x0040` store the party/holiday preference and `0x4000` means the channel syncs its parameters in the next frame |
+
+  ```json
+  {
+    "version": 1,
+    "bus": { "enabled": true, "baud": 38400, "serialFormat": "8N1" },
+    "devices": [
+      {
+        "name": "Wavin",
+        "slaveId": 1,
+        "mqttEnabled": true,
+        "homeassistantDiscoveryEnabled": true,
+        "dataPoints": [
+          { "id": "zone1_temp", "name": "Zone 1 temperature", "function": 67,
+            "category": 1, "page": 0, "address": 4, "numOfRegisters": 1,
+            "dataType": "int16", "scale": 0.1, "unit": "C", "poll_interval": 30 },
+          { "id": "zone1_setpoint", "name": "Zone 1 setpoint", "function": 67,
+            "category": 2, "page": 0, "address": 0, "numOfRegisters": 1,
+            "dataType": "int16", "scale": 0.1, "unit": "C", "poll_interval": 30 },
+          { "id": "zone1_setpoint_set", "name": "Zone 1 setpoint", "function": 68,
+            "category": 2, "page": 0, "address": 0, "numOfRegisters": 1,
+            "dataType": "int16", "scale": 0.1 }
+        ]
+      }
+    ]
+  }
+  ```
+- The clock (category 5, page 0: year, month, day, weekday with 0 = Monday, hour, minute, second) must be read or written as one 7-register page; single-register writes are not answered.
+- A wall display (DS-9000) may share the bus as a second master. Bytes that cannot be the reply to the outstanding request (another slave or function, more registers than requested, the display's own requests, or a bad CRC) are skipped while waiting, and a read that still times out or fails its CRC is retried once (`WAVIN_READ_ATTEMPTS`). Writes are never retried. A reply carrying fewer registers than requested is accepted; only the registers received are decoded.
+
 ### MQTT Publishing
 - Configure broker host, port, credentials, and optional root topic via the **Configure MQTT** page or by editing `/conf/mqtt.json`. The firmware automatically extracts hostnames from URLs and persists the MQTT password in NVS preferences.
 - When Modbus reads succeed, datapoint values are published to MQTT using either the exact per-datapoint topic override or the default pattern `<root>/<device>/<datapoint>` with slugified device and datapoint names.

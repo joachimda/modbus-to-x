@@ -206,8 +206,16 @@
                         <option value=5>5 (WRITE_COIL)</option>
                         <option value=6>6 (WRITE_HREG)</option>
                         <option value=16>16 (WRITE_MHREG)</option>
+                        <option value=67>67 (WAVIN_READ 0x43)</option>
+                        <option value=68>68 (WAVIN_WRITE 0x44)</option>
                     </select>
-                    <div>Address</div>
+                    <div class="dp-wavin-field">Category</div>
+                    <label class="dp-wavin-field" for="dp-category"></label>
+                    <input class="dp-wavin-field" id="dp-category" type="number" min="0" max="255" step="1" value="0" />
+                    <div class="dp-wavin-field">Page</div>
+                    <label class="dp-wavin-field" for="dp-page"></label>
+                    <input class="dp-wavin-field" id="dp-page" type="number" min="0" max="255" step="1" value="0" />
+                    <div id="dp-addr-label">Address</div>
                     <label for="dp-addr"></label>
                     <div class="addr-input" style="display:flex;align-items:center;gap:0.5rem;">
                         <input id="dp-addr" type="text" inputmode="text" placeholder="e.g. 16 or 0x10" style="flex:1 1 50%;min-width:10rem;" />

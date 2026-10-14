@@ -1616,7 +1616,25 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
     long len = sLen.toInt();
     const long slaveOverride = hasSlaveOverride ? sSlave.toInt() : 0;
     const bool slaveOverrideValid = slaveOverride > 0 && slaveOverride <= 247;
-    if (func <= 0 || addr < 0 || len <= 0) {
+    // addr and len are 16-bit on the wire; a larger value would wrap onto
+    // another register instead of being rejected (Wavin indexes above 255
+    // are answered with code 2 by the owner).
+    if (func <= 0 || addr < 0 || addr > 0xFFFFL || len <= 0 || len > 0xFFFFL) {
+        req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        return;
+    }
+
+    // Wavin functions (0x43/0x44) address addr as a register index within
+    // category/page. Both must be given to override the saved datapoint's;
+    // one without the other is a mistake, not a request to use the saved one.
+    String sCategory, sPage;
+    const bool hasCategory = getParam("category", sCategory);
+    const bool hasPage = getParam("page", sPage);
+    const bool hasWavinAddress = hasCategory && hasPage;
+    const long category = hasWavinAddress ? sCategory.toInt() : 0;
+    const long page = hasWavinAddress ? sPage.toInt() : 0;
+    if (hasCategory != hasPage
+        || (hasWavinAddress && (category < 0 || category > 255 || page < 0 || page > 255))) {
         req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
         return;
     }
@@ -1641,7 +1659,7 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
 
     const bool hasWriteVal = sValue.length() > 0;
 
-    if (func == 5 || func == 6) {
+    if (func == 5 || isSingleRegisterWriteCode(static_cast<int>(func))) {
         len = 1;  // single writes; FC16 writes the data type's register width
     }
 
@@ -1653,10 +1671,13 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
     command.function = static_cast<int>(func);
     command.address = static_cast<uint16_t>(addr);
     command.length = static_cast<uint16_t>(len);
+    command.category = static_cast<uint8_t>(category);
+    command.page = static_cast<uint8_t>(page);
+    command.hasWavinAddress = hasWavinAddress;
     command.writeText = sValue;
     command.hasWriteValue = hasWriteVal;
     if (!scheduleRuntimeJob(req,
-            [mb, command, devId, dpId, sValue, func, addr, len]
+            [mb, command, devId, dpId, sValue, func, addr, len, hasWavinAddress, category, page]
             (RuntimeResponse &runtimeResponse) {
                 const ModbusCommandResult result = mb->executeCommand(command);
                 JsonDocument response;
@@ -1673,6 +1694,10 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
                 response["request"]["func_code"] = func;
                 response["request"]["addr"] = addr;
                 response["request"]["len"] = len;
+                if (hasWavinAddress) {
+                    response["request"]["category"] = category;
+                    response["request"]["page"] = page;
+                }
                 if (sValue.length()) response["request"]["value"] = sValue;
                 if (result.writeRejection != ModbusMqttWriteCore::RejectionReason::None) {
                     const char *reason = ModbusMqttWriteCore::rejectionReasonToString(result.writeRejection);
@@ -1687,7 +1712,9 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
                     response["ok"] = false;
                     response["error"] = "unknown_datapoint";
                     response["message"] =
-                        "No saved datapoint matches devId/dpId; save the configuration before writing registers";
+                        isWavinFunctionCode(static_cast<int>(func)) && !hasWavinAddress
+                            ? "No saved datapoint matches devId/dpId; save the configuration or pass category and page"
+                            : "No saved datapoint matches devId/dpId; save the configuration before writing registers";
                     setRuntimeJsonResponse(runtimeResponse, response, HttpResponseCodes::BAD_REQUEST_HTTP);
                     return;
                 }

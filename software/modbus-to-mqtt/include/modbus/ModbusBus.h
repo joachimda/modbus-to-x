@@ -49,6 +49,13 @@ public:
 
     void enableCapture(bool enable);
 
+    // Direction control for frames written to stream() directly rather than
+    // through ModbusMaster (non-standard protocols such as Wavin's). Call
+    // beginTransmit() before writing and endTransmit() once the frame is out.
+    void beginTransmit();
+
+    void endTransmit();
+
 private:
     void initializeWiring(const Bus &busConfig);
 

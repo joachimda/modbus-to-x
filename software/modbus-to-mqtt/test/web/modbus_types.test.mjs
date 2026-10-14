@@ -4,8 +4,11 @@ import assert from 'node:assert/strict';
 import {
     WORD_WIDTH,
     SHAPE_MESSAGES,
+    WAVIN_MAX_REGISTERS,
     coerceRegisterCount,
     isMultiWordType,
+    isSingleRegisterWrite,
+    isWavinFunction,
     nextAddress,
     normalizeDataType,
     normalizeWordOrder,
@@ -101,4 +104,40 @@ test('the next address of a coil or discrete datapoint ignores the data type', (
     assert.equal(nextAddress(5, 10, 'uint32', 1), 11);
     assert.equal(nextAddress('5', 10, 'int64', 1), 11);
     assert.equal(nextAddress(1, 10, 'float32', undefined), 11);
+});
+
+test('Wavin functions follow the FC3/FC6 register rules', () => {
+    assert.equal(isWavinFunction(67), true);
+    assert.equal(isWavinFunction('68'), true);
+    assert.equal(isWavinFunction(3), false);
+    assert.deepEqual(coerceRegisterCount(67, 'int32', 1), { length: 2, changed: true });
+    assert.deepEqual(coerceRegisterCount(68, 'int16', 3), { length: 1, changed: true });
+    assert.deepEqual(validateDatapointShape({ function: 68, dataType: 'int32', numOfRegisters: 2, address: 0 }),
+        ['fc6_multiword']);
+    assert.deepEqual(validateDatapointShape({ function: 67, dataType: 'int64', numOfRegisters: 2, address: 4 }),
+        ['length_below_width']);
+});
+
+test('Wavin datapoints need a one-byte index, category and page', () => {
+    const point = { function: 67, dataType: 'int16', numOfRegisters: 1, address: 4, category: 1, page: 3 };
+    assert.deepEqual(validateDatapointShape(point), []);
+    assert.deepEqual(validateDatapointShape({ ...point, category: undefined, page: undefined }), []);
+    assert.deepEqual(validateDatapointShape({ ...point, address: 256 }), ['wavin_location_invalid']);
+    assert.deepEqual(validateDatapointShape({ ...point, category: 300 }), ['wavin_location_invalid']);
+    assert.deepEqual(validateDatapointShape({ ...point, page: -1 }), ['wavin_location_invalid']);
+    assert.deepEqual(validateDatapointShape({ ...point, numOfRegisters: WAVIN_MAX_REGISTERS + 1 }),
+        ['wavin_length_invalid']);
+    // Standard functions keep their 16-bit addresses and ignore the fields.
+    assert.deepEqual(validateDatapointShape({ function: 3, dataType: 'int16', numOfRegisters: 1, address: 4000, category: 999 }), []);
+    for (const code of ['wavin_location_invalid', 'wavin_length_invalid']) {
+        assert.equal(typeof SHAPE_MESSAGES[code], 'string');
+    }
+});
+
+test('single-register writes are FC6 and Wavin 0x44', () => {
+    assert.equal(isSingleRegisterWrite(6), true);
+    assert.equal(isSingleRegisterWrite('68'), true);
+    assert.equal(isSingleRegisterWrite(16), false);
+    assert.equal(isSingleRegisterWrite(5), false);
+    assert.equal(isSingleRegisterWrite(67), false);
 });

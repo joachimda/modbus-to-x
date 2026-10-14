@@ -55,6 +55,8 @@ MqttBridgePlan ModbusMqttBridge::buildBridgePlan(const ConfigurationRoot &root,
             context.slaveId = slaveId;
             context.function = function;
             context.address = address;
+            context.category = datapoint.category;
+            context.page = datapoint.page;
             context.registerCount = registerCount;
             context.scale = scale;
             context.dataType = datapoint.dataType;
@@ -70,6 +72,9 @@ MqttBridgePlan ModbusMqttBridge::buildBridgePlan(const ConfigurationRoot &root,
                     request.hasSlaveOverride = true;
                     request.function = static_cast<int>(command.function);
                     request.address = command.address;
+                    request.category = command.category;
+                    request.page = command.page;
+                    request.hasWavinAddress = isWavinFunction(command.function);
                     request.length = command.registerCount;
                     request.writeValue = command.coilValue ? 1U : 0U;
                     request.writeWords = command.words;
@@ -324,7 +329,9 @@ void ModbusMqttBridge::publishHomeAssistantDiscovery(ModbusDevice &device,
             discoveryTopic = String("homeassistant/sensor/") + deviceSegment + "/" + datapointSegment + "/config";
             document["state_topic"] = datapointTopic;
             if (datapoint.unit.length()) document["unit_of_measurement"] = datapoint.unit;
-            if (datapoint.function == READ_HOLDING) document["state_class"] = "measurement";
+            if (datapoint.function == READ_HOLDING || datapoint.function == WAVIN_READ) {
+                document["state_class"] = "measurement";
+            }
         } else if (datapoint.function == WRITE_COIL) {
             discoveryTopic = String("homeassistant/switch/") + deviceSegment + "/" + datapointSegment + "/config";
             document["command_topic"] = ModbusTopicBuilder::commandTopicForBase(datapointTopic);

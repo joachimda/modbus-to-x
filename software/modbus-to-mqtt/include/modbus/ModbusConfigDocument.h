@@ -15,6 +15,9 @@ enum class ValidationReason : uint8_t {
     InvalidScale,
     // FC6 (write single register) combined with a 32-bit or 64-bit data type.
     InvalidRegisterCount,
+    // A Wavin function (0x43/0x44) with an index, category or page outside
+    // 0..255.
+    InvalidWavinAddress,
 };
 
 struct ValidationError {

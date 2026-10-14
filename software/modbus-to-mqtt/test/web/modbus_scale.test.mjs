@@ -23,4 +23,6 @@ test('only writable holding registers require a finite non-zero scale', () => {
     assert.equal(validateDatapointScale(16, 0.5), null);
     assert.equal(validateDatapointScale(5, 0), null);
     assert.equal(validateDatapointScale(3, 0), null);
+    assert.equal(validateDatapointScale(68, 0), 'non_zero');
+    assert.equal(validateDatapointScale(67, 0), null);
 });

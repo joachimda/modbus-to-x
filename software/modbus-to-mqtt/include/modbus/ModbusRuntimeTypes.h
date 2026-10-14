@@ -7,6 +7,7 @@
 
 #include "modbus/ModbusMqttWriteCore.h"
 #include "modbus/ModbusValueCodec.h"
+#include "modbus/WavinFrame.h"
 #include "modbus/config_structs/ModbusDataType.h"
 #include "modbus/config_structs/ModbusDatapoint.h"
 #include "mqtt/MqttRuntimeTypes.h"
@@ -52,9 +53,15 @@ struct ModbusCommandRequest {
     int function{0};
     uint16_t address{0U};
     uint16_t length{0U};
+    // Wavin functions (0x43/0x44): address is the register index within
+    // category/page. Without hasWavinAddress they come from the saved
+    // datapoint the request names.
+    uint8_t category{0U};
+    uint8_t page{0U};
+    bool hasWavinAddress{false};
     // FC5: coil state, non-zero switches the coil on (MQTT command path).
     uint16_t writeValue{0U};
-    // FC6/FC16: register words already encoded for the datapoint's data type
+    // FC6/FC16/0x44: register words already encoded for the datapoint's data type
     // and word order (MQTT command path).
     std::array<uint16_t, ModbusValueCodec::kMaxWords> writeWords{};
     uint8_t writeCount{0U};
@@ -67,12 +74,20 @@ struct ModbusCommandRequest {
     uint32_t expectedGeneration{0U};
 };
 
+// Registers an executed command hands back; a Wavin read of the largest
+// allowed size must fit.
+constexpr size_t kMaxCommandResultWords = 32U;
+static_assert(kMaxCommandResultWords >= WavinFrame::kMaxRegisters,
+              "command result must hold a full Wavin read");
+
 struct ModbusCommandResult {
     ModbusOperationResult operation{ModbusOperationResult::Unavailable};
     uint8_t busStatus{0xE4U};
     uint8_t slaveId{0U};
+    // Registers received (reads) or written (register writes); a read longer
+    // than the array is cut to its size, and count says how many are valid.
     uint16_t count{0U};
-    std::array<uint16_t, 16U> words{};
+    std::array<uint16_t, kMaxCommandResultWords> words{};
     String rxDump;
     bool hasDatapointMetadata{false};
     ModbusDataType dataType{UINT16};

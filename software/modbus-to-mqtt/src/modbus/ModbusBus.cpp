@@ -110,6 +110,14 @@ void ModbusBus::enableCapture(const bool enable) {
     }
 }
 
+void ModbusBus::beginTransmit() {
+    onPreTransmission();
+}
+
+void ModbusBus::endTransmit() {
+    onPostTransmission();
+}
+
 void ModbusBus::initializeWiring(const Bus &busConfig) {
     pinMode(RS485_DERE_PIN, OUTPUT);
     digitalWrite(RS485_DERE_PIN, LOW);

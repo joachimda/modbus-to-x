@@ -1,8 +1,8 @@
 name: CI
 
-# Only the firmware project under software/ and this workflow feed the build
-# and the tests. Hardware sources, the root docs and the configuration
-# examples skip CI entirely.
+# Only the firmware project under software/, this workflow and the composite
+# action it uses feed the build and the tests. Hardware sources, the root docs
+# and the configuration examples skip CI entirely.
 #
 # The ruleset on main does not require these checks, so a skipped workflow
 # does not block a merge. If required status checks are ever added, move the
@@ -16,6 +16,7 @@ on:
       - "!software/**/*.md"
       - "!software/modbus-to-mqtt/docs/**"
       - ".github/workflows/ci.yml"
+      - ".github/actions/**"
   push:
     branches: [ "main" ]
     paths:
@@ -23,6 +24,17 @@ on:
       - "!software/**/*.md"
       - "!software/modbus-to-mqtt/docs/**"
       - ".github/workflows/ci.yml"
+      - ".github/actions/**"
+
+# The jobs only build and test; nothing here needs to write to the repository.
+permissions:
+  contents: read
+
+# A newer push to a pull request cancels the run it supersedes. Runs on main
+# always finish so every commit on main keeps its own result.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   PROJECT_DIR: software/modbus-to-mqtt
@@ -36,22 +48,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-platformio
         with:
-          python-version: "3.11"
-
-      - name: Install PlatformIO
-        run: pip install -U platformio
-
-      - name: Cache PlatformIO
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.platformio
-            ${{ env.PROJECT_DIR }}/.pio
-          key: ${{ runner.os }}-pio-${{ hashFiles(format('{0}/platformio.ini', env.PROJECT_DIR), format('{0}/platformio.lock', env.PROJECT_DIR)) }}
-          restore-keys: |
-            ${{ runner.os }}-pio-
+          cache-name: esp32
+          project-dir: ${{ env.PROJECT_DIR }}
 
       - name: Build firmware
         run: pio run --project-dir "${PROJECT_DIR}" -e "${PIO_ENV}"
@@ -66,35 +66,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-platformio
         with:
-          python-version: "3.11"
-
-      - name: Install PlatformIO
-        run: pip install -U platformio
-
-      # Separate key from the build job: this cache holds the native toolchain
-      # and ArduinoFake rather than the ESP32 platform.
-      - name: Cache PlatformIO
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.platformio
-            ${{ env.PROJECT_DIR }}/.pio
-          key: ${{ runner.os }}-pio-native-${{ hashFiles(format('{0}/platformio.ini', env.PROJECT_DIR), format('{0}/platformio.lock', env.PROJECT_DIR)) }}
-          restore-keys: |
-            ${{ runner.os }}-pio-native-
+          cache-name: native
+          project-dir: ${{ env.PROJECT_DIR }}
 
       - name: Run native unit tests
         run: pio test --project-dir "${PROJECT_DIR}" -e native-test
 
   # Node tests for the web UI modules under data/js. One test starts
-  # scripts/run_test_webserver.py (stdlib only) with the runner's python3.
+  # scripts/run_test_webserver.py (stdlib only), so Python is pinned here too.
   web-tests:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
       - uses: actions/setup-node@v4
         with:

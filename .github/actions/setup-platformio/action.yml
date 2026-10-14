@@ -1,0 +1,42 @@
+name: Set up PlatformIO
+description: Installs a pinned PlatformIO Core and restores its package cache.
+
+inputs:
+  cache-name:
+    description: Names the cache so jobs that install different toolchains (esp32, native) never restore each other's.
+    required: true
+  project-dir:
+    description: PlatformIO project directory, relative to the workspace.
+    required: true
+  platformio-version:
+    description: PlatformIO Core version to install.
+    required: false
+    default: "6.1.19"
+  python-version:
+    description: Python version for PlatformIO.
+    required: false
+    default: "3.11"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install PlatformIO
+      shell: bash
+      run: pip install "platformio==${{ inputs.platformio-version }}"
+
+    # The key carries the cache name and the core version, and the restore
+    # prefix carries both too, so a job can only ever warm-start from a cache
+    # made by the same kind of job with the same core.
+    - name: Cache PlatformIO packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.platformio
+          ${{ inputs.project-dir }}/.pio
+        key: ${{ runner.os }}-pio-${{ inputs.cache-name }}-${{ inputs.platformio-version }}-${{ hashFiles(format('{0}/platformio.ini', inputs.project-dir)) }}
+        restore-keys: |
+          ${{ runner.os }}-pio-${{ inputs.cache-name }}-${{ inputs.platformio-version }}-

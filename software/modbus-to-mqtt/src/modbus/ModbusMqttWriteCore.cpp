@@ -7,6 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include "modbus/ModbusFunctionUtils.h"
+
 namespace ModbusMqttWriteCore {
 namespace {
 
@@ -327,8 +329,7 @@ ConversionResult convertPayloadWithBoundary(const ModbusFunctionType function,
 
     if (!isWritableHoldingFunction(function)) return reject(RejectionReason::InvalidSyntax);
     if (!ModbusValueCodec::isNumeric(dataType)
-        || ((function == WRITE_HOLDING || function == WAVIN_WRITE)
-            && ModbusValueCodec::wordWidth(dataType) != 1U)) {
+        || (isSingleRegisterWrite(function) && ModbusValueCodec::wordWidth(dataType) != 1U)) {
         return reject(RejectionReason::UnsupportedDataType);
     }
 

@@ -7,6 +7,7 @@
 
 #include "modbus/ModbusMqttWriteCore.h"
 #include "modbus/ModbusValueCodec.h"
+#include "modbus/WavinFrame.h"
 #include "modbus/config_structs/ModbusDataType.h"
 #include "modbus/config_structs/ModbusDatapoint.h"
 #include "mqtt/MqttRuntimeTypes.h"
@@ -77,8 +78,10 @@ struct ModbusCommandResult {
     ModbusOperationResult operation{ModbusOperationResult::Unavailable};
     uint8_t busStatus{0xE4U};
     uint8_t slaveId{0U};
+    // Registers received (reads) or written (register writes); a read longer
+    // than the array is cut to its size, and count says how many are valid.
     uint16_t count{0U};
-    std::array<uint16_t, 16U> words{};
+    std::array<uint16_t, WavinFrame::kMaxRegisters> words{};
     String rxDump;
     bool hasDatapointMetadata{false};
     ModbusDataType dataType{UINT16};

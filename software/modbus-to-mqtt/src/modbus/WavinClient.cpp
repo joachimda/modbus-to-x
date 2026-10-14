@@ -13,7 +13,8 @@ WavinClient::WavinClient(ModbusBus &bus) : _bus(bus) {
 
 uint8_t WavinClient::readRegisters(const uint8_t slave, const uint8_t category, const uint8_t index,
                                    const uint8_t page, const uint8_t count, uint16_t *words,
-                                   const size_t wordCapacity) {
+                                   const size_t wordCapacity, uint8_t &receivedCount) {
+    receivedCount = 0U;
     uint8_t request[WavinFrame::kReadRequestSize];
     const size_t length = WavinFrame::buildRead(slave, category, index, page, count, request,
                                                 sizeof request);
@@ -22,7 +23,8 @@ uint8_t WavinClient::readRegisters(const uint8_t slave, const uint8_t category, 
     // request. Reads have no side effects, so they are retried; writes are not.
     uint8_t status = WavinFrame::kResponseTimedOut;
     for (uint8_t attempt = 0U; attempt < WAVIN_READ_ATTEMPTS; ++attempt) {
-        status = transact(request, length, slave, WavinFrame::kReadFunction, count, words, wordCapacity);
+        status = transact(request, length, slave, WavinFrame::kReadFunction, count, words,
+                          wordCapacity, receivedCount);
         if (status != WavinFrame::kResponseTimedOut && status != WavinFrame::kInvalidCrc) break;
     }
     return status;
@@ -36,12 +38,13 @@ uint8_t WavinClient::writeRegisters(const uint8_t slave, const uint8_t category,
     if (length == 0U) return ModbusMaster::ku8MBIllegalDataValue;
     // The reply's content is not specified beyond its framing, so any word
     // count is accepted and discarded.
-    return transact(request, length, slave, WavinFrame::kWriteFunction, 0U, nullptr, 0U);
+    uint8_t ignored = 0U;
+    return transact(request, length, slave, WavinFrame::kWriteFunction, 0U, nullptr, 0U, ignored);
 }
 
 uint8_t WavinClient::transact(const uint8_t *request, const size_t requestLength, const uint8_t slave,
                               const uint8_t function, const uint8_t expectedWords, uint16_t *words,
-                              const size_t wordCapacity) {
+                              const size_t wordCapacity, uint8_t &receivedCount) {
     Stream &io = _bus.stream();
     // Bytes left over from another master's traffic would be mistaken for
     // the start of our reply.
@@ -68,16 +71,28 @@ uint8_t WavinClient::transact(const uint8_t *request, const size_t requestLength
         }
         buffer[received++] = static_cast<uint8_t>(value);
 
-        while (received > 0U) {
-            const WavinFrame::ScanResult scan = WavinFrame::scanResponse(
-                buffer, received, slave, function, expectedWords, words, wordCapacity);
-            if (scan.status == WavinFrame::ScanStatus::Incomplete) break;
-            if (scan.status == WavinFrame::ScanStatus::Response) return WavinFrame::kSuccess;
-            if (scan.status == WavinFrame::ScanStatus::Exception) return scan.exceptionCode;
-            crcMismatch = crcMismatch || scan.crcMismatch;
-            std::memmove(buffer, buffer + 1, received - 1U);
-            --received;
+        // The reply is looked for at every offset, so bytes ahead of it
+        // (another master's traffic, or a candidate claiming a longer frame
+        // than will arrive) cannot hide it; those that can no longer start
+        // it are dropped.
+        const WavinFrame::LocateResult found = WavinFrame::locateResponse(
+            buffer, received, slave, function, expectedWords, words, wordCapacity);
+        crcMismatch = crcMismatch || found.crcMismatch;
+        if (found.status == WavinFrame::ScanStatus::Response) {
+            receivedCount = found.wordCount;
+            return WavinFrame::kSuccess;
+        }
+        if (found.status == WavinFrame::ScanStatus::Exception) return found.exceptionCode;
+        if (found.dropCount > 0U) {
+            std::memmove(buffer, buffer + found.dropCount, received - found.dropCount);
+            received -= found.dropCount;
         }
     }
+    // No more bytes will come: a candidate that failed its CRC but could
+    // still have been the start of another master's request is now known to
+    // be a corrupted frame.
+    crcMismatch = crcMismatch
+                  || WavinFrame::locateResponse(buffer, received, slave, function, expectedWords,
+                                                words, wordCapacity, true).crcMismatch;
     return crcMismatch ? WavinFrame::kInvalidCrc : WavinFrame::kResponseTimedOut;
 }

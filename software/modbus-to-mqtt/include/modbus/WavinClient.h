@@ -14,8 +14,11 @@ class WavinClient {
 public:
     explicit WavinClient(ModbusBus &bus);
 
+    // On success receivedCount holds the number of registers the reply
+    // carried, which may be fewer than count.
     uint8_t readRegisters(uint8_t slave, uint8_t category, uint8_t index, uint8_t page,
-                          uint8_t count, uint16_t *words, size_t wordCapacity);
+                          uint8_t count, uint16_t *words, size_t wordCapacity,
+                          uint8_t &receivedCount);
 
     uint8_t writeRegisters(uint8_t slave, uint8_t category, uint8_t index, uint8_t page,
                            const uint16_t *words, uint8_t count);
@@ -23,7 +26,7 @@ public:
 private:
     uint8_t transact(const uint8_t *request, size_t requestLength, uint8_t slave,
                      uint8_t function, uint8_t expectedWords, uint16_t *words,
-                     size_t wordCapacity);
+                     size_t wordCapacity, uint8_t &receivedCount);
 
     ModbusBus &_bus;
 };

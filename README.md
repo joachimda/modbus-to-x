@@ -204,7 +204,7 @@ The Wavin AHC 9000 floor-heating controller (also sold as Jablotron AC-116) uses
     ]
   }
   ```
-- A wall display (DS-9000) may share the bus as a second master. Replies that do not match the outstanding request (another slave, function or register count, or a bad CRC) are skipped while waiting, and a read that still times out or fails its CRC is retried once (`WAVIN_READ_ATTEMPTS`). Writes are never retried.
+- A wall display (DS-9000) may share the bus as a second master. Bytes that cannot be the reply to the outstanding request (another slave or function, more registers than requested, the display's own requests, or a bad CRC) are skipped while waiting, and a read that still times out or fails its CRC is retried once (`WAVIN_READ_ATTEMPTS`). Writes are never retried. A reply carrying fewer registers than requested is accepted; only the registers received are decoded.
 
 ### MQTT Publishing
 - Configure broker host, port, credentials, and optional root topic via the **Configure MQTT** page or by editing `/conf/mqtt.json`. The firmware automatically extracts hostnames from URLs and persists the MQTT password in NVS preferences.

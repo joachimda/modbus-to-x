@@ -36,6 +36,13 @@ export function isWavinFunction(functionCode) {
     return fn === WAVIN_READ || fn === WAVIN_WRITE;
 }
 
+// Writes of exactly one 16-bit register: FC6 and Wavin 0x44. Mirrors the
+// firmware's isSingleRegisterWrite.
+export function isSingleRegisterWrite(functionCode) {
+    const fn = Number(functionCode);
+    return fn === 6 || fn === WAVIN_WRITE;
+}
+
 export const SHAPE_MESSAGES = Object.freeze({
     fc6_multiword: "FC6 and Wavin 0x44 write exactly one register; use FC16 for 32-bit and 64-bit data types",
     slice_multiword: "registerSlice requires a 16-bit data type",
@@ -76,7 +83,7 @@ export function coerceRegisterCount(functionCode, type, length) {
     let next = requested;
     if (fn === 5) {
         next = 1;
-    } else if (fn === 6 || fn === WAVIN_WRITE) {
+    } else if (isSingleRegisterWrite(fn)) {
         next = width > 1 ? requested : 1;
     } else if (fn === 16) {
         next = width > 0 ? width : 1;
@@ -96,7 +103,7 @@ export function validateDatapointShape(point) {
     const slice = point?.registerSlice == null
         ? "full"
         : String(point.registerSlice).trim().toLowerCase();
-    if ((fn === 6 || fn === WAVIN_WRITE) && width > 1) {
+    if (isSingleRegisterWrite(fn) && width > 1) {
         codes.push("fc6_multiword");
     }
     if (slice !== "full" && width !== 1) {

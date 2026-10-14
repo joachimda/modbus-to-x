@@ -21,8 +21,10 @@ namespace WavinFrame {
 constexpr uint8_t kReadFunction = 0x43;
 constexpr uint8_t kWriteFunction = 0x44;
 
-// Registers per request; one byte count in the reply covers at most 127 words,
-// and the controller is only known to answer requests of up to 22.
+// Registers per request; one byte count in the reply covers at most 127
+// words. The controller answers some requests with fewer registers than asked
+// for (22 is the most it has been seen to return); such replies are accepted
+// and their actual count reported.
 constexpr uint8_t kMaxRegisters = 32U;
 constexpr size_t kReadRequestSize = 8U;
 constexpr size_t kMaxWriteRequestSize = 8U + 2U * 4U;
@@ -52,27 +54,60 @@ enum class ScanStatus : uint8_t {
     Response,
     // A complete, CRC-valid exception reply; exceptionCode was filled.
     Exception,
-    // The first byte cannot start the expected reply (another master's
-    // traffic, line noise or a CRC mismatch): drop it and scan again.
+    // The bytes at the start of the buffer cannot start the expected reply
+    // (another master's traffic, line noise or a CRC mismatch): drop
+    // frameLength of them and scan again.
     Skip,
 };
 
 struct ScanResult {
     ScanStatus status{ScanStatus::Incomplete};
-    // Size of the frame at the start of the buffer (Response/Exception).
+    // Size of the frame at the start of the buffer: the reply (Response,
+    // Exception) or the bytes to drop (Skip: 1, or a whole request from
+    // another master once it was recognised).
     size_t frameLength{0U};
     uint8_t exceptionCode{0U};
     uint8_t wordCount{0U};
-    // Set on Skip when a frame-shaped candidate failed its CRC.
+    // Set on Skip when a frame-shaped candidate failed its CRC and is not
+    // another master's request.
     bool crcMismatch{false};
 };
 
 // Scans the bytes received so far for the reply to a request with the given
-// slave and function. expectedWords is the register count of a read (the reply
-// must carry exactly that many words) or 0 to accept any count (writes).
-// Up to wordCapacity big-endian words are copied into words.
+// slave and function. expectedWords is the register count of a read: the
+// reply carries at most that many words, fewer when the controller does not
+// answer the whole request. 0 accepts any count (writes). Up to wordCapacity
+// big-endian words are copied into words.
+//
+// Another master's request to the same slave starts with the same two bytes
+// and reads as a reply whose byte count is its category; its own CRC tells
+// the two apart once enough of it has arrived. Until then a candidate that
+// failed its reply CRC stays Incomplete, unless final says no more bytes
+// will come: it is then a corrupted frame and reported as a CRC mismatch.
 ScanResult scanResponse(const uint8_t *buffer, size_t length, uint8_t slave, uint8_t function,
-                        uint8_t expectedWords, uint16_t *words, size_t wordCapacity);
+                        uint8_t expectedWords, uint16_t *words, size_t wordCapacity,
+                        bool final = false);
+
+struct LocateResult {
+    // Response, Exception or Incomplete; never Skip.
+    ScanStatus status{ScanStatus::Incomplete};
+    // Leading bytes that can no longer start the reply; the caller drops
+    // them before adding more bytes.
+    size_t dropCount{0U};
+    uint8_t exceptionCode{0U};
+    uint8_t wordCount{0U};
+    // A candidate at the head of the buffer failed its CRC.
+    bool crcMismatch{false};
+};
+
+// Locates the reply in the bytes received so far. Bytes at the head that
+// cannot start it are counted in dropCount. A candidate at the head that is
+// still incomplete may claim more bytes than will ever arrive (stale bytes,
+// or another master's frame), so every later offset is checked as well and
+// a complete reply behind such a candidate is still found.
+LocateResult locateResponse(const uint8_t *buffer, size_t length, uint8_t slave, uint8_t function,
+                            uint8_t expectedWords, uint16_t *words, size_t wordCapacity,
+                            bool final = false);
 
 }  // namespace WavinFrame
 

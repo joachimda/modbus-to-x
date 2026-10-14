@@ -101,13 +101,20 @@ bool isRegisterFunction(const ModbusFunctionType function) {
            || function == WAVIN_READ || function == WAVIN_WRITE;
 }
 
-// Writes of exactly one 16-bit register.
-bool isSingleRegisterWrite(const ModbusFunctionType function) {
-    return function == WRITE_HOLDING || function == WAVIN_WRITE;
-}
-
 constexpr long MAX_REGISTER_COUNT = 125L;
 constexpr long MAX_WAVIN_FIELD = 255L;
+
+// A Wavin register index, category or page: an integer in 0-255, or absent
+// (0). Anything else is rejected rather than read as 0.
+bool readWavinField(const JsonVariantConst value, long &out) {
+    if (value.isNull()) {
+        out = 0L;
+        return true;
+    }
+    if (!value.is<long>()) return false;
+    out = value.as<long>();
+    return out >= 0L && out <= MAX_WAVIN_FIELD;
+}
 
 bool fail(ValidationError *error, const ValidationReason reason,
           const size_t deviceIndex = 0U, const size_t datapointIndex = 0U) {
@@ -251,16 +258,18 @@ bool parse(const char *json, const size_t length, ConfigurationRoot &outConfig,
                     datapoint.id = String(point["id"] | "");
                     datapoint.name = String(point["name"] | "");
                     datapoint.function = parseFunction(point["function"] | 3);
-                    const long address = point["address"] | 0L;
+                    long address = point["address"] | 0L;
                     datapoint.address = static_cast<uint16_t>(address);
                     if (isWavinFunction(datapoint.function)) {
                         // The register index, category and page are one byte
                         // each on the wire; truncating would address another
-                        // register.
-                        const long category = point["category"] | 0L;
-                        const long page = point["page"] | 0L;
-                        if (address < 0L || address > MAX_WAVIN_FIELD || category < 0L
-                            || category > MAX_WAVIN_FIELD || page < 0L || page > MAX_WAVIN_FIELD) {
+                        // register, and so would reading a value that is not
+                        // an integer as 0.
+                        long category = 0L;
+                        long page = 0L;
+                        if (!readWavinField(point["address"], address)
+                            || !readWavinField(point["category"], category)
+                            || !readWavinField(point["page"], page)) {
                             return fail(validationError, ValidationReason::InvalidWavinAddress,
                                         deviceIndex, datapointIndex);
                         }

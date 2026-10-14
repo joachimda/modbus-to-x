@@ -74,7 +74,7 @@ MqttBridgePlan ModbusMqttBridge::buildBridgePlan(const ConfigurationRoot &root,
                     request.address = command.address;
                     request.category = command.category;
                     request.page = command.page;
-                    request.hasWavinAddress = true;
+                    request.hasWavinAddress = isWavinFunction(command.function);
                     request.length = command.registerCount;
                     request.writeValue = command.coilValue ? 1U : 0U;
                     request.writeWords = command.words;

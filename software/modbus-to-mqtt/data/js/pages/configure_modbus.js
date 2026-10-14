@@ -2,6 +2,8 @@ import {API, safeJson, STATIC_FILES} from "app";
 import {parseConfiguredScale, validateDatapointScale} from "./modbus_scale.mjs";
 import {
     SHAPE_MESSAGES,
+    WAVIN_READ,
+    WAVIN_WRITE,
     coerceRegisterCount,
     isMultiWordType,
     isWavinFunction,
@@ -25,8 +27,8 @@ let selection = { kind: "bus", deviceId: null, datapointId: null };
 * * */
 const SERIAL_FORMATS = new Set(["7N1","7N2","7O1","7O2","7E1","7E2","8N1","8N2","8E1","8E2","8O1","8O2"]);
 const REGISTER_SLICES = new Set(["full","low_byte","high_byte"]);
-const WRITE_FUNCTIONS = new Set([5, 6, 16, 68]);
-const FUNCTIONS = new Set([1, 2, 3, 4, 5, 6, 16, 67, 68]);
+const WRITE_FUNCTIONS = new Set([5, 6, 16, WAVIN_WRITE]);
+const FUNCTIONS = new Set([1, 2, 3, 4, 5, 6, 16, WAVIN_READ, WAVIN_WRITE]);
 function toSerialParts(fmt) {
     const def = { data_bits: 8, parity: "N", stop_bits: 1 };
     if (!fmt || typeof fmt !== "string" || fmt.length < 3) return def;
@@ -45,10 +47,14 @@ function toSerialFormat(db, p, sb) {
     const fmt = `${(dbn===7||dbn===8)?dbn:8}${["N","E","O"].includes(pr)?pr:"N"}${(sbn===1||sbn===2)?sbn:1}`;
     return SERIAL_FORMATS.has(fmt) ? fmt : "8N1";
 }
-// Wavin category/page: integers 0-255 as entered; anything else becomes 0.
+// Wavin category/page: integers as entered (validateDatapointShape rejects
+// those outside 0-255 so the user sees why); anything else becomes 0.
 function toByteField(value) {
     const n = Number(value ?? 0);
     return Number.isInteger(n) ? n : 0;
+}
+function isByteField(value) {
+    return Number.isInteger(value) && value >= 0 && value <= 255;
 }
 function schemaToUi(json) {
     // Expect current schema shape: { version, bus, devices }
@@ -789,8 +795,13 @@ function showDatapointEditor() {
             q.set("slave", String(slaveId));
         }
         if (isWavinFunction(func)) {
-            q.set("category", String(toByteField(datapoint.category)));
-            q.set("page", String(toByteField(datapoint.page)));
+            const category = toByteField(datapoint.category);
+            const page = toByteField(datapoint.page);
+            if (!isByteField(addr) || !isByteField(category) || !isByteField(page)) {
+                return alert("Wavin index, category and page must be 0-255");
+            }
+            q.set("category", String(category));
+            q.set("page", String(page));
         }
         const isWrite = WRITE_FUNCTIONS.has(func);
         if (isWrite && writeVal.length) {

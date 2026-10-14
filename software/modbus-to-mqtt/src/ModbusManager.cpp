@@ -521,7 +521,7 @@ bool ModbusManager::readModbusDevice(ModbusDevice &device,
     for (auto *datapointPointer : dueDatapoints) {
         if (datapointPointer == nullptr) continue;
         auto &datapoint = *datapointPointer;
-        const uint8_t wordCount = datapoint.numOfRegisters ? datapoint.numOfRegisters : 1U;
+        uint8_t wordCount = datapoint.numOfRegisters ? datapoint.numOfRegisters : 1U;
         std::vector<uint16_t> words(wordCount);
         uint8_t result = ModbusMaster::ku8MBIllegalFunction;
         switch (datapoint.function) {
@@ -529,12 +529,17 @@ bool ModbusManager::readModbusDevice(ModbusDevice &device,
             case READ_DISCRETE: result = node.readDiscreteInputs(datapoint.address, datapoint.numOfRegisters); break;
             case READ_HOLDING: result = node.readHoldingRegisters(datapoint.address, datapoint.numOfRegisters); break;
             case READ_INPUT: result = node.readInputRegisters(datapoint.address, datapoint.numOfRegisters); break;
-            case WAVIN_READ:
+            case WAVIN_READ: {
+                // The controller may answer with fewer registers than asked
+                // for; only those received are decoded.
+                uint8_t received = 0U;
                 result = WavinClient(_bus).readRegisters(device.slaveId, datapoint.category,
                                                          static_cast<uint8_t>(datapoint.address),
                                                          datapoint.page, wordCount, words.data(),
-                                                         words.size());
+                                                         words.size(), received);
+                if (result == ModbusMaster::ku8MBSuccess) wordCount = received;
                 break;
+            }
             case WRITE_COIL:
             case WRITE_HOLDING:
             case WRITE_MULTIPLE_HOLDING:
@@ -674,7 +679,15 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
     // inherits them from the saved datapoint.
     uint8_t wavinCategory = request.category;
     uint8_t wavinPage = request.page;
-    if (wavin && !request.hasWavinAddress && metadata != nullptr) {
+    if (wavin && !request.hasWavinAddress) {
+        if (metadata == nullptr) {
+            // Without a saved datapoint there is no category or page to
+            // inherit; defaulting both to 0 would address another register.
+            result.operation = ModbusOperationResult::Success;
+            result.busStatus = ModbusMaster::ku8MBIllegalDataAddress;
+            result.unknownDatapoint = true;
+            return result;
+        }
         wavinCategory = metadata->category;
         wavinPage = metadata->page;
     }
@@ -722,8 +735,8 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
             words = conversion.words;
             wordCount = conversion.wordCount;
         }
-        const bool singleRegister = request.function == 6 || request.function == WAVIN_WRITE;
-        if (wordCount == 0U || wordCount > words.size() || (singleRegister && wordCount != 1U)) {
+        if (wordCount == 0U || wordCount > words.size()
+            || (isSingleRegisterWriteCode(request.function) && wordCount != 1U)) {
             result.operation = ModbusOperationResult::Success;
             result.busStatus = ModbusMaster::ku8MBIllegalDataValue;
             result.writeRejection = ModbusMqttWriteCore::RejectionReason::UnsupportedDataType;
@@ -745,8 +758,10 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
     ModbusMaster &node = _bus.node();
     node.begin(result.slaveId, _bus.stream());
     const uint16_t effectiveLength = request.length;
-    // Wavin replies are parsed here rather than by ModbusMaster.
+    // Wavin replies are parsed here rather than by ModbusMaster, and may
+    // carry fewer registers than requested.
     std::array<uint16_t, WavinFrame::kMaxRegisters> wavinWords{};
+    uint8_t wavinReceived = 0U;
     switch (request.function) {
         case 1: result.busStatus = node.readCoils(request.address, effectiveLength); break;
         case 2: result.busStatus = node.readDiscreteInputs(request.address, effectiveLength); break;
@@ -769,7 +784,8 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
         case WAVIN_READ:
             result.busStatus = WavinClient(_bus).readRegisters(
                 result.slaveId, wavinCategory, static_cast<uint8_t>(request.address), wavinPage,
-                static_cast<uint8_t>(effectiveLength), wavinWords.data(), wavinWords.size());
+                static_cast<uint8_t>(effectiveLength), wavinWords.data(), wavinWords.size(),
+                wavinReceived);
             break;
         case WAVIN_WRITE:
             result.busStatus = WavinClient(_bus).writeRegisters(
@@ -782,8 +798,9 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
     }
 
     if (result.busStatus == ModbusMaster::ku8MBSuccess && expectedRead) {
-        result.count = effectiveLength < result.words.size()
-                           ? effectiveLength
+        const uint16_t available = wavin ? wavinReceived : effectiveLength;
+        result.count = available < result.words.size()
+                           ? available
                            : static_cast<uint16_t>(result.words.size());
         for (uint16_t i = 0; i < result.count; ++i) {
             result.words[i] = wavin ? wavinWords[i] : node.getResponseBuffer(i);

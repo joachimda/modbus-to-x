@@ -1616,18 +1616,25 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
     long len = sLen.toInt();
     const long slaveOverride = hasSlaveOverride ? sSlave.toInt() : 0;
     const bool slaveOverrideValid = slaveOverride > 0 && slaveOverride <= 247;
-    if (func <= 0 || addr < 0 || len <= 0) {
+    // addr and len are 16-bit on the wire; a larger value would wrap onto
+    // another register instead of being rejected (Wavin indexes above 255
+    // are answered with code 2 by the owner).
+    if (func <= 0 || addr < 0 || addr > 0xFFFFL || len <= 0 || len > 0xFFFFL) {
         req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
         return;
     }
 
     // Wavin functions (0x43/0x44) address addr as a register index within
-    // category/page. Both must be given to override the saved datapoint's.
+    // category/page. Both must be given to override the saved datapoint's;
+    // one without the other is a mistake, not a request to use the saved one.
     String sCategory, sPage;
-    const bool hasWavinAddress = getParam("category", sCategory) && getParam("page", sPage);
+    const bool hasCategory = getParam("category", sCategory);
+    const bool hasPage = getParam("page", sPage);
+    const bool hasWavinAddress = hasCategory && hasPage;
     const long category = hasWavinAddress ? sCategory.toInt() : 0;
     const long page = hasWavinAddress ? sPage.toInt() : 0;
-    if (hasWavinAddress && (category < 0 || category > 255 || page < 0 || page > 255)) {
+    if (hasCategory != hasPage
+        || (hasWavinAddress && (category < 0 || category > 255 || page < 0 || page > 255))) {
         req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
         return;
     }
@@ -1652,7 +1659,7 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
 
     const bool hasWriteVal = sValue.length() > 0;
 
-    if (func == 5 || func == 6 || func == WAVIN_WRITE) {
+    if (func == 5 || isSingleRegisterWriteCode(static_cast<int>(func))) {
         len = 1;  // single writes; FC16 writes the data type's register width
     }
 
@@ -1705,7 +1712,9 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
                     response["ok"] = false;
                     response["error"] = "unknown_datapoint";
                     response["message"] =
-                        "No saved datapoint matches devId/dpId; save the configuration before writing registers";
+                        isWavinFunctionCode(static_cast<int>(func)) && !hasWavinAddress
+                            ? "No saved datapoint matches devId/dpId; save the configuration or pass category and page"
+                            : "No saved datapoint matches devId/dpId; save the configuration before writing registers";
                     setRuntimeJsonResponse(runtimeResponse, response, HttpResponseCodes::BAD_REQUEST_HTTP);
                     return;
                 }

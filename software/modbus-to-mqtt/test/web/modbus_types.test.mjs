@@ -7,6 +7,7 @@ import {
     WAVIN_MAX_REGISTERS,
     coerceRegisterCount,
     isMultiWordType,
+    isSingleRegisterWrite,
     isWavinFunction,
     nextAddress,
     normalizeDataType,
@@ -131,4 +132,12 @@ test('Wavin datapoints need a one-byte index, category and page', () => {
     for (const code of ['wavin_location_invalid', 'wavin_length_invalid']) {
         assert.equal(typeof SHAPE_MESSAGES[code], 'string');
     }
+});
+
+test('single-register writes are FC6 and Wavin 0x44', () => {
+    assert.equal(isSingleRegisterWrite(6), true);
+    assert.equal(isSingleRegisterWrite('68'), true);
+    assert.equal(isSingleRegisterWrite(16), false);
+    assert.equal(isSingleRegisterWrite(5), false);
+    assert.equal(isSingleRegisterWrite(67), false);
 });

@@ -1226,10 +1226,10 @@ void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, co
         JsonDocument response;
         response["error"] = "invalid_modbus_configuration";
         response["reason"] = ModbusConfigDocument::reasonToString(validationError.reason);
-        if (validationError.reason == ModbusConfigDocument::ValidationReason::InvalidScale) {
+        if (validationError.reason != ModbusConfigDocument::ValidationReason::InvalidJson) {
             response["deviceIndex"] = validationError.deviceIndex;
             response["datapointIndex"] = validationError.datapointIndex;
-            response["message"] = "Writable holding-register scale must be finite and non-zero";
+            response["message"] = ModbusConfigDocument::reasonDescription(validationError.reason);
         }
         String payload;
         serializeJson(response, payload);

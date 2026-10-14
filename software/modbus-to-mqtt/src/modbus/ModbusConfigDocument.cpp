@@ -7,6 +7,7 @@
 
 #include "Config.h"
 #include "modbus/ModbusMqttWriteCore.h"
+#include "modbus/ModbusValueCodec.h"
 #include "modbus/config_structs/ModbusDatapoint.h"
 #include "utils/StringUtils.h"
 
@@ -75,6 +76,28 @@ RegisterSlice parseRegisterSlice(const JsonVariant &value) {
     return RegisterSlice::Full;
 }
 
+ModbusWordOrder parseWordOrder(const JsonVariant &value) {
+    if (value.is<int>()) {
+        return value.as<int>() == 1 ? ModbusWordOrder::Little : ModbusWordOrder::Big;
+    }
+    if (value.is<const char *>()) {
+        String text = value.as<const char *>();
+        text.trim();
+        text.toLowerCase();
+        if (text == "little" || text == "little_endian" || text == "1") {
+            return ModbusWordOrder::Little;
+        }
+    }
+    return ModbusWordOrder::Big;
+}
+
+bool isRegisterFunction(const ModbusFunctionType function) {
+    return function == READ_HOLDING || function == READ_INPUT
+           || function == WRITE_HOLDING || function == WRITE_MULTIPLE_HOLDING;
+}
+
+constexpr long MAX_REGISTER_COUNT = 125L;
+
 bool fail(ValidationError *error, const ValidationReason reason,
           const size_t deviceIndex = 0U, const size_t datapointIndex = 0U) {
     if (error != nullptr) {
@@ -85,11 +108,75 @@ bool fail(ValidationError *error, const ValidationReason reason,
     return false;
 }
 
+void notice(std::vector<ParseNotice> *notices, const ParseWarning warning,
+            const size_t deviceIndex, const size_t datapointIndex,
+            const uint16_t previous, const uint16_t coerced) {
+    if (notices == nullptr) return;
+    ParseNotice entry;
+    entry.warning = warning;
+    entry.deviceIndex = deviceIndex;
+    entry.datapointIndex = datapointIndex;
+    entry.previous = previous;
+    entry.coerced = coerced;
+    notices->push_back(entry);
+}
+
+// Makes numOfRegisters, registerSlice and dataType consistent with the
+// function code and the data type's register width. Only FC6 with a
+// multi-register type cannot be repaired: FC6 writes exactly one register.
+bool applyRegisterShapeRules(ModbusDatapoint &datapoint, const long requestedCount,
+                             const size_t deviceIndex, const size_t datapointIndex,
+                             ValidationError *error, std::vector<ParseNotice> *notices) {
+    long count = requestedCount < 0L ? 0L : requestedCount;
+    if (count > MAX_REGISTER_COUNT) {
+        notice(notices, ParseWarning::RegisterCountClamped, deviceIndex, datapointIndex,
+               static_cast<uint16_t>(count > 0xFFFFL ? 0xFFFFL : count),
+               static_cast<uint16_t>(MAX_REGISTER_COUNT));
+        count = MAX_REGISTER_COUNT;
+    }
+    datapoint.numOfRegisters = static_cast<uint8_t>(count);
+    if (!isRegisterFunction(datapoint.function)) return true;
+
+    const bool registerWrite = ModbusMqttWriteCore::isWritableHoldingFunction(datapoint.function);
+    if (datapoint.dataType == TEXT) {
+        if (!registerWrite) return true;
+        notice(notices, ParseWarning::TextWriteCoercedToUint16, deviceIndex, datapointIndex,
+               static_cast<uint16_t>(TEXT), static_cast<uint16_t>(UINT16));
+        datapoint.dataType = UINT16;
+    }
+
+    const uint8_t width = ModbusValueCodec::wordWidth(datapoint.dataType);
+    uint8_t coercedCount = datapoint.numOfRegisters;
+    if (datapoint.function == WRITE_HOLDING) {
+        if (width != 1U) {
+            return fail(error, ValidationReason::InvalidRegisterCount, deviceIndex, datapointIndex);
+        }
+        coercedCount = 1U;
+    } else if (datapoint.function == WRITE_MULTIPLE_HOLDING) {
+        coercedCount = width;
+    } else if (datapoint.numOfRegisters < width) {
+        coercedCount = width;
+    }
+    if (coercedCount != datapoint.numOfRegisters) {
+        notice(notices, ParseWarning::RegisterCountCoerced, deviceIndex, datapointIndex,
+               datapoint.numOfRegisters, coercedCount);
+        datapoint.numOfRegisters = coercedCount;
+    }
+    if (width > 1U && datapoint.registerSlice != RegisterSlice::Full) {
+        notice(notices, ParseWarning::RegisterSliceIgnored, deviceIndex, datapointIndex,
+               static_cast<uint16_t>(datapoint.registerSlice),
+               static_cast<uint16_t>(RegisterSlice::Full));
+        datapoint.registerSlice = RegisterSlice::Full;
+    }
+    return true;
+}
+
 }  // namespace
 
 bool parse(const char *json, const size_t length, ConfigurationRoot &outConfig,
-           ValidationError *validationError) {
+           ValidationError *validationError, std::vector<ParseNotice> *notices) {
     if (validationError != nullptr) *validationError = ValidationError();
+    if (notices != nullptr) notices->clear();
 
     JsonDocument document;
     if (json == nullptr || deserializeJson(document, json, length)) {
@@ -138,7 +225,7 @@ bool parse(const char *json, const size_t length, ConfigurationRoot &outConfig,
                     datapoint.name = String(point["name"] | "");
                     datapoint.function = parseFunction(point["function"] | 3);
                     datapoint.address = static_cast<uint16_t>(point["address"] | 0);
-                    datapoint.numOfRegisters = static_cast<uint8_t>(point["numOfRegisters"] | 1);
+                    const long requestedCount = point["numOfRegisters"] | 1L;
 
                     const JsonVariant scaleValue = point["scale"];
                     double parsedScale = 1.0;
@@ -165,6 +252,7 @@ bool parse(const char *json, const size_t length, ConfigurationRoot &outConfig,
                     datapoint.topic = String(point["topic"] | "");
                     datapoint.topic.trim();
                     datapoint.registerSlice = parseRegisterSlice(point["registerSlice"]);
+                    datapoint.wordOrder = parseWordOrder(point["wordOrder"]);
                     if (point["poll_interval_ms"].is<unsigned long>()) {
                         datapoint.pollIntervalMs =
                             static_cast<uint32_t>(point["poll_interval_ms"].as<unsigned long>());
@@ -173,6 +261,10 @@ bool parse(const char *json, const size_t length, ConfigurationRoot &outConfig,
                             static_cast<uint32_t>(point["poll_interval"].as<unsigned long>()) * 1000UL;
                     }
                     datapoint.nextDueAtMs = 0U;
+                    if (!applyRegisterShapeRules(datapoint, requestedCount, deviceIndex, datapointIndex,
+                                                 validationError, notices)) {
+                        return false;
+                    }
                     device.datapoints.push_back(datapoint);
                     ++datapointIndex;
                 }
@@ -190,7 +282,31 @@ const char *reasonToString(const ValidationReason reason) {
     switch (reason) {
         case ValidationReason::InvalidJson: return "invalid_json";
         case ValidationReason::InvalidScale: return "invalid_scale";
+        case ValidationReason::InvalidRegisterCount: return "invalid_register_count";
         case ValidationReason::None: break;
+    }
+    return "none";
+}
+
+const char *reasonDescription(const ValidationReason reason) {
+    switch (reason) {
+        case ValidationReason::InvalidJson: return "Configuration is not valid JSON";
+        case ValidationReason::InvalidScale:
+            return "Writable holding-register scale must be finite and non-zero";
+        case ValidationReason::InvalidRegisterCount:
+            return "FC6 writes exactly one register; use FC16 for 32-bit and 64-bit data types";
+        case ValidationReason::None: break;
+    }
+    return "";
+}
+
+const char *warningToString(const ParseWarning warning) {
+    switch (warning) {
+        case ParseWarning::RegisterCountCoerced: return "register_count_coerced";
+        case ParseWarning::RegisterSliceIgnored: return "register_slice_ignored";
+        case ParseWarning::TextWriteCoercedToUint16: return "text_write_coerced_to_uint16";
+        case ParseWarning::RegisterCountClamped: return "register_count_clamped";
+        case ParseWarning::None: break;
     }
     return "none";
 }

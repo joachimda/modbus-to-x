@@ -43,12 +43,25 @@ bool ModbusConfigLoader::parseConfiguration(Logger *logger, const char *json,
                                             ModbusConfigDocument::ValidationError *validationError) {
     ModbusConfigDocument::ValidationError localError;
     auto *error = validationError != nullptr ? validationError : &localError;
-    if (ModbusConfigDocument::parse(json, length, outConfig, error)) return true;
+    std::vector<ModbusConfigDocument::ParseNotice> notices;
+    if (ModbusConfigDocument::parse(json, length, outConfig, error, &notices)) {
+        if (logger != nullptr) {
+            for (const auto &notice : notices) {
+                logger->logWarning((String("Modbus configuration adjusted: ")
+                                    + ModbusConfigDocument::warningToString(notice.warning)
+                                    + ", deviceIndex=" + String(notice.deviceIndex)
+                                    + ", datapointIndex=" + String(notice.datapointIndex)
+                                    + ", previous=" + String(notice.previous)
+                                    + ", coerced=" + String(notice.coerced)).c_str());
+            }
+        }
+        return true;
+    }
 
     if (logger != nullptr) {
         String message = String("Modbus configuration rejected: reason=")
                          + ModbusConfigDocument::reasonToString(error->reason);
-        if (error->reason == ModbusConfigDocument::ValidationReason::InvalidScale) {
+        if (error->reason != ModbusConfigDocument::ValidationReason::InvalidJson) {
             message += String(", deviceIndex=") + String(error->deviceIndex)
                        + ", datapointIndex=" + String(error->datapointIndex);
         }

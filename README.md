@@ -33,7 +33,7 @@ The project is split between dedicated hardware design files and a PlatformIO fi
 ### Hardware
 - Four-layer ESP32 carrier featuring an ESP32-WROOM-32D module, MAX3485 RS-485 transceiver
 - RJ12 Connector exposing differential RS-485 pair alongside field power for quick deployment.
-- Wide input voltage range (4.5 - 40V)
+- Wide input voltage range (4.5 - 30V)
 - Supporting assets include datasheets, fabrication rules, and release notes for each board revision under `hardware/`.
 
 ### Firmware

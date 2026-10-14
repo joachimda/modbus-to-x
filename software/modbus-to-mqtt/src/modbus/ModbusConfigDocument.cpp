@@ -121,12 +121,21 @@ void notice(std::vector<ParseNotice> *notices, const ParseWarning warning,
     notices->push_back(entry);
 }
 
+// FC6 writes one register. A stored configuration that combines it with a
+// wider type loads with the 16-bit counterpart, which is what the firmware
+// wrote before data types were honoured.
+ModbusDataType sixteenBitCounterpart(const ModbusDataType type) {
+    return ModbusValueCodec::isSignedInteger(type) ? INT16 : UINT16;
+}
+
 // Makes numOfRegisters, registerSlice and dataType consistent with the
-// function code and the data type's register width. Only FC6 with a
-// multi-register type cannot be repaired: FC6 writes exactly one register.
+// function code and the data type's register width. FC6 with a
+// multi-register type is rejected in strict mode and narrowed to a 16-bit
+// type in lenient mode.
 bool applyRegisterShapeRules(ModbusDatapoint &datapoint, const long requestedCount,
                              const size_t deviceIndex, const size_t datapointIndex,
-                             ValidationError *error, std::vector<ParseNotice> *notices) {
+                             const ParseMode mode, ValidationError *error,
+                             std::vector<ParseNotice> *notices) {
     long count = requestedCount < 0L ? 0L : requestedCount;
     if (count > MAX_REGISTER_COUNT) {
         notice(notices, ParseWarning::RegisterCountClamped, deviceIndex, datapointIndex,
@@ -145,11 +154,18 @@ bool applyRegisterShapeRules(ModbusDatapoint &datapoint, const long requestedCou
         datapoint.dataType = UINT16;
     }
 
-    const uint8_t width = ModbusValueCodec::wordWidth(datapoint.dataType);
+    uint8_t width = ModbusValueCodec::wordWidth(datapoint.dataType);
     uint8_t coercedCount = datapoint.numOfRegisters;
     if (datapoint.function == WRITE_HOLDING) {
         if (width != 1U) {
-            return fail(error, ValidationReason::InvalidRegisterCount, deviceIndex, datapointIndex);
+            if (mode == ParseMode::Strict) {
+                return fail(error, ValidationReason::InvalidRegisterCount, deviceIndex, datapointIndex);
+            }
+            const ModbusDataType narrowed = sixteenBitCounterpart(datapoint.dataType);
+            notice(notices, ParseWarning::DataTypeCoercedTo16Bit, deviceIndex, datapointIndex,
+                   static_cast<uint16_t>(datapoint.dataType), static_cast<uint16_t>(narrowed));
+            datapoint.dataType = narrowed;
+            width = 1U;
         }
         coercedCount = 1U;
     } else if (datapoint.function == WRITE_MULTIPLE_HOLDING) {
@@ -174,7 +190,8 @@ bool applyRegisterShapeRules(ModbusDatapoint &datapoint, const long requestedCou
 }  // namespace
 
 bool parse(const char *json, const size_t length, ConfigurationRoot &outConfig,
-           ValidationError *validationError, std::vector<ParseNotice> *notices) {
+           ValidationError *validationError, std::vector<ParseNotice> *notices,
+           const ParseMode mode) {
     if (validationError != nullptr) *validationError = ValidationError();
     if (notices != nullptr) notices->clear();
 
@@ -262,7 +279,7 @@ bool parse(const char *json, const size_t length, ConfigurationRoot &outConfig,
                     }
                     datapoint.nextDueAtMs = 0U;
                     if (!applyRegisterShapeRules(datapoint, requestedCount, deviceIndex, datapointIndex,
-                                                 validationError, notices)) {
+                                                 mode, validationError, notices)) {
                         return false;
                     }
                     device.datapoints.push_back(datapoint);
@@ -306,6 +323,7 @@ const char *warningToString(const ParseWarning warning) {
         case ParseWarning::RegisterSliceIgnored: return "register_slice_ignored";
         case ParseWarning::TextWriteCoercedToUint16: return "text_write_coerced_to_uint16";
         case ParseWarning::RegisterCountClamped: return "register_count_clamped";
+        case ParseWarning::DataTypeCoercedTo16Bit: return "data_type_coerced_to_16_bit";
         case ParseWarning::None: break;
     }
     return "none";

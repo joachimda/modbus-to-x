@@ -41,6 +41,7 @@
 #include "services/IndicatorService.h"
 #include "modbus/ModbusManager.h"
 #include "modbus/ModbusConfigLoader.h"
+#include "modbus/ModbusFunctionUtils.h"
 #include "modbus/ModbusMqttWriteCore.h"
 #include "modbus/ModbusValueCodec.h"
 
@@ -1620,9 +1621,11 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
         return;
     }
 
-    // Optional value for write operations. FC5 takes 0/1/false/true; FC6 and
-    // FC16 take the engineering value, which the Modbus owner converts with
-    // the saved datapoint's data type, scale and word order.
+    // Optional value for write operations, passed on as text. The Modbus
+    // owner converts it with the MQTT command grammar (FC5: 0/1/false/true;
+    // FC6/FC16: the engineering value, encoded with the saved datapoint's
+    // data type, scale and word order) and rejects anything it cannot
+    // encode before touching the bus.
     String sValue;
     if (req->hasParam("value")) sValue = req->getParam("value")->value();
 
@@ -1636,19 +1639,7 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
         return;
     }
 
-    uint16_t writeVal = 0;
-    bool hasWriteVal = false;
-    String writeText;
-    if (sValue.length()) {
-        hasWriteVal = true;
-        if (func == 5) {
-            if (sValue.equalsIgnoreCase("true") || sValue == "1") writeVal = 1;
-            else if (sValue.equalsIgnoreCase("false") || sValue == "0") writeVal = 0;
-            else writeVal = static_cast<uint16_t>(sValue.toInt());
-        } else {
-            writeText = sValue;
-        }
-    }
+    const bool hasWriteVal = sValue.length() > 0;
 
     if (func == 5 || func == 6) {
         len = 1;  // single writes; FC16 writes the data type's register width
@@ -1662,8 +1653,7 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
     command.function = static_cast<int>(func);
     command.address = static_cast<uint16_t>(addr);
     command.length = static_cast<uint16_t>(len);
-    command.writeValue = writeVal;
-    command.writeText = writeText;
+    command.writeText = sValue;
     command.hasWriteValue = hasWriteVal;
     if (!scheduleRuntimeJob(req,
             [mb, command, devId, dpId, sValue, func, addr, len]
@@ -1693,6 +1683,14 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
                     setRuntimeJsonResponse(runtimeResponse, response, HttpResponseCodes::BAD_REQUEST_HTTP);
                     return;
                 }
+                if (result.unknownDatapoint) {
+                    response["ok"] = false;
+                    response["error"] = "unknown_datapoint";
+                    response["message"] =
+                        "No saved datapoint matches devId/dpId; save the configuration before writing registers";
+                    setRuntimeJsonResponse(runtimeResponse, response, HttpResponseCodes::BAD_REQUEST_HTTP);
+                    return;
+                }
 
                 response["ok"] = result.busStatus == 0;
                 response["code"] = result.busStatus;
@@ -1707,24 +1705,21 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
                         response["result"]["value"] =
                             ModbusManager::registersToAscii(result.words.data(), result.count);
                     } else if (result.hasDatapointMetadata) {
-                        const bool bitFunction = func == 1 || func == 2;
-                        const ModbusDataType type = bitFunction ? UINT16 : result.dataType;
-                        const ModbusValueCodec::DecodedValue decoded = ModbusValueCodec::decode(
-                            result.words.data(), result.count, type, result.registerSlice,
-                            result.wordOrder);
-                        if (decoded.ok) {
-                            // Same text as the MQTT publication; emitted as a
-                            // JSON number literal when finite.
-                            char text[64];
-                            const ModbusValueCodec::Formatted formatted =
-                                ModbusValueCodec::formatEngineering(
-                                    ModbusValueCodec::engineeringValue(decoded, result.scale), type,
-                                    result.scale, text, sizeof text);
-                            if (formatted.finite) response["result"]["value"] = serialized(String(text));
+                        // Same sequence and text as the MQTT publication;
+                        // emitted as a JSON number literal when finite. Words
+                        // only arrive for reads and register writes, so func
+                        // names a ModbusFunctionType here.
+                        char text[64];
+                        const ModbusValueCodec::ReadingText reading = ModbusValueCodec::formatReading(
+                            result.words.data(), result.count,
+                            isBitFunction(static_cast<ModbusFunctionType>(func)), result.dataType,
+                            result.registerSlice, result.wordOrder, result.scale, text, sizeof text);
+                        if (reading.ok) {
+                            if (reading.finite) response["result"]["value"] = serialized(String(text));
                             else response["result"]["value"] = String(text);
                         } else {
                             response["result"]["valueError"] = "insufficient_registers";
-                            response["result"]["width"] = ModbusValueCodec::wordWidth(type);
+                            response["result"]["width"] = reading.width;
                         }
                     } else {
                         response["result"]["value"] = result.words[0];

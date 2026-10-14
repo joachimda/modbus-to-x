@@ -66,8 +66,6 @@ public:
 
     static String registersToAscii(const uint16_t *buffer, uint16_t count);
 
-    static uint16_t sliceRegister(uint16_t word, RegisterSlice slice);
-
 private:
     struct Command;
 

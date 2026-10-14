@@ -27,6 +27,9 @@ bool isUnsignedInteger(ModbusDataType type);
 
 bool isNumeric(ModbusDataType type);
 
+// The type's name as written in the configuration ("int16", "float32", "TEXT").
+const char *dataTypeName(ModbusDataType type);
+
 uint16_t sliceRegister(uint16_t word, RegisterSlice slice);
 
 struct DecodedValue {
@@ -73,10 +76,33 @@ struct Formatted {
 
 // Formats an engineering value as published on MQTT and returned by the HTTP
 // execute route: integer types print decimalsForScale(scale) decimals,
-// FLOAT32 prints 7 significant digits. Non-finite values print "nan", "inf"
-// or "-inf" with finite=false.
+// FLOAT32 prints the shortest of 7, 8 or 9 significant digits that
+// reproduces the float32 value. Non-finite values print "nan", "inf" or
+// "-inf" with finite=false.
 Formatted formatEngineering(double value, ModbusDataType type, float scale,
                             char *buffer, size_t capacity);
+
+// formatEngineering for a decoded value. Integer types with an integral
+// scale (1, -1, 10, ...) are multiplied in 64-bit arithmetic so int64 and
+// uint64 values keep every digit; a fractional scale, or a product that
+// does not fit 64 bits, rounds through a double.
+Formatted formatDecoded(const DecodedValue &decoded, ModbusDataType type, float scale,
+                        char *buffer, size_t capacity);
+
+struct ReadingText {
+    bool ok{false};        // false: fewer than `width` words were supplied, or TEXT
+    bool finite{false};
+    size_t length{0U};
+    uint8_t width{0U};     // registers the decoded type needs
+};
+
+// Decodes and formats a reading in one step: the sequence the MQTT poll loop
+// and the HTTP execute route share so both produce identical text. Bit
+// functions (FC1/FC2) carry packed bits and decode as UINT16 whatever the
+// configured data type.
+ReadingText formatReading(const uint16_t *words, size_t count, bool bitFunction,
+                          ModbusDataType type, RegisterSlice slice, ModbusWordOrder order,
+                          float scale, char *buffer, size_t capacity);
 
 }  // namespace ModbusValueCodec
 

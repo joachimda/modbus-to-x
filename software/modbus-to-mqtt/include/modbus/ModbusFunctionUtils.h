@@ -11,4 +11,10 @@ inline bool isWriteFunction(const ModbusFunctionType fn) {
     return fn == WRITE_COIL || fn == WRITE_HOLDING || fn == WRITE_MULTIPLE_HOLDING;
 }
 
+// Coil and discrete-input reads: the response carries packed bits, so the
+// datapoint's data type does not apply.
+inline bool isBitFunction(const ModbusFunctionType fn) {
+    return fn == READ_COIL || fn == READ_DISCRETE;
+}
+
 #endif

@@ -706,8 +706,8 @@ function showDatapointEditor() {
     const btnAddNext = $("#btn-dp-add-next");
     if (btnAddNext) {
         btnAddNext.onclick = () => {
-            // Skip every register this datapoint occupies (type width or length).
-            const followingAddress = nextAddress(datapoint.address, datapoint.type, datapoint.length);
+            // Skip every register (or coil) this datapoint occupies.
+            const followingAddress = nextAddress(datapoint.func, datapoint.address, datapoint.type, datapoint.length);
             addDatapointToCurrentDevice({
                 addrFormat: currentAddressFormat,
                 address: followingAddress,

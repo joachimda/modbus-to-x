@@ -84,12 +84,21 @@ test('datapoint shapes report every inconsistency', () => {
 });
 
 test('the next address skips the registers a datapoint occupies', () => {
-    assert.equal(nextAddress(100, 'int32', 1), 102);
-    assert.equal(nextAddress(100, 'uint16', 1), 101);
-    assert.equal(nextAddress(100, 'uint16', 3), 103);
-    assert.equal(nextAddress(100, 'int64', 2), 104);
-    assert.equal(nextAddress(100, 'TEXT', 5), 105);
-    assert.equal(nextAddress(0, 'TEXT', 0), 1);
-    assert.equal(nextAddress(-5, 'uint16', 1), 1);
-    assert.equal(nextAddress(undefined, 'float32', undefined), 2);
+    assert.equal(nextAddress(3, 100, 'int32', 1), 102);
+    assert.equal(nextAddress(4, 100, 'uint16', 1), 101);
+    assert.equal(nextAddress(3, 100, 'uint16', 3), 103);
+    assert.equal(nextAddress(16, 100, 'int64', 2), 104);
+    assert.equal(nextAddress(6, 100, 'int16', 1), 101);
+    assert.equal(nextAddress(3, 100, 'TEXT', 5), 105);
+    assert.equal(nextAddress(3, 0, 'TEXT', 0), 1);
+    assert.equal(nextAddress(3, -5, 'uint16', 1), 1);
+    assert.equal(nextAddress(3, undefined, 'float32', undefined), 2);
+});
+
+test('the next address of a coil or discrete datapoint ignores the data type', () => {
+    assert.equal(nextAddress(1, 10, 'int32', 1), 11);
+    assert.equal(nextAddress(2, 10, 'int64', 8), 18);
+    assert.equal(nextAddress(5, 10, 'uint32', 1), 11);
+    assert.equal(nextAddress('5', 10, 'int64', 1), 11);
+    assert.equal(nextAddress(1, 10, 'float32', undefined), 11);
 });

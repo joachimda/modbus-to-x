@@ -3012,6 +3012,47 @@ void test_modbus_configuration_coerces_register_shape_per_data_type(void) {
                              ModbusConfigDocument::reasonToString(
                                  ModbusConfigDocument::ValidationReason::InvalidRegisterCount));
 
+    // At boot (lenient mode) the same combination keeps loading with the
+    // 16-bit counterpart, so one datapoint saved by an earlier firmware
+    // cannot stop Modbus on every device.
+    struct Narrowing {
+        const char *name;
+        ModbusDataType wide;
+        ModbusDataType narrowed;
+    };
+    const Narrowing narrowings[] = {
+        {"int32", INT32, INT16},   {"int64", INT64, INT16},     {"uint32", UINT32, UINT16},
+        {"uint64", UINT64, UINT16}, {"float32", FLOAT32, UINT16},
+    };
+    for (const auto &narrowing : narrowings) {
+        ModbusConfigDocument::ValidationError error;
+        const std::string json = modbusConfigurationWithScale(6, "0.1", narrowing.name, 1);
+        TEST_ASSERT_TRUE(ModbusConfigDocument::parse(json.c_str(), json.size(), parsed, &error, &notices,
+                                                     ModbusConfigDocument::ParseMode::Lenient));
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusConfigDocument::ValidationReason::None),
+                              static_cast<int>(error.reason));
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(narrowing.narrowed), static_cast<int>(point().dataType));
+        TEST_ASSERT_EQUAL_UINT8(1U, point().numOfRegisters);
+        TEST_ASSERT_EQUAL_UINT(1U, notices.size());
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(ParseWarning::DataTypeCoercedTo16Bit),
+                              static_cast<int>(notices[0].warning));
+        TEST_ASSERT_EQUAL_UINT(0U, notices[0].deviceIndex);
+        TEST_ASSERT_EQUAL_UINT(0U, notices[0].datapointIndex);
+        TEST_ASSERT_EQUAL_UINT16(static_cast<uint16_t>(narrowing.wide), notices[0].previous);
+        TEST_ASSERT_EQUAL_UINT16(static_cast<uint16_t>(narrowing.narrowed), notices[0].coerced);
+    }
+    TEST_ASSERT_EQUAL_STRING("data_type_coerced_to_16_bit",
+                             ModbusConfigDocument::warningToString(ParseWarning::DataTypeCoercedTo16Bit));
+    // Lenient mode changes nothing else: FC16 keeps its wide type and width.
+    {
+        const std::string json = modbusConfigurationWithScale(16, "1", "int32", 2);
+        TEST_ASSERT_TRUE(ModbusConfigDocument::parse(json.c_str(), json.size(), parsed, nullptr, &notices,
+                                                     ModbusConfigDocument::ParseMode::Lenient));
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(INT32), static_cast<int>(point().dataType));
+        TEST_ASSERT_EQUAL_UINT8(2U, point().numOfRegisters);
+        TEST_ASSERT_TRUE(notices.empty());
+    }
+
     // wordOrder: "big" by default, "little"/1 selects little word order.
     TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(3, "1", "uint32", 2, R"(,"wordOrder":"little")")));
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusWordOrder::Little), static_cast<int>(point().wordOrder));
@@ -3422,8 +3463,9 @@ void test_modbus_codec_formats_decimals_from_scale(void) {
     TEST_ASSERT_EQUAL_STRING("1", text);
     format(-100000.0, INT32, 1.0F);
     TEST_ASSERT_EQUAL_STRING("-100000", text);
+    // The double path rounds above 2^53; formatDecoded keeps the exact digits.
     format(static_cast<double>(std::numeric_limits<int64_t>::max()), INT64, 1.0F);
-    TEST_ASSERT_EQUAL_STRING("9223372036854775808", text);  // double precision above 2^53
+    TEST_ASSERT_EQUAL_STRING("9223372036854775808", text);
 
     format(3.14F, FLOAT32, 1.0F);
     TEST_ASSERT_EQUAL_STRING("3.14", text);
@@ -3452,6 +3494,192 @@ void test_modbus_codec_formats_decimals_from_scale(void) {
     TEST_ASSERT_EQUAL_UINT(0U, formatted.length);
     TEST_ASSERT_EQUAL_STRING("", tiny);
     TEST_ASSERT_EQUAL_UINT(0U, formatEngineering(1.0, INT16, 1.0F, nullptr, 0U).length);
+}
+
+void test_modbus_codec_formats_wide_integers_exactly(void) {
+    using namespace ModbusValueCodec;
+    constexpr auto Big = ModbusWordOrder::Big;
+    constexpr auto Full = RegisterSlice::Full;
+    char text[64];
+    char expected[64];
+
+    // A uint64 serial number above 2^53 keeps every digit at integral scales
+    // instead of rounding through a double (…321 would become …336).
+    const uint16_t serial[] = {0x1234U, 0x5678U, 0x9ABCU, 0xDEF1U};
+    DecodedValue decoded = decode(serial, 4U, UINT64, Full, Big);
+    TEST_ASSERT_TRUE(decoded.ok);
+    TEST_ASSERT_TRUE(decoded.rawUnsigned == 0x123456789ABCDEF1ULL);
+    Formatted formatted = formatDecoded(decoded, UINT64, 1.0F, text, sizeof text);
+    TEST_ASSERT_TRUE(formatted.finite);
+    TEST_ASSERT_EQUAL_UINT(19U, formatted.length);
+    TEST_ASSERT_EQUAL_STRING("1311768467463790321", text);
+    formatDecoded(decoded, UINT64, -1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-1311768467463790321", text);
+    formatDecoded(decoded, UINT64, 10.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("13117684674637903210", text);
+    // A product that does not fit 64 bits, or a fractional scale, rounds
+    // through a double as documented.
+    formatDecoded(decoded, UINT64, 100.0F, text, sizeof text);
+    std::snprintf(expected, sizeof expected, "%.0f", static_cast<double>(decoded.rawUnsigned) * 100.0);
+    TEST_ASSERT_EQUAL_STRING(expected, text);
+    formatDecoded(decoded, UINT64, 0.5F, text, sizeof text);
+    std::snprintf(expected, sizeof expected, "%.1f", static_cast<double>(decoded.rawUnsigned) * 0.5);
+    TEST_ASSERT_EQUAL_STRING(expected, text);
+
+    const uint16_t int64Max[] = {0x7FFFU, 0xFFFFU, 0xFFFFU, 0xFFFFU};
+    decoded = decode(int64Max, 4U, INT64, Full, Big);
+    formatDecoded(decoded, INT64, 1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("9223372036854775807", text);
+    formatDecoded(decoded, INT64, -1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-9223372036854775807", text);
+    const uint16_t int64Min[] = {0x8000U, 0U, 0U, 0U};
+    decoded = decode(int64Min, 4U, INT64, Full, Big);
+    formatDecoded(decoded, INT64, 1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-9223372036854775808", text);
+    formatDecoded(decoded, INT64, -1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("9223372036854775808", text);
+    formatDecoded(decoded, INT64, 2.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-18446744073709551616", text);  // overflow: double path
+    const uint16_t uint64Max[] = {0xFFFFU, 0xFFFFU, 0xFFFFU, 0xFFFFU};
+    decoded = decode(uint64Max, 4U, UINT64, Full, Big);
+    formatDecoded(decoded, UINT64, 1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("18446744073709551615", text);
+    formatDecoded(decoded, UINT64, 1e6F, text, sizeof text);
+    std::snprintf(expected, sizeof expected, "%.0f", static_cast<double>(decoded.rawUnsigned) * 1e6);
+    TEST_ASSERT_EQUAL_STRING(expected, text);
+
+    // Narrower integers take the same path and print as before.
+    const uint16_t nilan[] = {0xFF38U};
+    decoded = decode(nilan, 1U, INT16, Full, Big);
+    formatDecoded(decoded, INT16, 1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-200", text);
+    formatDecoded(decoded, INT16, -1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("200", text);
+    formatDecoded(decoded, INT16, 0.01F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-2.00", text);
+    formatDecoded(decoded, INT16, 100.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-20000", text);
+    const uint16_t zero[] = {0U};
+    decoded = decode(zero, 1U, UINT16, Full, Big);
+    formatDecoded(decoded, UINT16, -1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("0", text);  // never "-0"
+    decoded = decode(zero, 1U, INT16, Full, Big);
+    formatDecoded(decoded, INT16, -5.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("0", text);
+
+    char tiny[8];
+    formatted = formatDecoded(decode(serial, 4U, UINT64, Full, Big), UINT64, 1.0F, tiny, sizeof tiny);
+    TEST_ASSERT_EQUAL_UINT(0U, formatted.length);
+    TEST_ASSERT_FALSE(formatted.finite);
+    TEST_ASSERT_EQUAL_UINT(0U, formatDecoded(decoded, INT16, 1.0F, nullptr, 0U).length);
+}
+
+void test_modbus_codec_formats_float32_with_shortest_round_trip(void) {
+    using namespace ModbusValueCodec;
+    char text[64];
+    DecodedValue value;
+    value.ok = true;
+    const auto format = [&](const float raw, const float scale) {
+        value.rawFloat = raw;
+        value.raw = static_cast<double>(raw);
+        return formatDecoded(value, FLOAT32, scale, text, sizeof text);
+    };
+
+    // 2^24 - 1 is exact in float32; "%.7g" would print 1.677722e+07.
+    format(16777215.0F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("16777215", text);
+    TEST_ASSERT_TRUE(std::strtof(text, nullptr) == 16777215.0F);
+    // The shortest text that reads back as the same float32 is preferred.
+    format(1234567.75F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("1234567.8", text);
+    TEST_ASSERT_TRUE(std::strtof(text, nullptr) == 1234567.75F);
+    format(0.1F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("0.1", text);
+    format(3.14F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("3.14", text);
+    format(-100.0F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("-100", text);
+    format(1e10F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("1e+10", text);
+    format(123456789.0F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("1.2345679e+08", text);
+    TEST_ASSERT_TRUE(std::strtof(text, nullptr) == 123456789.0F);
+    format(2.5F, 0.5F);
+    TEST_ASSERT_EQUAL_STRING("1.25", text);
+    format(0.0F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("0", text);
+    format(-0.0F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("0", text);
+    // raw * scale beyond float32 prints the double product with 9 digits.
+    format(3e38F, 10.0F);
+    char expected[64];
+    std::snprintf(expected, sizeof expected, "%.9g", static_cast<double>(3e38F) * 10.0);
+    TEST_ASSERT_EQUAL_STRING(expected, text);
+    TEST_ASSERT_EQUAL_STRING("e+39", text + std::strlen(text) - 4U);
+    Formatted formatted = format(NAN, 1.0F);
+    TEST_ASSERT_FALSE(formatted.finite);
+    TEST_ASSERT_EQUAL_STRING("nan", text);
+}
+
+void test_modbus_codec_format_reading_matches_publication(void) {
+    using namespace ModbusValueCodec;
+    constexpr auto Big = ModbusWordOrder::Big;
+    constexpr auto Little = ModbusWordOrder::Little;
+    constexpr auto Full = RegisterSlice::Full;
+    char text[64];
+
+    const uint16_t nilan[] = {0xFF38U};
+    ReadingText reading = formatReading(nilan, 1U, false, INT16, Full, Big, 0.01F, text, sizeof text);
+    TEST_ASSERT_TRUE(reading.ok);
+    TEST_ASSERT_TRUE(reading.finite);
+    TEST_ASSERT_EQUAL_UINT8(1U, reading.width);
+    TEST_ASSERT_EQUAL_UINT(5U, reading.length);
+    TEST_ASSERT_EQUAL_STRING("-2.00", text);
+
+    // Coils and discrete inputs are packed bits: decoded as uint16 whatever
+    // the data type says.
+    const uint16_t coils[] = {0x0005U};
+    reading = formatReading(coils, 1U, true, INT32, Full, Big, 1.0F, text, sizeof text);
+    TEST_ASSERT_TRUE(reading.ok);
+    TEST_ASSERT_EQUAL_UINT8(1U, reading.width);
+    TEST_ASSERT_EQUAL_STRING("5", text);
+    reading = formatReading(coils, 1U, true, TEXT, Full, Big, 1.0F, text, sizeof text);
+    TEST_ASSERT_TRUE(reading.ok);
+    TEST_ASSERT_EQUAL_STRING("5", text);
+
+    // Too few registers for the type: nothing to publish, width says how many.
+    reading = formatReading(nilan, 1U, false, INT32, Full, Big, 1.0F, text, sizeof text);
+    TEST_ASSERT_FALSE(reading.ok);
+    TEST_ASSERT_EQUAL_UINT8(2U, reading.width);
+    TEST_ASSERT_EQUAL_STRING("", text);
+    reading = formatReading(nilan, 1U, false, TEXT, Full, Big, 1.0F, text, sizeof text);
+    TEST_ASSERT_FALSE(reading.ok);
+    TEST_ASSERT_EQUAL_UINT8(0U, reading.width);
+
+    const uint16_t pi[] = {0xF5C3U, 0x4048U};
+    reading = formatReading(pi, 2U, false, FLOAT32, Full, Little, 1.0F, text, sizeof text);
+    TEST_ASSERT_TRUE(reading.ok);
+    TEST_ASSERT_EQUAL_STRING("3.14", text);
+    const uint16_t notANumber[] = {0x7FC0U, 0U};
+    reading = formatReading(notANumber, 2U, false, FLOAT32, Full, Big, 1.0F, text, sizeof text);
+    TEST_ASSERT_TRUE(reading.ok);
+    TEST_ASSERT_FALSE(reading.finite);
+    TEST_ASSERT_EQUAL_STRING("nan", text);
+
+    const uint16_t serial[] = {0x1234U, 0x5678U, 0x9ABCU, 0xDEF1U};
+    reading = formatReading(serial, 4U, false, UINT64, Full, Big, 1.0F, text, sizeof text);
+    TEST_ASSERT_TRUE(reading.ok);
+    TEST_ASSERT_EQUAL_STRING("1311768467463790321", text);
+
+    const uint16_t sliced[] = {0x1280U};
+    reading = formatReading(sliced, 1U, false, INT16, RegisterSlice::LowByte, Big, 1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-128", text);
+    reading = formatReading(sliced, 1U, false, UINT16, RegisterSlice::HighByte, Big, 0.5F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("9.0", text);
+
+    reading = formatReading(nullptr, 0U, false, UINT16, Full, Big, 1.0F, text, sizeof text);
+    TEST_ASSERT_FALSE(reading.ok);
+    TEST_ASSERT_EQUAL_STRING("", text);
 }
 
 void test_ota_lifecycle_rejects_duplicates_and_retains_terminal_failure(void) {
@@ -3787,6 +4015,9 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_modbus_codec_decodes_each_data_type);
     RUN_TEST(test_modbus_codec_encode_round_trips);
     RUN_TEST(test_modbus_codec_formats_decimals_from_scale);
+    RUN_TEST(test_modbus_codec_formats_wide_integers_exactly);
+    RUN_TEST(test_modbus_codec_formats_float32_with_shortest_round_trip);
+    RUN_TEST(test_modbus_codec_format_reading_matches_publication);
     RUN_TEST(test_ota_lifecycle_rejects_duplicates_and_retains_terminal_failure);
     RUN_TEST(test_ota_quiescence_deadlines_are_independent_and_rollover_safe);
     RUN_TEST(test_ota_progress_calculates_component_and_overall_without_overflow);

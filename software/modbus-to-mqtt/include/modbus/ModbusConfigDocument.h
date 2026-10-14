@@ -23,6 +23,16 @@ struct ValidationError {
     size_t datapointIndex{0U};
 };
 
+// How FC6 combined with a 32-bit or 64-bit data type is handled; every other
+// shape problem is repaired in both modes.
+enum class ParseMode : uint8_t {
+    // Reject the document (API submissions: the caller can fix it).
+    Strict = 0,
+    // Narrow the data type to its 16-bit counterpart and report a notice, so
+    // a configuration saved by an earlier firmware keeps loading at boot.
+    Lenient,
+};
+
 // Adjustments applied while parsing so that existing configurations keep
 // loading. Each one is reported so the loader can log it.
 enum class ParseWarning : uint8_t {
@@ -35,6 +45,9 @@ enum class ParseWarning : uint8_t {
     TextWriteCoercedToUint16,
     // numOfRegisters exceeded the Modbus maximum of 125 and was clamped.
     RegisterCountClamped,
+    // FC6 with a 32-bit or 64-bit data type was narrowed to int16/uint16
+    // (lenient mode only).
+    DataTypeCoercedTo16Bit,
 };
 
 struct ParseNotice {
@@ -47,7 +60,8 @@ struct ParseNotice {
 
 bool parse(const char *json, size_t length, ConfigurationRoot &outConfig,
            ValidationError *validationError = nullptr,
-           std::vector<ParseNotice> *notices = nullptr);
+           std::vector<ParseNotice> *notices = nullptr,
+           ParseMode mode = ParseMode::Strict);
 
 const char *reasonToString(ValidationReason reason);
 

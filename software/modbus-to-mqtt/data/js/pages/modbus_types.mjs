@@ -103,10 +103,16 @@ export function validateDatapointShape(point) {
     return codes;
 }
 
-// First register address after a datapoint: its width or configured length,
-// whichever is larger (TEXT and coils use the length).
-export function nextAddress(address, type, length) {
+// First address after a datapoint. Register functions skip the type's width
+// or the configured length, whichever is larger (TEXT uses the length); coil
+// and discrete functions (FC1/FC2/FC5) address bits, where the data type
+// does not apply, so only the length counts.
+export function nextAddress(functionCode, address, type, length) {
+    const fn = Number(functionCode);
     const base = Number.isInteger(address) && address >= 0 ? address : 0;
     const count = Number.isInteger(length) && length > 0 ? length : 1;
+    if (fn === 1 || fn === 2 || fn === 5) {
+        return base + count;
+    }
     return base + Math.max(wordWidth(type), count);
 }

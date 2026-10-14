@@ -605,13 +605,12 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
         case 2: result.busStatus = node.readDiscreteInputs(request.address, effectiveLength); break;
         case 3: result.busStatus = node.readHoldingRegisters(request.address, effectiveLength); break;
         case 4: result.busStatus = node.readInputRegisters(request.address, effectiveLength); break;
-        case 5: {
-            const uint16_t value = request.writeValue ? 0xFF00U : 0x0000U;
-            node.beginTransmission(request.address);
-            node.send(value);
-            result.busStatus = node.writeSingleCoil(request.address, value);
+        case 5:
+            // ModbusMaster::writeSingleCoil(uint16_t, uint8_t) expects the coil
+            // state as 0/1 and builds the 0xFF00/0x0000 wire value itself.
+            // Passing 0xFF00 truncated to 0 and switched every coil off.
+            result.busStatus = node.writeSingleCoil(request.address, request.writeValue ? 1U : 0U);
             break;
-        }
         case 6:
             node.beginTransmission(request.address);
             node.send(request.writeValue);

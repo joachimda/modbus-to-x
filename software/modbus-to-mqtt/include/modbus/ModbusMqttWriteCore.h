@@ -52,6 +52,9 @@ struct CommandContext {
     uint8_t slaveId{0U};
     ModbusFunctionType function{READ_HOLDING};
     uint16_t address{0U};
+    // Wavin functions: address is the register index within category/page.
+    uint8_t category{0U};
+    uint8_t page{0U};
     uint8_t registerCount{1U};
     double scale{1.0};
     ModbusDataType dataType{UINT16};
@@ -64,6 +67,8 @@ struct WriteCommand {
     uint8_t slaveId{0U};
     ModbusFunctionType function{READ_HOLDING};
     uint16_t address{0U};
+    uint8_t category{0U};
+    uint8_t page{0U};
     // FC5: the configured count. FC6/FC16: the number of words to write.
     uint8_t registerCount{1U};
     bool coilValue{false};

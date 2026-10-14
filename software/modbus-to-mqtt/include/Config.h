@@ -52,6 +52,20 @@
 
 #define MODBUS_SLAVE_ID 1
 
+// How long a Wavin (0x43/0x44) request waits for its reply. The controller
+// answers within a few milliseconds; the margin covers a wall display that
+// shares the bus as a second master.
+#ifndef WAVIN_RESPONSE_TIMEOUT_MS
+#define WAVIN_RESPONSE_TIMEOUT_MS 1000U
+#endif
+
+// Attempts per Wavin read when the reply times out or fails its CRC. Attempts
+// x WAVIN_RESPONSE_TIMEOUT_MS stays within the two seconds the OTA quiescence
+// allows for one Modbus transaction.
+#ifndef WAVIN_READ_ATTEMPTS
+#define WAVIN_READ_ATTEMPTS 2U
+#endif
+
 /****************************************************
  * PREFERENCE STORAGE
  ****************************************************/

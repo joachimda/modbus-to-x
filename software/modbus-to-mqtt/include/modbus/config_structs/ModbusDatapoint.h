@@ -22,6 +22,9 @@ struct ModbusDatapoint {
     RegisterSlice registerSlice{RegisterSlice::Full};
     ModbusWordOrder wordOrder{ModbusWordOrder::Big};
     uint32_t pollIntervalMs{0};
+    // Wavin functions only: address holds the register index (0..255).
+    uint8_t category{0};
+    uint8_t page{0};
     uint32_t nextDueAtMs{0};
 };
 #endif

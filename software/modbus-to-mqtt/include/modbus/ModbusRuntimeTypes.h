@@ -52,9 +52,15 @@ struct ModbusCommandRequest {
     int function{0};
     uint16_t address{0U};
     uint16_t length{0U};
+    // Wavin functions (0x43/0x44): address is the register index within
+    // category/page. Without hasWavinAddress they come from the saved
+    // datapoint the request names.
+    uint8_t category{0U};
+    uint8_t page{0U};
+    bool hasWavinAddress{false};
     // FC5: coil state, non-zero switches the coil on (MQTT command path).
     uint16_t writeValue{0U};
-    // FC6/FC16: register words already encoded for the datapoint's data type
+    // FC6/FC16/0x44: register words already encoded for the datapoint's data type
     // and word order (MQTT command path).
     std::array<uint16_t, ModbusValueCodec::kMaxWords> writeWords{};
     uint8_t writeCount{0U};

@@ -158,6 +158,49 @@ See the [HTTP API request contract](HTTP_API.md) for the route and method matrix
   }
   ```
 
+#### Wavin AHC 9000
+The Wavin AHC 9000 floor-heating controller (also sold as Jablotron AC-116) uses Modbus RTU framing but answers only its own function codes, so standard reads return `IllegalFunction`. Use function `67` (0x43, read) and `68` (0x44, write). These address a register by `category`, `page` and a register index, which goes in `address`, each 0-255. Reads cover up to 32 registers; writes set one 16-bit register and follow the FC6 rules.
+
+- Bus: 38400 baud, `8N1`. The controller always answers slave address 1.
+- Commonly used registers, as reverse engineered by the community ([niklascp/Wavin-AHC-9000-mqtt](https://github.com/niklascp/Wavin-AHC-9000-mqtt), [spiff42/wavin-python](https://github.com/spiff42/wavin-python)):
+
+  | Category | Page | Index | Value |
+  | --- | --- | --- | --- |
+  | 1 (elements) | element/thermostat number | 4 | Air temperature, `int16` × 0.1 °C |
+  | 1 (elements) | element/thermostat number | 10 | Battery status |
+  | 2 (packed data) | channel number | 0 | Manual setpoint, `int16` × 0.1 °C (writable) |
+  | 2 (packed data) | channel number | 4 | Standby setpoint, `int16` × 0.1 °C (writable) |
+  | 2 (packed data) | channel number | 7 | Configuration; low 3 bits are the mode (0 manual, 1 standby) |
+  | 3 (channels) | channel number | 0 | Timer event; bit `0x0010` is set while the output is on |
+  | 3 (channels) | channel number | 2 | Primary element; low 6 bits are the element number, `0x0400` means all thermostats lost |
+
+  ```json
+  {
+    "version": 1,
+    "bus": { "enabled": true, "baud": 38400, "serialFormat": "8N1" },
+    "devices": [
+      {
+        "name": "Wavin",
+        "slaveId": 1,
+        "mqttEnabled": true,
+        "homeassistantDiscoveryEnabled": true,
+        "dataPoints": [
+          { "id": "zone1_temp", "name": "Zone 1 temperature", "function": 67,
+            "category": 1, "page": 0, "address": 4, "numOfRegisters": 1,
+            "dataType": "int16", "scale": 0.1, "unit": "C", "poll_interval": 30 },
+          { "id": "zone1_setpoint", "name": "Zone 1 setpoint", "function": 67,
+            "category": 2, "page": 0, "address": 0, "numOfRegisters": 1,
+            "dataType": "int16", "scale": 0.1, "unit": "C", "poll_interval": 30 },
+          { "id": "zone1_setpoint_set", "name": "Zone 1 setpoint", "function": 68,
+            "category": 2, "page": 0, "address": 0, "numOfRegisters": 1,
+            "dataType": "int16", "scale": 0.1 }
+        ]
+      }
+    ]
+  }
+  ```
+- A wall display (DS-9000) may share the bus as a second master. Replies that do not match the outstanding request (another slave, function or register count, or a bad CRC) are skipped while waiting, and a read that still times out or fails its CRC is retried once (`WAVIN_READ_ATTEMPTS`). Writes are never retried.
+
 ### MQTT Publishing
 - Configure broker host, port, credentials, and optional root topic via the **Configure MQTT** page or by editing `/conf/mqtt.json`. The firmware automatically extracts hostnames from URLs and persists the MQTT password in NVS preferences.
 - When Modbus reads succeed, datapoint values are published to MQTT using either the exact per-datapoint topic override or the default pattern `<root>/<device>/<datapoint>` with slugified device and datapoint names.

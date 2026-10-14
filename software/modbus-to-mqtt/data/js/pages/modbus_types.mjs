@@ -25,12 +25,25 @@ export const WORD_WIDTH = Object.freeze({
     uint64: 4,
 });
 
+// Wavin AHC 9000 functions (0x43 read, 0x44 write): the address is a
+// register index within a category and page, each one byte on the wire.
+export const WAVIN_READ = 67;
+export const WAVIN_WRITE = 68;
+export const WAVIN_MAX_REGISTERS = 32;
+
+export function isWavinFunction(functionCode) {
+    const fn = Number(functionCode);
+    return fn === WAVIN_READ || fn === WAVIN_WRITE;
+}
+
 export const SHAPE_MESSAGES = Object.freeze({
-    fc6_multiword: "FC6 writes exactly one register; use FC16 for 32-bit and 64-bit data types",
+    fc6_multiword: "FC6 and Wavin 0x44 write exactly one register; use FC16 for 32-bit and 64-bit data types",
     slice_multiword: "registerSlice requires a 16-bit data type",
     length_below_width: "numOfRegisters is smaller than the data type's register width",
     length_not_width_fc16: "FC16 numOfRegisters must equal the data type's register width",
     word_order_invalid: "wordOrder must be \"big\" or \"little\"",
+    wavin_location_invalid: "Wavin functions need address (register index), category and page in 0-255",
+    wavin_length_invalid: `Wavin reads cover 1-${WAVIN_MAX_REGISTERS} registers`,
 });
 
 export function normalizeDataType(type) {
@@ -52,9 +65,10 @@ export function normalizeWordOrder(value) {
 }
 
 // Returns the register count the firmware will use for a datapoint:
-// FC5 always 1; FC6 1 for 16-bit types (multi-word types cannot be repaired
-// and are left for validation); FC16 exactly the width; FC3/FC4 at least
-// the width. TEXT and bit functions keep the requested length.
+// FC5 always 1; FC6 and Wavin 0x44 1 for 16-bit types (multi-word types
+// cannot be repaired and are left for validation); FC16 exactly the width;
+// FC3/FC4 and Wavin 0x43 at least the width. TEXT and bit functions keep the
+// requested length.
 export function coerceRegisterCount(functionCode, type, length) {
     const fn = Number(functionCode);
     const requested = Number.isInteger(length) && length > 0 ? length : 1;
@@ -62,11 +76,11 @@ export function coerceRegisterCount(functionCode, type, length) {
     let next = requested;
     if (fn === 5) {
         next = 1;
-    } else if (fn === 6) {
+    } else if (fn === 6 || fn === WAVIN_WRITE) {
         next = width > 1 ? requested : 1;
     } else if (fn === 16) {
         next = width > 0 ? width : 1;
-    } else if ((fn === 3 || fn === 4) && requested < width) {
+    } else if ((fn === 3 || fn === 4 || fn === WAVIN_READ) && requested < width) {
         next = width;
     }
     return { length: next, changed: next !== requested };
@@ -82,17 +96,28 @@ export function validateDatapointShape(point) {
     const slice = point?.registerSlice == null
         ? "full"
         : String(point.registerSlice).trim().toLowerCase();
-    if (fn === 6 && width > 1) {
+    if ((fn === 6 || fn === WAVIN_WRITE) && width > 1) {
         codes.push("fc6_multiword");
     }
     if (slice !== "full" && width !== 1) {
         codes.push("slice_multiword");
     }
-    if ((fn === 3 || fn === 4) && width > 0 && Number.isInteger(length) && length < width) {
+    if ((fn === 3 || fn === 4 || fn === WAVIN_READ) && width > 0 && Number.isInteger(length)
+        && length < width) {
         codes.push("length_below_width");
     }
     if (fn === 16 && width > 0 && Number.isInteger(length) && length !== width) {
         codes.push("length_not_width_fc16");
+    }
+    if (isWavinFunction(fn)) {
+        const inByte = (value) => Number.isInteger(value) && value >= 0 && value <= 255;
+        if (!inByte(Number(point?.address)) || !inByte(Number(point?.category ?? 0))
+            || !inByte(Number(point?.page ?? 0))) {
+            codes.push("wavin_location_invalid");
+        }
+        if (fn === WAVIN_READ && Number.isInteger(length) && length > WAVIN_MAX_REGISTERS) {
+            codes.push("wavin_length_invalid");
+        }
     }
     if (point?.wordOrder != null) {
         const order = String(point.wordOrder).trim().toLowerCase();

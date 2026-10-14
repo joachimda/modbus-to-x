@@ -110,14 +110,32 @@
                     4,
                     5,
                     6,
-                    16
+                    16,
+                    67,
+                    68
                   ],
-                  "default": 3
+                  "default": 3,
+                  "description": "Modbus function code. 67 (0x43) and 68 (0x44) are the Wavin AHC 9000 read and write functions, which address registers by category, index and page."
                 },
                 "address": {
                   "type": "integer",
                   "minimum": 0,
-                  "maximum": 65535
+                  "maximum": 65535,
+                  "description": "Register or coil address. For Wavin functions (67/68): the register index, 0-255."
+                },
+                "category": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 255,
+                  "default": 0,
+                  "description": "Wavin functions (67/68) only: register category (e.g. 1 elements, 2 packed data, 3 channels)."
+                },
+                "page": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 255,
+                  "default": 0,
+                  "description": "Wavin functions (67/68) only: page within the category (e.g. the element or channel number)."
                 },
                 "numOfRegisters": {
                   "type": "integer",

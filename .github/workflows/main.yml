@@ -45,6 +45,14 @@ jobs:
                 exit 1
                 ;;
             esac
+            # Same shape as every existing release (N.N.N or N.N.N-suffix). The device's
+            # compareVersions() only reads major.minor.patch, and VERSION is spliced
+            # unquoted into the manifest JSON, the download URLs and FW_VERSION, so
+            # anything else is refused before a tag exists.
+            if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+              echo "::error::The 'version' input must look like 8.0.5 or 8.0.5-beta.1 (got '${VERSION}')."
+              exit 1
+            fi
             if ! git check-ref-format "refs/tags/v${VERSION}"; then
               echo "::error::'${VERSION}' does not form a valid tag name (v${VERSION})."
               exit 1
@@ -58,20 +66,27 @@ jobs:
 
       # The tag must exist locally before the build: scripts/gen_version.py derives
       # FW_VERSION from `git describe --tags`, so without it the firmware would report
-      # "<previous tag>-N-g<sha>" instead of "v<version>". Pushing with GITHUB_TOKEN does
-      # not trigger a second "Release OTA" run, so there is no double release.
-      - name: Create and push release tag (manual dispatch only)
+      # "<previous tag>-N-g<sha>" instead of "v<version>". It is pushed in the release
+      # step, once there is a release to attach it to.
+      - name: Create release tag (manual dispatch only)
         if: github.event_name == 'workflow_dispatch'
         run: |
           TAG="v${VERSION}"
           if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null \
              || git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null; then
-            echo "::error::Tag ${TAG} already exists. Pick a new version, or push that tag to release it."
+            echo "::error::Tag ${TAG} already exists (locally or on origin). Pick a new version, or delete it with 'git push origin :refs/tags/${TAG}' and dispatch again."
+            exit 1
+          fi
+          # With several tags on one commit, `git describe --tags` returns the first one
+          # in name order rather than the newest, so a HEAD that is already tagged (e.g.
+          # the tip of main right after a release) could embed the older tag in FW_VERSION.
+          EXISTING="$(git tag --points-at HEAD | xargs)"
+          if [ -n "${EXISTING}" ]; then
+            echo "::error::HEAD is already tagged (${EXISTING}); git describe --tags could embed that in FW_VERSION instead of ${TAG}. Dispatch on a commit that has no tags."
             exit 1
           fi
           git tag "${TAG}" HEAD
-          git push origin "refs/tags/${TAG}"
-          echo "Created and pushed tag ${TAG} at $(git rev-parse HEAD)"
+          echo "Created tag ${TAG} at $(git rev-parse HEAD); it is pushed in the release step"
 
       - uses: actions/setup-python@v6
         with:
@@ -156,6 +171,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Manual dispatch: push the tag created earlier now that there is a release to
+          # attach to it, so a failed build leaves nothing behind on origin. A push made
+          # with GITHUB_TOKEN does not start another "Release OTA" run.
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            git push origin "refs/tags/v${VERSION}"
+          fi
+
           PRERELEASE=""
           if [[ "${VERSION}" == *"-"* ]]; then
             PRERELEASE="--prerelease"

@@ -74,6 +74,12 @@ struct ModbusCommandRequest {
     uint32_t expectedGeneration{0U};
 };
 
+// Registers an executed command hands back; a Wavin read of the largest
+// allowed size must fit.
+constexpr size_t kMaxCommandResultWords = 32U;
+static_assert(kMaxCommandResultWords >= WavinFrame::kMaxRegisters,
+              "command result must hold a full Wavin read");
+
 struct ModbusCommandResult {
     ModbusOperationResult operation{ModbusOperationResult::Unavailable};
     uint8_t busStatus{0xE4U};
@@ -81,7 +87,7 @@ struct ModbusCommandResult {
     // Registers received (reads) or written (register writes); a read longer
     // than the array is cut to its size, and count says how many are valid.
     uint16_t count{0U};
-    std::array<uint16_t, WavinFrame::kMaxRegisters> words{};
+    std::array<uint16_t, kMaxCommandResultWords> words{};
     String rxDump;
     bool hasDatapointMetadata{false};
     ModbusDataType dataType{UINT16};

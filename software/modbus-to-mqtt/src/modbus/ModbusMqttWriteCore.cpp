@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <limits>
 #include <utility>
+#include <vector>
 
 namespace ModbusMqttWriteCore {
 namespace {
@@ -41,6 +42,7 @@ bool equalsIgnoreAsciiCase(const std::string &value, const char *expected) {
 }
 
 constexpr int64_t DECIMAL_EXPONENT_LIMIT = std::numeric_limits<int64_t>::max() / 4;
+constexpr double MINIMUM_DISCOVERY_STEP = 0.001;  // Home Assistant's smallest number step
 
 struct DecimalMagnitude {
     bool negative{false};
@@ -149,16 +151,54 @@ void multiplyDecimalDigits(std::string &digits, const uint32_t factor) {
     digits.insert(0U, prefix);
 }
 
-DecimalMagnitude maximumEngineeringMagnitude(const double scale) {
+// Schoolbook multiplication of two non-negative decimal digit strings.
+std::string multiplyDecimalStrings(const std::string &left, const std::string &right) {
+    std::vector<uint32_t> product(left.size() + right.size(), 0U);
+    for (size_t leftIndex = left.size(); leftIndex > 0U; --leftIndex) {
+        const auto leftDigit = static_cast<uint32_t>(left[leftIndex - 1U] - '0');
+        uint32_t carry = 0U;
+        for (size_t rightIndex = right.size(); rightIndex > 0U; --rightIndex) {
+            const auto rightDigit = static_cast<uint32_t>(right[rightIndex - 1U] - '0');
+            const size_t position = leftIndex + rightIndex - 1U;
+            const uint32_t sum = product[position] + leftDigit * rightDigit + carry;
+            product[position] = sum % 10U;
+            carry = sum / 10U;
+        }
+        size_t position = leftIndex - 1U;
+        while (carry > 0U) {
+            const uint32_t sum = product[position] + carry;
+            product[position] = sum % 10U;
+            carry = sum / 10U;
+            if (position == 0U) break;
+            --position;
+        }
+    }
+
+    std::string digits;
+    digits.reserve(product.size());
+    for (const uint32_t digit : product) {
+        if (digits.empty() && digit == 0U) continue;
+        digits.push_back(static_cast<char>('0' + digit));
+    }
+    if (digits.empty()) digits = "0";
+    return digits;
+}
+
+// Exact decimal value of |scale| * rawMagnitude, where scale is a double.
+DecimalMagnitude scaledMagnitude(const double scale, const uint64_t rawMagnitude) {
+    DecimalMagnitude result;
+    if (rawMagnitude == 0U) {
+        result.digits = "0";
+        return result;
+    }
+
     int exponent2 = 0;
     const double fraction = std::frexp(std::fabs(scale), &exponent2);
     const int significandBits = std::numeric_limits<double>::digits;
-    const uint64_t significand = static_cast<uint64_t>(std::ldexp(fraction, significandBits));
+    const auto significand = static_cast<uint64_t>(std::ldexp(fraction, significandBits));
 
-    DecimalMagnitude result;
     result.zero = false;
-    result.digits = std::to_string(significand);
-    multiplyDecimalDigits(result.digits, 65535U);
+    result.digits = multiplyDecimalStrings(std::to_string(significand), std::to_string(rawMagnitude));
 
     const int binaryExponent = exponent2 - significandBits;
     if (binaryExponent >= 0) {
@@ -193,12 +233,63 @@ int compareMagnitude(const DecimalMagnitude &left, const DecimalMagnitude &right
     return 0;
 }
 
+// Plain aggregate (no default member initialisers): the firmware builds as
+// gnu++11, where a struct with them cannot be brace-assigned.
+struct RawRange {
+    int64_t minimum;
+    uint64_t maximum;
+};
+
+bool rawRangeForType(const ModbusDataType type, RawRange &range) {
+    switch (type) {
+        case INT16: range = {-32768, 32767U}; return true;
+        case UINT16: range = {0, 65535U}; return true;
+        case INT32:
+            range = {std::numeric_limits<int32_t>::min(),
+                     static_cast<uint64_t>(std::numeric_limits<int32_t>::max())};
+            return true;
+        case UINT32: range = {0, std::numeric_limits<uint32_t>::max()}; return true;
+        case INT64:
+            range = {std::numeric_limits<int64_t>::min(),
+                     static_cast<uint64_t>(std::numeric_limits<int64_t>::max())};
+            return true;
+        case UINT64: range = {0, std::numeric_limits<uint64_t>::max()}; return true;
+        case FLOAT32:
+        case TEXT:
+            break;
+    }
+    return false;
+}
+
+// Largest engineering magnitudes an integer type accepts, by the sign of the
+// raw value: positive is maximum * |scale|, negative is |minimum| * |scale|.
+struct RawLimits {
+    bool valid{false};
+    DecimalMagnitude positive;
+    DecimalMagnitude negative;
+};
+
+RawLimits rawLimitsForType(const ModbusDataType type, const double scale) {
+    RawLimits limits;
+    RawRange range{};
+    if (!rawRangeForType(type, range) || !isValidWritableScale(scale)) return limits;
+    limits.valid = true;
+    limits.positive = scaledMagnitude(scale, range.maximum);
+    const uint64_t negativeMagnitude = range.minimum < 0
+                                           ? static_cast<uint64_t>(-(range.minimum + 1)) + 1U
+                                           : 0U;
+    limits.negative = scaledMagnitude(scale, negativeMagnitude);
+    return limits;
+}
+
 bool isOutsideRawRange(const DecimalMagnitude &value,
-                       const DecimalMagnitude &maximumMagnitude,
+                       const RawLimits &limits,
                        const double scale) {
     if (value.zero) return false;
-    if (value.negative != std::signbit(scale)) return true;
-    return compareMagnitude(value, maximumMagnitude) > 0;
+    const bool rawNegative = value.negative != std::signbit(scale);
+    const DecimalMagnitude &limit = rawNegative ? limits.negative : limits.positive;
+    if (limit.zero) return true;
+    return compareMagnitude(value, limit) > 0;
 }
 
 ConversionResult reject(const RejectionReason reason) {
@@ -207,10 +298,20 @@ ConversionResult reject(const RejectionReason reason) {
     return result;
 }
 
+ConversionResult acceptWords(const ModbusValueCodec::EncodedWords &encoded) {
+    ConversionResult result;
+    result.wordCount = encoded.count;
+    result.words = encoded.words;
+    result.rawValue = encoded.words[0];
+    return result;
+}
+
 ConversionResult convertPayloadWithBoundary(const ModbusFunctionType function,
                                             const std::string &payload,
                                             const double scale,
-                                            const DecimalMagnitude *maximumMagnitude) {
+                                            const ModbusDataType dataType,
+                                            const ModbusWordOrder wordOrder,
+                                            const RawLimits *precomputedLimits) {
     const std::string value = trim(payload);
     if (value.empty()) return reject(RejectionReason::Empty);
 
@@ -224,10 +325,14 @@ ConversionResult convertPayloadWithBoundary(const ModbusFunctionType function,
         return reject(RejectionReason::InvalidSyntax);
     }
 
-    DecimalMagnitude parsedDecimal;
-    if (!isWritableHoldingFunction(function) || !parseDecimal(value, parsedDecimal)) {
-        return reject(RejectionReason::InvalidSyntax);
+    if (!isWritableHoldingFunction(function)) return reject(RejectionReason::InvalidSyntax);
+    if (!ModbusValueCodec::isNumeric(dataType)
+        || (function == WRITE_HOLDING && ModbusValueCodec::wordWidth(dataType) != 1U)) {
+        return reject(RejectionReason::UnsupportedDataType);
     }
+
+    DecimalMagnitude parsedDecimal;
+    if (!parseDecimal(value, parsedDecimal)) return reject(RejectionReason::InvalidSyntax);
 
     char *end = nullptr;
     const double engineering = std::strtod(value.c_str(), &end);
@@ -237,22 +342,50 @@ ConversionResult convertPayloadWithBoundary(const ModbusFunctionType function,
     if (!std::isfinite(engineering)) return reject(RejectionReason::NonFinite);
     if (!isValidWritableScale(scale)) return reject(RejectionReason::InvalidScale);
 
-    DecimalMagnitude computedMaximum;
-    if (maximumMagnitude == nullptr) {
-        computedMaximum = maximumEngineeringMagnitude(scale);
-        maximumMagnitude = &computedMaximum;
+    const double rawExact = engineering / scale;
+    if (!std::isfinite(rawExact)) return reject(RejectionReason::NonFinite);
+
+    ModbusValueCodec::EncodedWords encoded;
+    if (dataType == FLOAT32) {
+        if (std::fabs(rawExact) > static_cast<double>(std::numeric_limits<float>::max())) {
+            return reject(RejectionReason::OutOfRange);
+        }
+        ModbusValueCodec::encodeFloat(static_cast<float>(rawExact), wordOrder, encoded);
+        return acceptWords(encoded);
     }
-    if (isOutsideRawRange(parsedDecimal, *maximumMagnitude, scale)) {
+
+    RawLimits computedLimits;
+    const RawLimits *limits = precomputedLimits;
+    if (limits == nullptr || !limits->valid) {
+        computedLimits = rawLimitsForType(dataType, scale);
+        limits = &computedLimits;
+    }
+    if (!limits->valid) return reject(RejectionReason::UnsupportedDataType);
+    if (isOutsideRawRange(parsedDecimal, *limits, scale)) {
         return reject(RejectionReason::OutOfRange);
     }
 
-    const double rawExact = engineering / scale;
-    if (!std::isfinite(rawExact)) return reject(RejectionReason::NonFinite);
-    if (rawExact < 0.0 || rawExact > 65535.0) return reject(RejectionReason::OutOfRange);
-
-    ConversionResult result;
-    result.rawValue = static_cast<uint16_t>(std::floor(rawExact + 0.5));
-    return result;
+    // Nearest integer with exact halves rounded upward. The exact decimal
+    // check above guarantees the true value is in range; the double path only
+    // loses precision above 2^53, so the conversion saturates instead of
+    // overflowing.
+    const double rounded = std::floor(rawExact + 0.5);
+    bool encodedOk = false;
+    if (ModbusValueCodec::isSignedInteger(dataType)) {
+        int64_t raw = 0;
+        if (rounded >= 9223372036854775808.0) raw = std::numeric_limits<int64_t>::max();
+        else if (rounded < -9223372036854775808.0) raw = std::numeric_limits<int64_t>::min();
+        else raw = static_cast<int64_t>(rounded);
+        encodedOk = ModbusValueCodec::encodeSigned(raw, dataType, wordOrder, encoded);
+    } else {
+        uint64_t raw = 0U;
+        if (rounded >= 18446744073709551616.0) raw = std::numeric_limits<uint64_t>::max();
+        else if (rounded <= 0.0) raw = 0U;
+        else raw = static_cast<uint64_t>(rounded);
+        encodedOk = ModbusValueCodec::encodeUnsigned(raw, dataType, wordOrder, encoded);
+    }
+    if (!encodedOk) return reject(RejectionReason::OutOfRange);
+    return acceptWords(encoded);
 }
 
 }  // namespace
@@ -267,25 +400,42 @@ bool isValidWritableScale(const double scale) {
 
 ConversionResult convertPayload(const ModbusFunctionType function,
                                 const std::string &payload,
-                                const double scale) {
-    return convertPayloadWithBoundary(function, payload, scale, nullptr);
+                                const double scale,
+                                const ModbusDataType dataType,
+                                const ModbusWordOrder wordOrder) {
+    return convertPayloadWithBoundary(function, payload, scale, dataType, wordOrder, nullptr);
 }
 
-NumberDiscoveryBounds numberDiscoveryBounds(const double scale) {
+NumberDiscoveryBounds numberDiscoveryBounds(const double scale, const ModbusDataType dataType) {
     NumberDiscoveryBounds result;
     if (!isValidWritableScale(scale)) {
         result.rejection = RejectionReason::InvalidScale;
         return result;
     }
 
-    const double scaledMaximum = 65535.0 * scale;
-    if (!std::isfinite(scaledMaximum)) {
-        result.rejection = RejectionReason::NonFinite;
-        return result;
+    double low = 0.0;
+    double high = 0.0;
+    if (dataType == FLOAT32) {
+        const double magnitude = static_cast<double>(std::numeric_limits<float>::max())
+                                 * std::fabs(scale);
+        low = -magnitude;
+        high = magnitude;
+        result.step = MINIMUM_DISCOVERY_STEP;
+    } else {
+        RawRange range{};
+        if (!rawRangeForType(dataType, range)) {
+            result.rejection = RejectionReason::UnsupportedDataType;
+            return result;
+        }
+        const double scaledMinimum = static_cast<double>(range.minimum) * scale;
+        const double scaledMaximum = static_cast<double>(range.maximum) * scale;
+        low = std::min(scaledMinimum, scaledMaximum);
+        high = std::max(scaledMinimum, scaledMaximum);
+        result.step = std::fabs(scale);
     }
-    result.minimum = std::min(0.0, scaledMaximum);
-    result.maximum = std::max(0.0, scaledMaximum);
-    result.step = std::fabs(scale);
+    result.minimum = low;
+    result.maximum = high;
+    if (result.step < MINIMUM_DISCOVERY_STEP) result.step = MINIMUM_DISCOVERY_STEP;
     if (!std::isfinite(result.minimum) || !std::isfinite(result.maximum)
         || !std::isfinite(result.step) || result.step <= 0.0) {
         result.rejection = RejectionReason::NonFinite;
@@ -300,6 +450,7 @@ const char *rejectionReasonToString(const RejectionReason reason) {
         case RejectionReason::NonFinite: return "non_finite";
         case RejectionReason::InvalidScale: return "invalid_scale";
         case RejectionReason::OutOfRange: return "out_of_range";
+        case RejectionReason::UnsupportedDataType: return "unsupported_data_type";
         case RejectionReason::None: break;
     }
     return "none";
@@ -310,18 +461,20 @@ MessageHandler buildMessageHandler(const CommandContext &context,
                                    WarningSink warning) {
     const SubmitSink submitSink = std::move(submit);
     const WarningSink warningSink = std::move(warning);
-    const bool hasMaximumMagnitude = isWritableHoldingFunction(context.function)
-                                     && isValidWritableScale(context.scale);
-    const DecimalMagnitude maximumMagnitude = hasMaximumMagnitude
-                                              ? maximumEngineeringMagnitude(context.scale)
-                                              : DecimalMagnitude{};
-    return [context, submitSink, warningSink, hasMaximumMagnitude, maximumMagnitude]
+    const bool integerHolding = isWritableHoldingFunction(context.function)
+                                && (ModbusValueCodec::isSignedInteger(context.dataType)
+                                    || ModbusValueCodec::isUnsignedInteger(context.dataType));
+    const RawLimits limits = integerHolding ? rawLimitsForType(context.dataType, context.scale)
+                                            : RawLimits{};
+    return [context, submitSink, warningSink, limits]
         (const std::string &topic, const std::string &payload) {
             const ConversionResult conversion = convertPayloadWithBoundary(
                 context.function,
                 payload,
                 context.scale,
-                hasMaximumMagnitude ? &maximumMagnitude : nullptr);
+                context.dataType,
+                context.wordOrder,
+                limits.valid ? &limits : nullptr);
             if (!conversion.accepted()) {
                 if (warningSink) {
                     warningSink(std::string("[Modbus][MQTT] Rejected command: topic=") + topic
@@ -338,10 +491,12 @@ MessageHandler buildMessageHandler(const CommandContext &context,
             command.slaveId = context.slaveId;
             command.function = context.function;
             command.address = context.address;
-            command.registerCount = context.function == WRITE_MULTIPLE_HOLDING
-                                      ? 1U
-                                      : context.registerCount;
-            command.rawValue = conversion.rawValue;
+            command.registerCount = context.function == WRITE_COIL
+                                        ? context.registerCount
+                                        : conversion.wordCount;
+            command.coilValue = conversion.rawValue != 0U;
+            command.wordCount = conversion.wordCount;
+            command.words = conversion.words;
             command.modbusGeneration = context.modbusGeneration;
             submitSink(command);
         };

@@ -1,12 +1,17 @@
 #include "modbus/ModbusManager.h"
 
+#include <array>
 #include <cmath>
 #include <new>
+#include <string>
 #include <utility>
 
 #include "concurrency/OwnerRequest.h"
 #include "modbus/ModbusConfigLoader.h"
+#include "modbus/ModbusFunctionUtils.h"
+#include "modbus/ModbusMqttWriteCore.h"
 #include "modbus/ModbusPollScheduler.h"
+#include "modbus/ModbusValueCodec.h"
 #include "mqtt/MqttManager.h"
 #include "services/IndicatorService.h"
 #include "storage/ConfigFs.h"
@@ -524,14 +529,28 @@ bool ModbusManager::readModbusDevice(ModbusDevice &device,
             std::vector<uint16_t> words(wordCount);
             for (uint8_t i = 0; i < wordCount; ++i) words[i] = node.getResponseBuffer(i);
             String payload;
+            bool publish = true;
             if (datapoint.dataType == TEXT) {
                 payload = registersToAscii(words.data(), wordCount);
             } else {
-                const uint16_t primary = wordCount > 0U ? words[0] : 0U;
-                payload = String(static_cast<float>(sliceRegister(primary, datapoint.registerSlice))
-                                 * datapoint.scale);
+                // Decoded by the configured data type before the scale is
+                // applied, with the same sequence the HTTP execute route
+                // uses, so both produce identical text.
+                char text[64];
+                const ModbusValueCodec::ReadingText reading = ModbusValueCodec::formatReading(
+                    words.data(), wordCount, isBitFunction(datapoint.function), datapoint.dataType,
+                    datapoint.registerSlice, datapoint.wordOrder, datapoint.scale, text, sizeof text);
+                if (reading.ok) {
+                    payload = text;
+                } else {
+                    publish = false;
+                    _logger->logDebug((String("Modbus value skipped - ") + device.name + ": addr="
+                                       + String(datapoint.address) + " needs "
+                                       + String(reading.width)
+                                       + " registers, read " + String(wordCount)).c_str());
+                }
             }
-            _mqttBridge.publishDatapoint(device, datapoint, payload, _generation);
+            if (publish) _mqttBridge.publishDatapoint(device, datapoint, payload, _generation);
         } else {
             incrementBusErrorCount();
             _logger->logError((String("Modbus ERR - ") + device.name + ": func="
@@ -557,23 +576,40 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
         return result;
     }
 
-    const ModbusDatapoint *metadata = nullptr;
+    // The datapoint the request names, looked up within its device so a
+    // datapoint id reused on another device cannot lend its encoding. A
+    // device id the configuration does not contain falls back to the first
+    // datapoint with that id, for callers that only know the datapoint.
     const ModbusDevice *metadataDevice = nullptr;
+    const ModbusDatapoint *metadata = nullptr;
     for (const auto &device : _modbusRoot.devices) {
-        if (metadataDevice == nullptr && device.id == request.deviceId) metadataDevice = &device;
+        if (device.id != request.deviceId) continue;
+        metadataDevice = &device;
         for (const auto &datapoint : device.datapoints) {
             if (datapoint.id == request.datapointId) {
                 metadata = &datapoint;
-                metadataDevice = &device;
                 break;
             }
         }
-        if (metadata != nullptr) break;
+        break;
+    }
+    if (metadataDevice == nullptr) {
+        for (const auto &device : _modbusRoot.devices) {
+            for (const auto &datapoint : device.datapoints) {
+                if (datapoint.id == request.datapointId) {
+                    metadata = &datapoint;
+                    metadataDevice = &device;
+                    break;
+                }
+            }
+            if (metadata != nullptr) break;
+        }
     }
     if (metadata != nullptr) {
         result.hasDatapointMetadata = true;
         result.dataType = metadata->dataType;
         result.registerSlice = metadata->registerSlice;
+        result.wordOrder = metadata->wordOrder;
         result.scale = metadata->scale;
     }
 
@@ -590,6 +626,65 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
         return result;
     }
 
+    bool coilOn = request.writeValue != 0U;
+    if (request.function == 5 && request.writeText.length() > 0U) {
+        // HTTP path: the coil state arrives as text and follows the MQTT
+        // command grammar (0/1/false/true). Anything else is rejected
+        // instead of being read as 0 and switching the coil off.
+        const ModbusMqttWriteCore::ConversionResult conversion = ModbusMqttWriteCore::convertPayload(
+            WRITE_COIL, std::string(request.writeText.c_str()), 1.0);
+        if (!conversion.accepted()) {
+            result.operation = ModbusOperationResult::Success;
+            result.busStatus = ModbusMaster::ku8MBIllegalDataValue;
+            result.writeRejection = conversion.rejection;
+            return result;
+        }
+        coilOn = conversion.rawValue != 0U;
+    }
+
+    // Register writes carry pre-encoded words (MQTT path) or an engineering
+    // value to encode with the saved datapoint's data type, scale and word
+    // order (HTTP path). A value that cannot be encoded never reaches the bus.
+    std::array<uint16_t, ModbusValueCodec::kMaxWords> words = request.writeWords;
+    uint8_t wordCount = request.writeCount;
+    if (request.function == 6 || request.function == 16) {
+        if (wordCount == 0U) {
+            if (metadata == nullptr) {
+                // Without a saved datapoint there is no data type or scale
+                // to encode with; writing the text as a raw uint16 would set
+                // the wrong value (and only the first register of a wide type).
+                result.operation = ModbusOperationResult::Success;
+                result.busStatus = ModbusMaster::ku8MBIllegalDataValue;
+                result.unknownDatapoint = true;
+                return result;
+            }
+            const ModbusFunctionType function = request.function == 6 ? WRITE_HOLDING
+                                                                       : WRITE_MULTIPLE_HOLDING;
+            const ModbusDataType type = metadata->dataType != TEXT ? metadata->dataType : UINT16;
+            const ModbusMqttWriteCore::ConversionResult conversion = ModbusMqttWriteCore::convertPayload(
+                function, std::string(request.writeText.c_str()),
+                static_cast<double>(metadata->scale), type, metadata->wordOrder);
+            if (!conversion.accepted()) {
+                result.operation = ModbusOperationResult::Success;
+                result.busStatus = ModbusMaster::ku8MBIllegalDataValue;
+                result.writeRejection = conversion.rejection;
+                return result;
+            }
+            words = conversion.words;
+            wordCount = conversion.wordCount;
+        }
+        if (wordCount == 0U || wordCount > words.size() || (request.function == 6 && wordCount != 1U)) {
+            result.operation = ModbusOperationResult::Success;
+            result.busStatus = ModbusMaster::ku8MBIllegalDataValue;
+            result.writeRejection = ModbusMqttWriteCore::RejectionReason::UnsupportedDataType;
+            return result;
+        }
+        // The written words are echoed as full registers of the type they
+        // were encoded with, never through a byte slice or as ASCII.
+        result.registerSlice = RegisterSlice::Full;
+        if (result.dataType == TEXT) result.dataType = UINT16;
+    }
+
     auto guard = _bus.acquire();
     if (!guard) {
         result.operation = ModbusOperationResult::Success;
@@ -599,27 +694,25 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
     _bus.enableCapture(true);
     ModbusMaster &node = _bus.node();
     node.begin(result.slaveId, _bus.stream());
-    const uint16_t effectiveLength = request.function == 16 ? 1U : request.length;
+    const uint16_t effectiveLength = request.length;
     switch (request.function) {
         case 1: result.busStatus = node.readCoils(request.address, effectiveLength); break;
         case 2: result.busStatus = node.readDiscreteInputs(request.address, effectiveLength); break;
         case 3: result.busStatus = node.readHoldingRegisters(request.address, effectiveLength); break;
         case 4: result.busStatus = node.readInputRegisters(request.address, effectiveLength); break;
-        case 5: {
-            const uint16_t value = request.writeValue ? 0xFF00U : 0x0000U;
-            node.beginTransmission(request.address);
-            node.send(value);
-            result.busStatus = node.writeSingleCoil(request.address, value);
+        case 5:
+            // ModbusMaster::writeSingleCoil(uint16_t, uint8_t) expects the coil
+            // state as 0/1 and builds the 0xFF00/0x0000 wire value itself.
+            // Passing 0xFF00 truncated to 0 and switched every coil off.
+            result.busStatus = node.writeSingleCoil(request.address, coilOn ? 1U : 0U);
             break;
-        }
         case 6:
-            node.beginTransmission(request.address);
-            node.send(request.writeValue);
-            result.busStatus = node.writeSingleRegister(request.address, request.writeValue);
+            result.busStatus = node.writeSingleRegister(request.address, words[0]);
             break;
         case 16:
-            node.setTransmitBuffer(0, request.writeValue);
-            result.busStatus = node.writeMultipleRegisters(request.address, effectiveLength);
+            // One register per 16-bit word of the data type: 1, 2 or 4.
+            for (uint8_t i = 0; i < wordCount; ++i) node.setTransmitBuffer(i, words[i]);
+            result.busStatus = node.writeMultipleRegisters(request.address, wordCount);
             break;
         default:
             result.busStatus = ModbusMaster::ku8MBIllegalFunction;
@@ -631,6 +724,12 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
                            ? effectiveLength
                            : static_cast<uint16_t>(result.words.size());
         for (uint16_t i = 0; i < result.count; ++i) result.words[i] = node.getResponseBuffer(i);
+    } else if (result.busStatus == ModbusMaster::ku8MBSuccess
+               && (request.function == 6 || request.function == 16)) {
+        // Echo the register words that were written so callers can confirm
+        // the encoding.
+        result.count = wordCount;
+        for (uint16_t i = 0; i < wordCount; ++i) result.words[i] = words[i];
     }
     result.rxDump = _bus.dumpRx();
     result.operation = ModbusOperationResult::Success;
@@ -707,15 +806,6 @@ const char *ModbusManager::functionToString(const ModbusFunctionType function) {
         case WRITE_MULTIPLE_HOLDING: return "FC16-WRITE_MULTIPLE_HOLDING";
     }
     return "FC-UNKNOWN";
-}
-
-uint16_t ModbusManager::sliceRegister(const uint16_t word, const RegisterSlice slice) {
-    switch (slice) {
-        case RegisterSlice::LowByte: return static_cast<uint16_t>(word & 0x00FFU);
-        case RegisterSlice::HighByte: return static_cast<uint16_t>((word >> 8U) & 0x00FFU);
-        case RegisterSlice::Full: return word;
-    }
-    return word;
 }
 
 String ModbusManager::registersToAscii(const uint16_t *buffer, const uint16_t count) {

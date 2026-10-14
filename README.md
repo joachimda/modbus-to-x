@@ -116,7 +116,7 @@ See the [HTTP API request contract](HTTP_API.md) for the route and method matrix
 
 ### Configuring Modbus Devices
 - Use **Configure Modbus** to edit the RS-485 bus, add devices, and define datapoints. Modbus configurations are stored in the config partition at `/conf/config.json` and can be applied live without rebooting.
-- Configuration files follow the schema in `data/conf/schema.json` (UI) and the example in `docs/configuration_examples/modbus.json`. Each datapoint specifies the function code, register address, data type, scale, and engineering units that will be published when polled.
+- Configuration files follow the schema in `software/modbus-to-mqtt/data/conf/schema.json`; the excerpt below shows the datapoint fields. Each datapoint specifies the function code, register address, data type, scale, and engineering units that will be published when polled. Registers are decoded by `dataType` before the scale is applied: `int16`/`uint16` use one register (optionally a byte via `registerSlice`), `int32`/`uint32`/`float32` use two and `int64`/`uint64` four registers, in the `wordOrder` `big` (default, first register = most significant word) or `little`. `numOfRegisters` below the type's width is raised to it when the configuration loads. FC6 writes one register, so saving FC6 with a 32-bit or 64-bit type is rejected; a stored configuration that already combines them loads as `uint16` (the encoding every FC6 value had before data types were honoured, so nothing changes for it) with a logged warning.
 - Per-device MQTT publishing and Home Assistant discovery can be toggled in the Modbus config; discovery publishes retained entity definitions for read/write datapoints.
   Example (excerpt):
   ```json
@@ -138,6 +138,17 @@ See the [HTTP API request contract](HTTP_API.md) for the route and method matrix
             "scale": 0.1,
             "unit": "C",
             "topic": "plant/boiler/temp_c"
+          },
+          {
+            "id": "flow",
+            "name": "Flow",
+            "function": 3,
+            "address": 200,
+            "numOfRegisters": 2,
+            "dataType": "float32",
+            "wordOrder": "little",
+            "scale": 1,
+            "unit": "m3/h"
           }
         ]
       }
@@ -148,12 +159,13 @@ See the [HTTP API request contract](HTTP_API.md) for the route and method matrix
 ### MQTT Publishing
 - Configure broker host, port, credentials, and optional root topic via the **Configure MQTT** page or by editing `/conf/mqtt.json`. The firmware automatically extracts hostnames from URLs and persists the MQTT password in NVS preferences.
 - When Modbus reads succeed, datapoint values are published to MQTT using either the exact per-datapoint topic override or the default pattern `<root>/<device>/<datapoint>` with slugified device and datapoint names.
+- Published values are decoded by the datapoint's `dataType` (and `wordOrder` for multi-register types) before the scale is applied, then printed with as many decimals as the scale has (`0.01` → `-2.00`, `1` → `1234`, `0.5` → `12.5`); `float32` values print the shortest decimal (7 to 9 significant digits) that reads back as the same value; `int64`/`uint64` values keep every digit at integral scales and round through double precision at fractional ones. Coils and discrete inputs publish `1`/`0`; `TEXT` datapoints publish the ASCII content of their registers. A read that returns fewer registers than the data type needs is logged and not published.
 - A writable datapoint treats its configured `topic` as a base and subscribes only to `<base>/set`; an empty base uses the same default resolution as a readable datapoint before `/set` is appended. Commands must be published without MQTT retain. There is deliberately no subscription on the legacy base/state topic.
 - Existing state consumers require no changes. Existing command publishers and automations must migrate from `<base>` to `<base>/set`; retained state left on `<base>` is safe because the gateway no longer subscribes there.
-- Home Assistant sensors advertise the resolved state topic. Switches and numbers advertise the derived `/set` command topic and use a readable datapoint with the same resolved base as state feedback, or remain optimistic when no matching read exists.
+- Home Assistant sensors advertise the resolved state topic. Switches and numbers advertise the derived `/set` command topic and use a readable datapoint with the same resolved base as state feedback, or remain optimistic when no matching read exists. Number entities advertise the data type's range times the scale as `min`/`max` and the absolute scale as `step` (never below Home Assistant's minimum of `0.001`).
 - FC5 coil commands accept only `0`, `1`, `false`, or `true` after surrounding whitespace is removed; the words are case-insensitive.
-- FC6 and the current single-register FC16 command path accept a complete decimal value with an optional sign, fraction, and decimal exponent. Examples include `12`, `+12.5`, `.5`, `1.`, `1e3`, and `-2.5E-2`. Hexadecimal, `NaN`, infinity, and partially numeric text are rejected.
-- Holding-register commands use `engineering = raw × scale`, where `raw` is an unsigned register in `0..65535`. The command value is divided by the configured finite, non-zero scale, rejected if the unrounded result is outside that range, and otherwise rounded to the nearest raw integer with exact halves rounded upward. Negative scales are supported.
+- FC6 and FC16 commands accept a complete decimal value with an optional sign, fraction, and decimal exponent. Examples include `12`, `+12.5`, `.5`, `1.`, `1e3`, and `-2.5E-2`. Hexadecimal, `NaN`, infinity, and partially numeric text are rejected.
+- Holding-register commands use `engineering = raw × scale`, where `raw` has the datapoint's `dataType`: `int16`/`uint16` occupy one register (FC6 or FC16), `int32`/`uint32`/`float32` two registers and `int64`/`uint64` four registers, written with FC16 in the configured `wordOrder`. The command value is divided by the configured finite, non-zero scale, rejected if the unrounded result is outside the type's range, and otherwise rounded to the nearest raw integer with exact halves rounded upward; `float32` values are stored without rounding. Negative scales are supported. FC6 cannot write 32-bit or 64-bit types; saving such a configuration is rejected with `invalid_register_count` (a stored one keeps loading as `uint16`, see above). 64-bit values beyond 2^53 lose precision in the division.
 - Rejected MQTT commands do not reach the Modbus bus. Their warning contains the command topic, function, address, and a stable reason code, but never echoes the rejected payload.
 - MQTT connectivity, Modbus statistics, and recent logs are visible on the dashboard.
 

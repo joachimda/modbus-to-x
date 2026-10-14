@@ -5,6 +5,8 @@
 #include <array>
 #include <cstdint>
 
+#include "modbus/ModbusMqttWriteCore.h"
+#include "modbus/ModbusValueCodec.h"
 #include "modbus/config_structs/ModbusDataType.h"
 #include "modbus/config_structs/ModbusDatapoint.h"
 #include "mqtt/MqttRuntimeTypes.h"
@@ -50,7 +52,17 @@ struct ModbusCommandRequest {
     int function{0};
     uint16_t address{0U};
     uint16_t length{0U};
+    // FC5: coil state, non-zero switches the coil on (MQTT command path).
     uint16_t writeValue{0U};
+    // FC6/FC16: register words already encoded for the datapoint's data type
+    // and word order (MQTT command path).
+    std::array<uint16_t, ModbusValueCodec::kMaxWords> writeWords{};
+    uint8_t writeCount{0U};
+    // HTTP execute path: the value as text, converted by the owner with the
+    // MQTT command grammar. FC5: 0/1/false/true. FC6/FC16 (writeCount 0):
+    // the engineering value, encoded with the saved datapoint's data type,
+    // scale and word order.
+    String writeText;
     bool hasWriteValue{false};
     uint32_t expectedGeneration{0U};
 };
@@ -65,7 +77,15 @@ struct ModbusCommandResult {
     bool hasDatapointMetadata{false};
     ModbusDataType dataType{UINT16};
     RegisterSlice registerSlice{RegisterSlice::Full};
+    ModbusWordOrder wordOrder{ModbusWordOrder::Big};
     float scale{1.0F};
+    // Set when a write value could not be converted; busStatus is then
+    // ku8MBIllegalDataValue and the bus was not touched.
+    ModbusMqttWriteCore::RejectionReason writeRejection{ModbusMqttWriteCore::RejectionReason::None};
+    // Set when a register write named a datapoint the active configuration
+    // does not contain, so no data type, scale or word order was available
+    // to encode the value; the bus was not touched.
+    bool unknownDatapoint{false};
     uint32_t generation{0U};
 };
 

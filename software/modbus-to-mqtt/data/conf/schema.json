@@ -123,12 +123,13 @@
                   "type": "integer",
                   "minimum": 1,
                   "maximum": 125,
-                  "default": 1
+                  "default": 1,
+                  "description": "Registers to read or write. Numeric types have a fixed width (int16/uint16: 1, int32/uint32/float32: 2, int64/uint64: 4): FC3/FC4 counts below the width are raised to it, FC16 always writes exactly the width, FC6 writes one register. TEXT uses the count as its length."
                 },
                 "scale": {
                   "type": "number",
                   "default": 1.0,
-                  "description": "Engineering units per unsigned raw register. FC6/FC16 values must be finite and non-zero; negative scales are supported."
+                  "description": "Engineering units per raw value, applied after the registers are decoded by dataType. FC6/FC16 values must be finite and non-zero; negative scales are supported. Published values carry as many decimals as the scale has."
                 },
                 "dataType": {
                   "type": "string",
@@ -141,7 +142,8 @@
                     "uint32",
                     "uint64",
                     "float32"
-                  ]
+                  ],
+                  "description": "Register encoding. int16/uint16 use one register (FC6 or FC16); int32/uint32/float32 use two and int64/uint64 four registers, written with FC16. FC6 cannot write multi-register types."
                 },
                 "unit": {
                   "type": "string",
@@ -162,7 +164,17 @@
                     "low_byte",
                     "high_byte"
                   ],
-                  "default": "full"
+                  "default": "full",
+                  "description": "Part of a single register to use; 16-bit types only. int16 decodes a byte slice as a signed 8-bit value."
+                },
+                "wordOrder": {
+                  "type": "string",
+                  "enum": [
+                    "big",
+                    "little"
+                  ],
+                  "default": "big",
+                  "description": "Register order of 32-bit and 64-bit values: big = the first (lowest-address) register holds the most significant word, little = the first register holds the least significant word. Ignored for 16-bit types and TEXT."
                 },
                 "poll_interval": {
                   "type": "integer",

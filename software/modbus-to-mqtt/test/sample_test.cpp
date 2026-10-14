@@ -50,7 +50,9 @@
 #include <unity.h>
 
 #include "../src/utils/StringUtils.cpp"
+#include "../src/modbus/ModbusValueCodec.cpp"
 #include "../src/modbus/ModbusConfigDocument.cpp"
+#include "../src/modbus/ModbusTopicBuilder.cpp"
 
 namespace {
 
@@ -2744,6 +2746,118 @@ void test_modbus_mqtt_holding_payload_grammar_and_conversion(void) {
     }
 }
 
+void test_modbus_mqtt_typed_holding_conversion(void) {
+    using ModbusMqttWriteCore::RejectionReason;
+    constexpr auto Big = ModbusWordOrder::Big;
+    constexpr auto Little = ModbusWordOrder::Little;
+    struct TypedCase {
+        const char *payload;
+        double scale;
+        ModbusDataType dataType;
+        ModbusWordOrder order;
+        ModbusFunctionType function;
+        bool accepted;
+        uint8_t wordCount;
+        uint16_t words[4];
+        RejectionReason rejection;
+    };
+    const double scale001 = static_cast<double>(0.01F);
+    const double scale01 = static_cast<double>(0.1F);
+    const TypedCase cases[] = {
+        // int16: negative values are two's complement; halves round upward.
+        {"-2", scale001, INT16, Big, WRITE_HOLDING, true, 1U, {0xFF38U}, RejectionReason::None},
+        {"-2", -scale001, INT16, Big, WRITE_HOLDING, true, 1U, {0x00C8U}, RejectionReason::None},
+        {"-2.5", 1.0, INT16, Big, WRITE_MULTIPLE_HOLDING, true, 1U, {0xFFFEU}, RejectionReason::None},
+        {"-32768", 1.0, INT16, Big, WRITE_HOLDING, true, 1U, {0x8000U}, RejectionReason::None},
+        {"32767", 1.0, INT16, Big, WRITE_HOLDING, true, 1U, {0x7FFFU}, RejectionReason::None},
+        {"-32769", 1.0, INT16, Big, WRITE_HOLDING, false, 0U, {0U}, RejectionReason::OutOfRange},
+        {"32768", 1.0, INT16, Big, WRITE_HOLDING, false, 0U, {0U}, RejectionReason::OutOfRange},
+        {"-327.6799", scale001, INT16, Big, WRITE_HOLDING, true, 1U, {0x8000U}, RejectionReason::None},
+        {"-327.68", scale001, INT16, Big, WRITE_HOLDING, false, 0U, {0U}, RejectionReason::OutOfRange},
+        {"16384", -0.5, INT16, Big, WRITE_HOLDING, true, 1U, {0x8000U}, RejectionReason::None},
+        {"-16384", -0.5, INT16, Big, WRITE_HOLDING, false, 0U, {0U}, RejectionReason::OutOfRange},
+        // uint16 keeps rejecting negative values.
+        {"-1", 1.0, UINT16, Big, WRITE_HOLDING, false, 0U, {0U}, RejectionReason::OutOfRange},
+        {"65535", 1.0, UINT16, Little, WRITE_HOLDING, true, 1U, {0xFFFFU}, RejectionReason::None},
+        // 32-bit integers occupy two registers in the configured word order.
+        {"4294967295", 1.0, UINT32, Big, WRITE_MULTIPLE_HOLDING, true, 2U, {0xFFFFU, 0xFFFFU},
+         RejectionReason::None},
+        {"4294967296", 1.0, UINT32, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::OutOfRange},
+        {"-1", 1.0, UINT32, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U}, RejectionReason::OutOfRange},
+        {"65536", 1.0, UINT32, Little, WRITE_MULTIPLE_HOLDING, true, 2U, {0x0000U, 0x0001U},
+         RejectionReason::None},
+        {"-2147483648", 1.0, INT32, Big, WRITE_MULTIPLE_HOLDING, true, 2U, {0x8000U, 0x0000U},
+         RejectionReason::None},
+        {"-2147483648", 1.0, INT32, Little, WRITE_MULTIPLE_HOLDING, true, 2U, {0x0000U, 0x8000U},
+         RejectionReason::None},
+        {"2147483647", 1.0, INT32, Big, WRITE_MULTIPLE_HOLDING, true, 2U, {0x7FFFU, 0xFFFFU},
+         RejectionReason::None},
+        {"2147483648", 1.0, INT32, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::OutOfRange},
+        {"-2147483649", 1.0, INT32, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::OutOfRange},
+        {"-100000", 1.0, INT32, Big, WRITE_MULTIPLE_HOLDING, true, 2U, {0xFFFEU, 0x7960U},
+         RejectionReason::None},
+        {"-1000", scale01, INT32, Big, WRITE_MULTIPLE_HOLDING, true, 2U, {0xFFFFU, 0xD8F0U},
+         RejectionReason::None},
+        // 64-bit integers occupy four registers; the exact decimal check still
+        // applies beyond double precision.
+        {"9223372036854775807", 1.0, INT64, Big, WRITE_MULTIPLE_HOLDING, true, 4U,
+         {0x7FFFU, 0xFFFFU, 0xFFFFU, 0xFFFFU}, RejectionReason::None},
+        {"9223372036854775808", 1.0, INT64, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::OutOfRange},
+        {"-9223372036854775808", 1.0, INT64, Big, WRITE_MULTIPLE_HOLDING, true, 4U,
+         {0x8000U, 0x0000U, 0x0000U, 0x0000U}, RejectionReason::None},
+        {"-9223372036854775809", 1.0, INT64, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::OutOfRange},
+        {"18446744073709551615", 1.0, UINT64, Big, WRITE_MULTIPLE_HOLDING, true, 4U,
+         {0xFFFFU, 0xFFFFU, 0xFFFFU, 0xFFFFU}, RejectionReason::None},
+        {"18446744073709551616", 1.0, UINT64, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::OutOfRange},
+        {"1", 1.0, UINT64, Little, WRITE_MULTIPLE_HOLDING, true, 4U, {0x0001U, 0U, 0U, 0U},
+         RejectionReason::None},
+        // float32: raw must fit a float; no rounding to integers.
+        {"3.14", 1.0, FLOAT32, Big, WRITE_MULTIPLE_HOLDING, true, 2U, {0x4048U, 0xF5C3U},
+         RejectionReason::None},
+        {"3.14", 1.0, FLOAT32, Little, WRITE_MULTIPLE_HOLDING, true, 2U, {0xF5C3U, 0x4048U},
+         RejectionReason::None},
+        {"-100", scale01, FLOAT32, Big, WRITE_MULTIPLE_HOLDING, true, 2U, {0xC47AU, 0x0000U},
+         RejectionReason::None},
+        {"1e39", 1.0, FLOAT32, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::OutOfRange},
+        {"1e-50", 1.0, FLOAT32, Big, WRITE_MULTIPLE_HOLDING, true, 2U, {0x0000U, 0x0000U},
+         RejectionReason::None},
+        {"nan", 1.0, FLOAT32, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::InvalidSyntax},
+        // FC6 writes one register: 16-bit types only. TEXT is never a number.
+        {"1", 1.0, UINT16, Big, WRITE_HOLDING, true, 1U, {0x0001U}, RejectionReason::None},
+        {"1", 1.0, INT32, Big, WRITE_HOLDING, false, 0U, {0U}, RejectionReason::UnsupportedDataType},
+        {"1", 1.0, FLOAT32, Big, WRITE_HOLDING, false, 0U, {0U}, RejectionReason::UnsupportedDataType},
+        {"1", 1.0, TEXT, Big, WRITE_MULTIPLE_HOLDING, false, 0U, {0U},
+         RejectionReason::UnsupportedDataType},
+    };
+
+    for (const auto &testCase : cases) {
+        const auto result = ModbusMqttWriteCore::convertPayload(
+            testCase.function, testCase.payload, testCase.scale, testCase.dataType, testCase.order);
+        TEST_ASSERT_EQUAL_MESSAGE(testCase.accepted, result.accepted(), testCase.payload);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(static_cast<int>(testCase.rejection),
+                                      static_cast<int>(result.rejection), testCase.payload);
+        TEST_ASSERT_EQUAL_UINT8_MESSAGE(testCase.wordCount, result.wordCount, testCase.payload);
+        for (uint8_t index = 0U; index < testCase.wordCount; ++index) {
+            TEST_ASSERT_EQUAL_UINT16_MESSAGE(testCase.words[index], result.words[index],
+                                             testCase.payload);
+        }
+        if (testCase.accepted) {
+            TEST_ASSERT_EQUAL_UINT16_MESSAGE(testCase.words[0], result.rawValue, testCase.payload);
+        }
+    }
+    TEST_ASSERT_EQUAL_STRING("unsupported_data_type",
+                             ModbusMqttWriteCore::rejectionReasonToString(
+                                 RejectionReason::UnsupportedDataType));
+}
+
 void test_modbus_mqtt_production_handler_submits_only_accepted_commands(void) {
     ModbusMqttWriteCore::CommandContext context;
     context.slaveId = 7U;
@@ -2751,6 +2865,8 @@ void test_modbus_mqtt_production_handler_submits_only_accepted_commands(void) {
     context.address = 321U;
     context.registerCount = 8U;
     context.scale = 1.0;
+    context.dataType = INT32;
+    context.wordOrder = ModbusWordOrder::Big;
     context.modbusGeneration = 42U;
 
     std::vector<ModbusMqttWriteCore::WriteCommand> submissions;
@@ -2760,47 +2876,246 @@ void test_modbus_mqtt_production_handler_submits_only_accepted_commands(void) {
         [&](const ModbusMqttWriteCore::WriteCommand &command) { submissions.push_back(command); },
         [&](const std::string &warning) { warnings.push_back(warning); });
 
-    handler("root/device/write", "secret-invalid-payload");
+    handler("root/device/write/set", "secret-invalid-payload");
     TEST_ASSERT_TRUE(submissions.empty());
     TEST_ASSERT_EQUAL_UINT(1U, warnings.size());
-    TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[0].find("topic=root/device/write"));
+    TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[0].find("topic=root/device/write/set"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[0].find("function=16"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[0].find("address=321"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[0].find("reason=invalid_syntax"));
     TEST_ASSERT_EQUAL(std::string::npos, warnings[0].find("secret-invalid-payload"));
 
-    handler("root/device/write", "-1e-9999");
-    handler("root/device/write", "65535.0000000000000001");
+    handler("root/device/write/set", "-2147483648.5");
+    handler("root/device/write/set", "2147483647.0000000000000001");
     TEST_ASSERT_TRUE(submissions.empty());
     TEST_ASSERT_EQUAL_UINT(3U, warnings.size());
     TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[1].find("reason=out_of_range"));
     TEST_ASSERT_NOT_EQUAL(std::string::npos, warnings[2].find("reason=out_of_range"));
-    TEST_ASSERT_EQUAL(std::string::npos, warnings[1].find("-1e-9999"));
+    TEST_ASSERT_EQUAL(std::string::npos, warnings[1].find("-2147483648.5"));
     TEST_ASSERT_EQUAL(std::string::npos,
-                      warnings[2].find("65535.0000000000000001"));
+                      warnings[2].find("2147483647.0000000000000001"));
 
-    handler("root/device/write", "10");
+    handler("root/device/write/set", "10");
     TEST_ASSERT_EQUAL_UINT(1U, submissions.size());
-    TEST_ASSERT_EQUAL_STRING("root/device/write", submissions[0].sourceTopic.c_str());
+    TEST_ASSERT_EQUAL_STRING("root/device/write/set", submissions[0].sourceTopic.c_str());
     TEST_ASSERT_EQUAL_UINT8(7U, submissions[0].slaveId);
     TEST_ASSERT_EQUAL_INT(16, static_cast<int>(submissions[0].function));
     TEST_ASSERT_EQUAL_UINT16(321U, submissions[0].address);
-    TEST_ASSERT_EQUAL_UINT8(1U, submissions[0].registerCount);
-    TEST_ASSERT_EQUAL_UINT16(10U, submissions[0].rawValue);
+    TEST_ASSERT_EQUAL_UINT8(2U, submissions[0].registerCount);
+    TEST_ASSERT_EQUAL_UINT8(2U, submissions[0].wordCount);
+    TEST_ASSERT_EQUAL_UINT16(0U, submissions[0].words[0]);
+    TEST_ASSERT_EQUAL_UINT16(10U, submissions[0].words[1]);
+    TEST_ASSERT_FALSE(submissions[0].coilValue);
     TEST_ASSERT_EQUAL_UINT32(42U, submissions[0].modbusGeneration);
 
-    handler("root/device/write", "65536");
-    handler("root/device/write", "1");
+    handler("root/device/write/set", "4294967296");
+    handler("root/device/write/set", "-1");
     TEST_ASSERT_EQUAL_UINT(2U, submissions.size());
-    TEST_ASSERT_EQUAL_UINT16(1U, submissions[1].rawValue);
+    TEST_ASSERT_EQUAL_UINT16(0xFFFFU, submissions[1].words[0]);
+    TEST_ASSERT_EQUAL_UINT16(0xFFFFU, submissions[1].words[1]);
     TEST_ASSERT_EQUAL_UINT(4U, warnings.size());
+
+    // Coils keep the configured register count and carry the state as a flag.
+    ModbusMqttWriteCore::CommandContext coilContext;
+    coilContext.function = WRITE_COIL;
+    coilContext.address = 5U;
+    coilContext.registerCount = 1U;
+    const auto coilHandler = ModbusMqttWriteCore::buildMessageHandler(
+        coilContext,
+        [&](const ModbusMqttWriteCore::WriteCommand &command) { submissions.push_back(command); },
+        [&](const std::string &warning) { warnings.push_back(warning); });
+    coilHandler("root/device/coil/set", "true");
+    coilHandler("root/device/coil/set", "0");
+    TEST_ASSERT_EQUAL_UINT(4U, submissions.size());
+    TEST_ASSERT_TRUE(submissions[2].coilValue);
+    TEST_ASSERT_FALSE(submissions[3].coilValue);
+    TEST_ASSERT_EQUAL_UINT8(1U, submissions[2].registerCount);
+    TEST_ASSERT_EQUAL_UINT8(0U, submissions[2].wordCount);
 }
 
-std::string modbusConfigurationWithScale(const int function, const char *scale) {
+std::string modbusConfigurationWithScale(const int function, const char *scale,
+                                         const char *dataType = "uint16",
+                                         const int numOfRegisters = 1,
+                                         const char *extraFields = "") {
     return std::string(R"({"version":1,"bus":{"enabled":true,"baud":9600,"serialFormat":"8N1"},"devices":[{"id":"device","name":"Device","slaveId":1,"dataPoints":[{"id":"point","name":"Point","function":)")
            + std::to_string(function)
-           + R"(,"address":10,"numOfRegisters":1,"scale":)" + scale
-           + R"(,"dataType":"uint16","unit":"","topic":"write"}]}]})";
+           + R"(,"address":10,"numOfRegisters":)" + std::to_string(numOfRegisters)
+           + R"(,"scale":)" + scale
+           + R"(,"dataType":")" + dataType + R"(","unit":"","topic":"write")"
+           + extraFields + "}]}]}";
+}
+
+void test_modbus_configuration_coerces_register_shape_per_data_type(void) {
+    using ModbusConfigDocument::ParseWarning;
+    ConfigurationRoot parsed;
+    std::vector<ModbusConfigDocument::ParseNotice> notices;
+    const auto parseOk = [&](const std::string &json) {
+        return ModbusConfigDocument::parse(json.c_str(), json.size(), parsed, nullptr, &notices);
+    };
+    const auto point = [&]() -> const ModbusDatapoint & { return parsed.devices[0].datapoints[0]; };
+
+    // FC3 int32 with one register is coerced up to the type's width (boot-safe).
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(3, "1", "int32", 1)));
+    TEST_ASSERT_EQUAL_UINT8(2U, point().numOfRegisters);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusWordOrder::Big), static_cast<int>(point().wordOrder));
+    TEST_ASSERT_EQUAL_UINT(1U, notices.size());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ParseWarning::RegisterCountCoerced),
+                          static_cast<int>(notices[0].warning));
+    TEST_ASSERT_EQUAL_UINT(0U, notices[0].deviceIndex);
+    TEST_ASSERT_EQUAL_UINT(0U, notices[0].datapointIndex);
+    TEST_ASSERT_EQUAL_UINT16(1U, notices[0].previous);
+    TEST_ASSERT_EQUAL_UINT16(2U, notices[0].coerced);
+
+    // A longer read than the width is kept; the decoder uses the first words.
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(4, "1", "uint16", 3)));
+    TEST_ASSERT_EQUAL_UINT8(3U, point().numOfRegisters);
+    TEST_ASSERT_TRUE(notices.empty());
+
+    // FC16 always writes exactly the type's width.
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(16, "1", "int64", 1)));
+    TEST_ASSERT_EQUAL_UINT8(4U, point().numOfRegisters);
+    TEST_ASSERT_EQUAL_UINT(1U, notices.size());
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(16, "0.5", "uint16", 3)));
+    TEST_ASSERT_EQUAL_UINT8(1U, point().numOfRegisters);
+    TEST_ASSERT_EQUAL_UINT(1U, notices.size());
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(16, "0.5", "float32", 2)));
+    TEST_ASSERT_EQUAL_UINT8(2U, point().numOfRegisters);
+    TEST_ASSERT_TRUE(notices.empty());
+
+    // FC6 with a 16-bit type is coerced to one register.
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(6, "1", "int16", 2)));
+    TEST_ASSERT_EQUAL_UINT8(1U, point().numOfRegisters);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(INT16), static_cast<int>(point().dataType));
+    TEST_ASSERT_EQUAL_UINT(1U, notices.size());
+
+    // FC6 with a multi-register type is rejected atomically, like an invalid scale.
+    const char *wideTypes[] = {"int32", "uint32", "float32", "int64", "uint64"};
+    for (const char *wideType : wideTypes) {
+        ConfigurationRoot active;
+        active.bus.baud = 19200;
+        active.bus.enabled = true;
+        ModbusDevice existing{};
+        existing.id = "existing";
+        active.devices.push_back(existing);
+        ModbusConfigDocument::ValidationError error;
+        const std::string json = modbusConfigurationWithScale(6, "1", wideType, 2);
+        TEST_ASSERT_FALSE(ModbusConfigDocument::parse(json.c_str(), json.size(), active, &error, &notices));
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusConfigDocument::ValidationReason::InvalidRegisterCount),
+                              static_cast<int>(error.reason));
+        TEST_ASSERT_EQUAL_UINT(0U, error.deviceIndex);
+        TEST_ASSERT_EQUAL_UINT(0U, error.datapointIndex);
+        TEST_ASSERT_EQUAL_INT(19200, active.bus.baud);
+        TEST_ASSERT_EQUAL_UINT(1U, active.devices.size());
+        TEST_ASSERT_EQUAL_STRING("existing", active.devices[0].id.c_str());
+    }
+    TEST_ASSERT_EQUAL_STRING("invalid_register_count",
+                             ModbusConfigDocument::reasonToString(
+                                 ModbusConfigDocument::ValidationReason::InvalidRegisterCount));
+
+    // At boot (lenient mode) the same combination keeps loading as uint16,
+    // the encoding every FC6 value had before data types were honoured, so a
+    // datapoint saved by an earlier firmware neither stops Modbus on every
+    // device nor changes its accepted range.
+    struct Narrowing {
+        const char *name;
+        ModbusDataType wide;
+        ModbusDataType narrowed;
+    };
+    const Narrowing narrowings[] = {
+        {"int32", INT32, UINT16},   {"int64", INT64, UINT16},     {"uint32", UINT32, UINT16},
+        {"uint64", UINT64, UINT16}, {"float32", FLOAT32, UINT16},
+    };
+    for (const auto &narrowing : narrowings) {
+        ModbusConfigDocument::ValidationError error;
+        const std::string json = modbusConfigurationWithScale(6, "0.1", narrowing.name, 1);
+        TEST_ASSERT_TRUE(ModbusConfigDocument::parse(json.c_str(), json.size(), parsed, &error, &notices,
+                                                     ModbusConfigDocument::ParseMode::Lenient));
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusConfigDocument::ValidationReason::None),
+                              static_cast<int>(error.reason));
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(narrowing.narrowed), static_cast<int>(point().dataType));
+        TEST_ASSERT_EQUAL_UINT8(1U, point().numOfRegisters);
+        TEST_ASSERT_EQUAL_UINT(1U, notices.size());
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(ParseWarning::DataTypeCoercedToUint16),
+                              static_cast<int>(notices[0].warning));
+        TEST_ASSERT_EQUAL_UINT(0U, notices[0].deviceIndex);
+        TEST_ASSERT_EQUAL_UINT(0U, notices[0].datapointIndex);
+        TEST_ASSERT_EQUAL_UINT16(static_cast<uint16_t>(narrowing.wide), notices[0].previous);
+        TEST_ASSERT_EQUAL_UINT16(static_cast<uint16_t>(narrowing.narrowed), notices[0].coerced);
+        // The upgrade path keeps the v8.0.4 write behaviour: 0..65535 x scale.
+        const ModbusMqttWriteCore::NumberDiscoveryBounds bounds =
+            ModbusMqttWriteCore::numberDiscoveryBounds(static_cast<double>(point().scale), point().dataType);
+        TEST_ASSERT_TRUE(bounds.valid());
+        TEST_ASSERT_TRUE(std::fabs(bounds.minimum) < 0.000001);
+        TEST_ASSERT_TRUE(std::fabs(bounds.maximum - 6553.5) < 0.001);
+        TEST_ASSERT_TRUE(ModbusMqttWriteCore::convertPayload(WRITE_HOLDING, "4000", point().scale,
+                                                             point().dataType, point().wordOrder).accepted());
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusMqttWriteCore::RejectionReason::OutOfRange),
+                              static_cast<int>(ModbusMqttWriteCore::convertPayload(
+                                                   WRITE_HOLDING, "-0.5", point().scale, point().dataType,
+                                                   point().wordOrder).rejection));
+    }
+    TEST_ASSERT_EQUAL_STRING("data_type_coerced_to_uint16",
+                             ModbusConfigDocument::warningToString(ParseWarning::DataTypeCoercedToUint16));
+    // Lenient mode changes nothing else: FC16 keeps its wide type and width.
+    {
+        const std::string json = modbusConfigurationWithScale(16, "1", "int32", 2);
+        TEST_ASSERT_TRUE(ModbusConfigDocument::parse(json.c_str(), json.size(), parsed, nullptr, &notices,
+                                                     ModbusConfigDocument::ParseMode::Lenient));
+        TEST_ASSERT_EQUAL_INT(static_cast<int>(INT32), static_cast<int>(point().dataType));
+        TEST_ASSERT_EQUAL_UINT8(2U, point().numOfRegisters);
+        TEST_ASSERT_TRUE(notices.empty());
+    }
+
+    // wordOrder: "big" by default, "little"/1 selects little word order.
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(3, "1", "uint32", 2, R"(,"wordOrder":"little")")));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusWordOrder::Little), static_cast<int>(point().wordOrder));
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(3, "1", "uint32", 2, R"(,"wordOrder":"LITTLE")")));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusWordOrder::Little), static_cast<int>(point().wordOrder));
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(3, "1", "uint32", 2, R"(,"wordOrder":1)")));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusWordOrder::Little), static_cast<int>(point().wordOrder));
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(3, "1", "uint32", 2, R"(,"wordOrder":"big")")));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusWordOrder::Big), static_cast<int>(point().wordOrder));
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(3, "1", "uint32", 2, R"(,"wordOrder":"sideways")")));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusWordOrder::Big), static_cast<int>(point().wordOrder));
+    TEST_ASSERT_TRUE(notices.empty());
+
+    // Byte slices only apply to 16-bit types.
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(3, "1", "int32", 2, R"(,"registerSlice":"low_byte")")));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(RegisterSlice::Full), static_cast<int>(point().registerSlice));
+    TEST_ASSERT_EQUAL_UINT(1U, notices.size());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ParseWarning::RegisterSliceIgnored),
+                          static_cast<int>(notices[0].warning));
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(3, "1", "int16", 1, R"(,"registerSlice":"low_byte")")));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(RegisterSlice::LowByte), static_cast<int>(point().registerSlice));
+    TEST_ASSERT_TRUE(notices.empty());
+
+    // TEXT on a register write becomes uint16; TEXT reads keep their length.
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(6, "1", "TEXT", 1)));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(UINT16), static_cast<int>(point().dataType));
+    TEST_ASSERT_EQUAL_UINT(1U, notices.size());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ParseWarning::TextWriteCoercedToUint16),
+                          static_cast<int>(notices[0].warning));
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(3, "1", "TEXT", 10)));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(TEXT), static_cast<int>(point().dataType));
+    TEST_ASSERT_EQUAL_UINT8(10U, point().numOfRegisters);
+    TEST_ASSERT_TRUE(notices.empty());
+
+    // Bit functions are not register functions: nothing is coerced.
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(1, "1", "int32", 1)));
+    TEST_ASSERT_EQUAL_UINT8(1U, point().numOfRegisters);
+    TEST_ASSERT_TRUE(notices.empty());
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(2, "1", "uint16", 16)));
+    TEST_ASSERT_EQUAL_UINT8(16U, point().numOfRegisters);
+    TEST_ASSERT_TRUE(notices.empty());
+
+    // More than 125 registers is clamped instead of wrapping through uint8_t.
+    TEST_ASSERT_TRUE(parseOk(modbusConfigurationWithScale(3, "1", "TEXT", 300)));
+    TEST_ASSERT_EQUAL_UINT8(125U, point().numOfRegisters);
+    TEST_ASSERT_EQUAL_UINT(1U, notices.size());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ParseWarning::RegisterCountClamped),
+                          static_cast<int>(notices[0].warning));
+    TEST_ASSERT_EQUAL_UINT16(300U, notices[0].previous);
+    TEST_ASSERT_EQUAL_UINT16(125U, notices[0].coerced);
 }
 
 void test_modbus_configuration_rejects_noninvertible_writable_scales_atomically(void) {
@@ -2847,22 +3162,537 @@ void test_modbus_configuration_rejects_noninvertible_writable_scales_atomically(
 
 void test_modbus_home_assistant_number_bounds_follow_scale_direction(void) {
     const double positiveScale = static_cast<double>(0.1F);
-    const auto positive = ModbusMqttWriteCore::numberDiscoveryBounds(positiveScale);
+    const auto positive = ModbusMqttWriteCore::numberDiscoveryBounds(positiveScale, UINT16);
     TEST_ASSERT_TRUE(positive.valid());
     TEST_ASSERT_TRUE(std::fabs(positive.minimum) < 0.0000001);
     TEST_ASSERT_TRUE(std::fabs(positive.maximum - (65535.0 * positiveScale)) < 0.000001);
     TEST_ASSERT_TRUE(std::fabs(positive.step - positiveScale) < 0.0000001);
 
     const double negativeScale = static_cast<double>(-0.25F);
-    const auto negative = ModbusMqttWriteCore::numberDiscoveryBounds(negativeScale);
+    const auto negative = ModbusMqttWriteCore::numberDiscoveryBounds(negativeScale, UINT16);
     TEST_ASSERT_TRUE(negative.valid());
     TEST_ASSERT_TRUE(std::fabs(negative.minimum - (65535.0 * negativeScale)) < 0.000001);
     TEST_ASSERT_TRUE(std::fabs(negative.maximum) < 0.0000001);
     TEST_ASSERT_TRUE(std::fabs(negative.step - 0.25) < 0.0000001);
 
-    TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(0.0).valid());
-    TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(INFINITY).valid());
-    TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(NAN).valid());
+    TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(0.0, UINT16).valid());
+    TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(INFINITY, UINT16).valid());
+    TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(NAN, UINT16).valid());
+
+    // Signed types span both signs; a negative scale mirrors the range.
+    const double centi = static_cast<double>(0.01F);
+    const auto int16Bounds = ModbusMqttWriteCore::numberDiscoveryBounds(centi, INT16);
+    TEST_ASSERT_TRUE(int16Bounds.valid());
+    TEST_ASSERT_TRUE(std::fabs(int16Bounds.minimum - (-32768.0 * centi)) < 0.000001);
+    TEST_ASSERT_TRUE(std::fabs(int16Bounds.maximum - (32767.0 * centi)) < 0.000001);
+    TEST_ASSERT_TRUE(std::fabs(int16Bounds.step - centi) < 0.0000001);
+    const auto mirrored = ModbusMqttWriteCore::numberDiscoveryBounds(-centi, INT16);
+    TEST_ASSERT_TRUE(mirrored.valid());
+    TEST_ASSERT_TRUE(std::fabs(mirrored.minimum - (-32767.0 * centi)) < 0.000001);
+    TEST_ASSERT_TRUE(std::fabs(mirrored.maximum - (32768.0 * centi)) < 0.000001);
+    TEST_ASSERT_TRUE(std::fabs(mirrored.step - centi) < 0.0000001);
+
+    const auto uint32Bounds = ModbusMqttWriteCore::numberDiscoveryBounds(1.0, UINT32);
+    TEST_ASSERT_TRUE(uint32Bounds.valid());
+    TEST_ASSERT_TRUE(std::fabs(uint32Bounds.minimum) < 0.0000001);
+    TEST_ASSERT_TRUE(std::fabs(uint32Bounds.maximum - 4294967295.0) < 0.000001);
+    TEST_ASSERT_TRUE(std::fabs(uint32Bounds.step - 1.0) < 0.0000001);
+    const auto int64Bounds = ModbusMqttWriteCore::numberDiscoveryBounds(1.0, INT64);
+    TEST_ASSERT_TRUE(int64Bounds.valid());
+    TEST_ASSERT_TRUE(int64Bounds.minimum < -9.2e18 && int64Bounds.maximum > 9.2e18);
+
+    const auto floatBounds = ModbusMqttWriteCore::numberDiscoveryBounds(1.0, FLOAT32);
+    TEST_ASSERT_TRUE(floatBounds.valid());
+    TEST_ASSERT_TRUE(floatBounds.minimum == -static_cast<double>(std::numeric_limits<float>::max()));
+    TEST_ASSERT_TRUE(floatBounds.maximum == static_cast<double>(std::numeric_limits<float>::max()));
+    TEST_ASSERT_TRUE(std::fabs(floatBounds.step - 0.001) < 0.0000001);
+
+    // Home Assistant accepts no step below 0.001.
+    const auto fineBounds = ModbusMqttWriteCore::numberDiscoveryBounds(0.0001, UINT16);
+    TEST_ASSERT_TRUE(fineBounds.valid());
+    TEST_ASSERT_TRUE(std::fabs(fineBounds.step - 0.001) < 0.0000001);
+    TEST_ASSERT_TRUE(std::fabs(fineBounds.maximum - 6.5535) < 0.000001);
+
+    const auto textBounds = ModbusMqttWriteCore::numberDiscoveryBounds(1.0, TEXT);
+    TEST_ASSERT_FALSE(textBounds.valid());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ModbusMqttWriteCore::RejectionReason::UnsupportedDataType),
+                          static_cast<int>(textBounds.rejection));
+}
+
+void test_modbus_command_topics_derive_from_the_state_base(void) {
+    ModbusDevice device{};
+    device.id = "boiler";
+    device.name = "Boiler";
+    device.slaveId = 10U;
+    ModbusDatapoint datapoint{};
+    datapoint.id = "boiler.setpoint";
+    datapoint.name = "Setpoint";
+    datapoint.function = WRITE_HOLDING;
+
+    const ModbusTopicBuilder relative("");
+    TEST_ASSERT_EQUAL_STRING("boiler/setpoint", relative.datapointTopic(device, datapoint).c_str());
+    TEST_ASSERT_EQUAL_STRING("boiler/setpoint/set", relative.commandTopic(device, datapoint).c_str());
+
+    const ModbusTopicBuilder rooted("mbx/");
+    TEST_ASSERT_EQUAL_STRING("mbx/boiler/setpoint", rooted.datapointTopic(device, datapoint).c_str());
+    TEST_ASSERT_EQUAL_STRING("mbx/boiler/setpoint/set", rooted.commandTopic(device, datapoint).c_str());
+
+    // An explicit topic is a base too: the root is not prepended and "/set" is
+    // appended once, regardless of surrounding whitespace or trailing slashes.
+    datapoint.topic = " plant/boiler/sp/ ";
+    TEST_ASSERT_EQUAL_STRING("plant/boiler/sp/set", rooted.commandTopic(device, datapoint).c_str());
+    TEST_ASSERT_EQUAL_STRING("a/b/set", ModbusTopicBuilder::commandTopicForBase("a/b//").c_str());
+    TEST_ASSERT_EQUAL_STRING("", ModbusTopicBuilder::commandTopicForBase("  ").c_str());
+}
+
+void test_modbus_codec_decodes_each_data_type(void) {
+    using namespace ModbusValueCodec;
+    constexpr auto Big = ModbusWordOrder::Big;
+    constexpr auto Little = ModbusWordOrder::Little;
+    constexpr auto Full = RegisterSlice::Full;
+    char text[64];
+
+    TEST_ASSERT_EQUAL_UINT8(0U, wordWidth(TEXT));
+    TEST_ASSERT_EQUAL_UINT8(1U, wordWidth(INT16));
+    TEST_ASSERT_EQUAL_UINT8(1U, wordWidth(UINT16));
+    TEST_ASSERT_EQUAL_UINT8(2U, wordWidth(INT32));
+    TEST_ASSERT_EQUAL_UINT8(2U, wordWidth(UINT32));
+    TEST_ASSERT_EQUAL_UINT8(2U, wordWidth(FLOAT32));
+    TEST_ASSERT_EQUAL_UINT8(4U, wordWidth(INT64));
+    TEST_ASSERT_EQUAL_UINT8(4U, wordWidth(UINT64));
+
+    // Nilan CTS602 outdoor temperature (issue #25): input register 208 holds
+    // int16 0xFF38 = -200 raw at scale 0.01 -> -2.00 degrees, not 653.36.
+    const uint16_t negative[] = {0xFF38U};
+    DecodedValue decoded = decode(negative, 1U, INT16, Full, Big);
+    TEST_ASSERT_TRUE(decoded.ok);
+    TEST_ASSERT_TRUE(decoded.rawSigned == -200);
+    TEST_ASSERT_TRUE(std::fabs(decoded.raw + 200.0) < 0.000001);
+    formatEngineering(engineeringValue(decoded, 0.01F), INT16, 0.01F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-2.00", text);
+
+    decoded = decode(negative, 1U, UINT16, Full, Big);
+    TEST_ASSERT_TRUE(decoded.ok);
+    TEST_ASSERT_TRUE(decoded.rawUnsigned == 65336U);
+    formatEngineering(engineeringValue(decoded, 0.01F), UINT16, 0.01F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("653.36", text);
+
+    const uint16_t extreme[] = {0x8000U};
+    TEST_ASSERT_TRUE(decode(extreme, 1U, UINT16, Full, Big).rawUnsigned == 32768U);
+    TEST_ASSERT_TRUE(decode(extreme, 1U, INT16, Full, Big).rawSigned == -32768);
+
+    const uint16_t int32Big[] = {0xFFFFU, 0xFF38U};
+    TEST_ASSERT_TRUE(decode(int32Big, 2U, INT32, Full, Big).rawSigned == -200);
+    const uint16_t int32Little[] = {0xFF38U, 0xFFFFU};
+    TEST_ASSERT_TRUE(decode(int32Little, 2U, INT32, Full, Little).rawSigned == -200);
+    TEST_ASSERT_TRUE(decode(int32Big, 2U, UINT32, Full, Big).rawUnsigned == 4294967096U);
+
+    const uint16_t uint32Words[] = {0x0001U, 0x0000U};
+    TEST_ASSERT_TRUE(decode(uint32Words, 2U, UINT32, Full, Big).rawUnsigned == 65536U);
+    TEST_ASSERT_TRUE(decode(uint32Words, 2U, UINT32, Full, Little).rawUnsigned == 1U);
+    TEST_ASSERT_TRUE(decode(uint32Words, 2U, INT32, Full, Big).rawSigned == 65536);
+
+    const uint16_t pi[] = {0x4048U, 0xF5C3U};  // 3.14f
+    decoded = decode(pi, 2U, FLOAT32, Full, Big);
+    TEST_ASSERT_TRUE(decoded.ok);
+    TEST_ASSERT_TRUE(std::fabs(decoded.rawFloat - 3.14F) < 0.00001F);
+    const uint16_t piLittle[] = {0xF5C3U, 0x4048U};
+    TEST_ASSERT_TRUE(std::fabs(decode(piLittle, 2U, FLOAT32, Full, Little).rawFloat - 3.14F) < 0.00001F);
+    const uint16_t minusHundred[] = {0xC2C8U, 0x0000U};  // -100.0f
+    TEST_ASSERT_TRUE(std::fabs(decode(minusHundred, 2U, FLOAT32, Full, Big).raw + 100.0) < 0.000001);
+
+    const uint16_t int64Max[] = {0x7FFFU, 0xFFFFU, 0xFFFFU, 0xFFFFU};
+    TEST_ASSERT_TRUE(decode(int64Max, 4U, INT64, Full, Big).rawSigned
+                     == std::numeric_limits<int64_t>::max());
+    const uint16_t int64Min[] = {0x8000U, 0U, 0U, 0U};
+    TEST_ASSERT_TRUE(decode(int64Min, 4U, INT64, Full, Big).rawSigned
+                     == std::numeric_limits<int64_t>::min());
+    const uint16_t int64MinLittle[] = {0U, 0U, 0U, 0x8000U};
+    TEST_ASSERT_TRUE(decode(int64MinLittle, 4U, INT64, Full, Little).rawSigned
+                     == std::numeric_limits<int64_t>::min());
+    const uint16_t uint64Max[] = {0xFFFFU, 0xFFFFU, 0xFFFFU, 0xFFFFU};
+    TEST_ASSERT_TRUE(decode(uint64Max, 4U, UINT64, Full, Big).rawUnsigned
+                     == std::numeric_limits<uint64_t>::max());
+    const uint16_t counted[] = {0x0001U, 0x0002U, 0x0003U, 0x0004U};
+    TEST_ASSERT_TRUE(decode(counted, 4U, UINT64, Full, Big).rawUnsigned == 0x0001000200030004ULL);
+    TEST_ASSERT_TRUE(decode(counted, 4U, UINT64, Full, Little).rawUnsigned == 0x0004000300020001ULL);
+
+    // Byte slices apply to the 16-bit types only; int16 reads the byte as int8.
+    const uint16_t sliced[] = {0x1280U};
+    TEST_ASSERT_TRUE(decode(sliced, 1U, INT16, RegisterSlice::LowByte, Big).rawSigned == -128);
+    TEST_ASSERT_TRUE(decode(sliced, 1U, INT16, RegisterSlice::HighByte, Big).rawSigned == 18);
+    TEST_ASSERT_TRUE(decode(sliced, 1U, UINT16, RegisterSlice::LowByte, Big).rawUnsigned == 128U);
+    TEST_ASSERT_TRUE(decode(sliced, 1U, UINT16, RegisterSlice::HighByte, Big).rawUnsigned == 18U);
+    TEST_ASSERT_TRUE(decode(uint32Words, 2U, UINT32, RegisterSlice::LowByte, Big).rawUnsigned == 65536U);
+
+    // Too few words or TEXT never decode; extra words are ignored.
+    TEST_ASSERT_FALSE(decode(uint32Words, 1U, INT32, Full, Big).ok);
+    TEST_ASSERT_FALSE(decode(counted, 3U, INT64, Full, Big).ok);
+    TEST_ASSERT_FALSE(decode(uint32Words, 2U, TEXT, Full, Big).ok);
+    TEST_ASSERT_FALSE(decode(nullptr, 0U, UINT16, Full, Big).ok);
+    const uint16_t extra[] = {0x0001U, 0xFFFFU, 0xFFFFU};
+    TEST_ASSERT_TRUE(decode(extra, 3U, UINT16, Full, Big).rawUnsigned == 1U);
+    TEST_ASSERT_TRUE(decode(extra, 3U, UINT32, Full, Big).rawUnsigned == 0x0001FFFFU);
+}
+
+void test_modbus_codec_encode_round_trips(void) {
+    using namespace ModbusValueCodec;
+    constexpr auto Big = ModbusWordOrder::Big;
+    constexpr auto Little = ModbusWordOrder::Little;
+    constexpr auto Full = RegisterSlice::Full;
+    EncodedWords encoded;
+
+    TEST_ASSERT_TRUE(encodeSigned(-200, INT16, Big, encoded));
+    TEST_ASSERT_EQUAL_UINT8(1U, encoded.count);
+    TEST_ASSERT_EQUAL_UINT16(0xFF38U, encoded.words[0]);
+    TEST_ASSERT_TRUE(encodeSigned(-32768, INT16, Big, encoded));
+    TEST_ASSERT_EQUAL_UINT16(0x8000U, encoded.words[0]);
+    TEST_ASSERT_TRUE(encodeSigned(32767, INT16, Little, encoded));
+    TEST_ASSERT_EQUAL_UINT16(0x7FFFU, encoded.words[0]);
+    TEST_ASSERT_FALSE(encodeSigned(-32769, INT16, Big, encoded));
+    TEST_ASSERT_FALSE(encodeSigned(32768, INT16, Big, encoded));
+    TEST_ASSERT_FALSE(encodeSigned(1, UINT16, Big, encoded));
+    TEST_ASSERT_FALSE(encodeSigned(1, FLOAT32, Big, encoded));
+    TEST_ASSERT_FALSE(encodeSigned(1, TEXT, Big, encoded));
+
+    TEST_ASSERT_TRUE(encodeUnsigned(65535U, UINT16, Big, encoded));
+    TEST_ASSERT_EQUAL_UINT8(1U, encoded.count);
+    TEST_ASSERT_EQUAL_UINT16(0xFFFFU, encoded.words[0]);
+    TEST_ASSERT_FALSE(encodeUnsigned(65536U, UINT16, Big, encoded));
+    TEST_ASSERT_FALSE(encodeUnsigned(1U, INT16, Big, encoded));
+
+    TEST_ASSERT_TRUE(encodeSigned(std::numeric_limits<int32_t>::min(), INT32, Big, encoded));
+    TEST_ASSERT_EQUAL_UINT8(2U, encoded.count);
+    TEST_ASSERT_EQUAL_UINT16(0x8000U, encoded.words[0]);
+    TEST_ASSERT_EQUAL_UINT16(0x0000U, encoded.words[1]);
+    TEST_ASSERT_TRUE(encodeSigned(std::numeric_limits<int32_t>::min(), INT32, Little, encoded));
+    TEST_ASSERT_EQUAL_UINT16(0x0000U, encoded.words[0]);
+    TEST_ASSERT_EQUAL_UINT16(0x8000U, encoded.words[1]);
+    TEST_ASSERT_TRUE(encodeSigned(-1, INT32, Big, encoded));
+    TEST_ASSERT_EQUAL_UINT16(0xFFFFU, encoded.words[0]);
+    TEST_ASSERT_EQUAL_UINT16(0xFFFFU, encoded.words[1]);
+    TEST_ASSERT_FALSE(encodeSigned(static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 1,
+                                   INT32, Big, encoded));
+    TEST_ASSERT_FALSE(encodeSigned(static_cast<int64_t>(std::numeric_limits<int32_t>::min()) - 1,
+                                   INT32, Big, encoded));
+    TEST_ASSERT_TRUE(encodeUnsigned(4294967295ULL, UINT32, Big, encoded));
+    TEST_ASSERT_EQUAL_UINT16(0xFFFFU, encoded.words[0]);
+    TEST_ASSERT_EQUAL_UINT16(0xFFFFU, encoded.words[1]);
+    TEST_ASSERT_FALSE(encodeUnsigned(4294967296ULL, UINT32, Big, encoded));
+    TEST_ASSERT_TRUE(encodeUnsigned(65536U, UINT32, Little, encoded));
+    TEST_ASSERT_EQUAL_UINT16(0x0000U, encoded.words[0]);
+    TEST_ASSERT_EQUAL_UINT16(0x0001U, encoded.words[1]);
+
+    TEST_ASSERT_TRUE(encodeSigned(std::numeric_limits<int64_t>::min(), INT64, Big, encoded));
+    TEST_ASSERT_EQUAL_UINT8(4U, encoded.count);
+    TEST_ASSERT_EQUAL_UINT16(0x8000U, encoded.words[0]);
+    TEST_ASSERT_EQUAL_UINT16(0x0000U, encoded.words[3]);
+    TEST_ASSERT_TRUE(encodeSigned(-1, INT64, Little, encoded));
+    for (size_t index = 0U; index < 4U; ++index) TEST_ASSERT_EQUAL_UINT16(0xFFFFU, encoded.words[index]);
+    TEST_ASSERT_TRUE(encodeUnsigned(std::numeric_limits<uint64_t>::max(), UINT64, Big, encoded));
+    for (size_t index = 0U; index < 4U; ++index) TEST_ASSERT_EQUAL_UINT16(0xFFFFU, encoded.words[index]);
+    TEST_ASSERT_TRUE(encodeUnsigned(0x0001000200030004ULL, UINT64, Little, encoded));
+    TEST_ASSERT_EQUAL_UINT16(0x0004U, encoded.words[0]);
+    TEST_ASSERT_EQUAL_UINT16(0x0003U, encoded.words[1]);
+    TEST_ASSERT_EQUAL_UINT16(0x0002U, encoded.words[2]);
+    TEST_ASSERT_EQUAL_UINT16(0x0001U, encoded.words[3]);
+
+    TEST_ASSERT_TRUE(encodeFloat(123.456F, Big, encoded));
+    TEST_ASSERT_EQUAL_UINT8(2U, encoded.count);
+    TEST_ASSERT_EQUAL_UINT16(0x42F6U, encoded.words[0]);
+    TEST_ASSERT_EQUAL_UINT16(0xE979U, encoded.words[1]);
+    TEST_ASSERT_TRUE(encodeFloat(123.456F, Little, encoded));
+    TEST_ASSERT_EQUAL_UINT16(0xE979U, encoded.words[0]);
+    TEST_ASSERT_EQUAL_UINT16(0x42F6U, encoded.words[1]);
+
+    // Every encoder output decodes back to the same raw value in both orders.
+    const ModbusDataType signedTypes[] = {INT16, INT32, INT64};
+    const int64_t signedSamples[] = {0, 1, -1, 12345, -12345, 32767, -32768};
+    const ModbusDataType unsignedTypes[] = {UINT16, UINT32, UINT64};
+    const uint64_t unsignedSamples[] = {0U, 1U, 255U, 65535U};
+    const ModbusWordOrder orders[] = {Big, Little};
+    for (const auto order : orders) {
+        for (const auto type : signedTypes) {
+            for (const int64_t sample : signedSamples) {
+                TEST_ASSERT_TRUE(encodeSigned(sample, type, order, encoded));
+                TEST_ASSERT_EQUAL_UINT8(wordWidth(type), encoded.count);
+                const DecodedValue decoded = decode(encoded.words.data(), encoded.count, type, Full, order);
+                TEST_ASSERT_TRUE(decoded.ok);
+                TEST_ASSERT_TRUE(decoded.rawSigned == sample);
+            }
+        }
+        for (const auto type : unsignedTypes) {
+            for (const uint64_t sample : unsignedSamples) {
+                TEST_ASSERT_TRUE(encodeUnsigned(sample, type, order, encoded));
+                const DecodedValue decoded = decode(encoded.words.data(), encoded.count, type, Full, order);
+                TEST_ASSERT_TRUE(decoded.ok);
+                TEST_ASSERT_TRUE(decoded.rawUnsigned == sample);
+            }
+        }
+        TEST_ASSERT_TRUE(encodeFloat(-2.5F, order, encoded));
+        const DecodedValue decoded = decode(encoded.words.data(), encoded.count, FLOAT32, Full, order);
+        TEST_ASSERT_TRUE(decoded.ok);
+        TEST_ASSERT_TRUE(decoded.rawFloat == -2.5F);
+    }
+}
+
+void test_modbus_codec_formats_decimals_from_scale(void) {
+    using namespace ModbusValueCodec;
+    struct DecimalsCase {
+        float scale;
+        int decimals;
+    };
+    const DecimalsCase decimalsCases[] = {
+        {0.01F, 2}, {1.0F, 0}, {0.001F, 3}, {0.5F, 1}, {-0.1F, 1}, {2.5F, 1},
+        {100.0F, 0}, {1e-5F, 5}, {0.123456789F, 6}, {1e-7F, 6}, {0.0F, 0},
+        {10.5F, 1}, {0.25F, 2}, {1.0e6F, 0},
+    };
+    for (const auto &testCase : decimalsCases) {
+        TEST_ASSERT_EQUAL_INT(testCase.decimals, decimalsForScale(testCase.scale));
+    }
+
+    char text[64];
+    DecodedValue value;
+    value.ok = true;
+    const auto format = [&](const double raw, const ModbusDataType type, const float scale) {
+        value.raw = raw;
+        return formatEngineering(engineeringValue(value, scale), type, scale, text, sizeof text);
+    };
+
+    TEST_ASSERT_TRUE(format(1234.0, INT16, 1.0F).finite);
+    TEST_ASSERT_EQUAL_STRING("1234", text);
+    TEST_ASSERT_EQUAL_UINT(4U, format(1234.0, INT16, 1.0F).length);
+    format(3.0, UINT16, 0.5F);
+    TEST_ASSERT_EQUAL_STRING("1.5", text);
+    format(0.0, INT16, -0.1F);
+    TEST_ASSERT_EQUAL_STRING("0.0", text);
+    format(-1.0, INT16, 0.001F);
+    TEST_ASSERT_EQUAL_STRING("-0.001", text);
+    format(-1.0, INT16, 1e-7F);
+    TEST_ASSERT_EQUAL_STRING("0.000000", text);
+    format(65535.0, UINT16, 0.1F);
+    TEST_ASSERT_EQUAL_STRING("6553.5", text);
+    format(1.0, UINT16, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("1", text);
+    format(-100000.0, INT32, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("-100000", text);
+    // The double path rounds above 2^53; formatDecoded keeps the exact digits.
+    format(static_cast<double>(std::numeric_limits<int64_t>::max()), INT64, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("9223372036854775808", text);
+
+    format(3.14F, FLOAT32, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("3.14", text);
+    format(1e10, FLOAT32, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("1e+10", text);
+    format(-100.0, FLOAT32, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("-100", text);
+    format(0.1F, FLOAT32, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("0.1", text);
+    format(2.5F, FLOAT32, 0.5F);
+    TEST_ASSERT_EQUAL_STRING("1.25", text);
+
+    Formatted formatted = format(NAN, FLOAT32, 1.0F);
+    TEST_ASSERT_FALSE(formatted.finite);
+    TEST_ASSERT_EQUAL_STRING("nan", text);
+    formatted = format(INFINITY, FLOAT32, 1.0F);
+    TEST_ASSERT_FALSE(formatted.finite);
+    TEST_ASSERT_EQUAL_STRING("inf", text);
+    formatted = format(-INFINITY, FLOAT32, 1.0F);
+    TEST_ASSERT_FALSE(formatted.finite);
+    TEST_ASSERT_EQUAL_STRING("-inf", text);
+
+    char tiny[4];
+    formatted = formatEngineering(123.456, FLOAT32, 1.0F, tiny, sizeof tiny);
+    TEST_ASSERT_FALSE(formatted.finite);
+    TEST_ASSERT_EQUAL_UINT(0U, formatted.length);
+    TEST_ASSERT_EQUAL_STRING("", tiny);
+    TEST_ASSERT_EQUAL_UINT(0U, formatEngineering(1.0, INT16, 1.0F, nullptr, 0U).length);
+}
+
+void test_modbus_codec_formats_wide_integers_exactly(void) {
+    using namespace ModbusValueCodec;
+    constexpr auto Big = ModbusWordOrder::Big;
+    constexpr auto Full = RegisterSlice::Full;
+    char text[64];
+    char expected[64];
+
+    // A uint64 serial number above 2^53 keeps every digit at integral scales
+    // instead of rounding through a double (…321 would become …336).
+    const uint16_t serial[] = {0x1234U, 0x5678U, 0x9ABCU, 0xDEF1U};
+    DecodedValue decoded = decode(serial, 4U, UINT64, Full, Big);
+    TEST_ASSERT_TRUE(decoded.ok);
+    TEST_ASSERT_TRUE(decoded.rawUnsigned == 0x123456789ABCDEF1ULL);
+    Formatted formatted = formatDecoded(decoded, UINT64, 1.0F, text, sizeof text);
+    TEST_ASSERT_TRUE(formatted.finite);
+    TEST_ASSERT_EQUAL_UINT(19U, formatted.length);
+    TEST_ASSERT_EQUAL_STRING("1311768467463790321", text);
+    formatDecoded(decoded, UINT64, -1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-1311768467463790321", text);
+    formatDecoded(decoded, UINT64, 10.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("13117684674637903210", text);
+    // A product that does not fit 64 bits, or a fractional scale, rounds
+    // through a double as documented.
+    formatDecoded(decoded, UINT64, 100.0F, text, sizeof text);
+    std::snprintf(expected, sizeof expected, "%.0f", static_cast<double>(decoded.rawUnsigned) * 100.0);
+    TEST_ASSERT_EQUAL_STRING(expected, text);
+    formatDecoded(decoded, UINT64, 0.5F, text, sizeof text);
+    std::snprintf(expected, sizeof expected, "%.1f", static_cast<double>(decoded.rawUnsigned) * 0.5);
+    TEST_ASSERT_EQUAL_STRING(expected, text);
+
+    const uint16_t int64Max[] = {0x7FFFU, 0xFFFFU, 0xFFFFU, 0xFFFFU};
+    decoded = decode(int64Max, 4U, INT64, Full, Big);
+    formatDecoded(decoded, INT64, 1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("9223372036854775807", text);
+    formatDecoded(decoded, INT64, -1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-9223372036854775807", text);
+    const uint16_t int64Min[] = {0x8000U, 0U, 0U, 0U};
+    decoded = decode(int64Min, 4U, INT64, Full, Big);
+    formatDecoded(decoded, INT64, 1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-9223372036854775808", text);
+    formatDecoded(decoded, INT64, -1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("9223372036854775808", text);
+    formatDecoded(decoded, INT64, 2.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-18446744073709551616", text);  // overflow: double path
+    const uint16_t uint64Max[] = {0xFFFFU, 0xFFFFU, 0xFFFFU, 0xFFFFU};
+    decoded = decode(uint64Max, 4U, UINT64, Full, Big);
+    formatDecoded(decoded, UINT64, 1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("18446744073709551615", text);
+    formatDecoded(decoded, UINT64, 1e6F, text, sizeof text);
+    std::snprintf(expected, sizeof expected, "%.0f", static_cast<double>(decoded.rawUnsigned) * 1e6);
+    TEST_ASSERT_EQUAL_STRING(expected, text);
+
+    // Narrower integers take the same path and print as before.
+    const uint16_t nilan[] = {0xFF38U};
+    decoded = decode(nilan, 1U, INT16, Full, Big);
+    formatDecoded(decoded, INT16, 1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-200", text);
+    formatDecoded(decoded, INT16, -1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("200", text);
+    formatDecoded(decoded, INT16, 0.01F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-2.00", text);
+    formatDecoded(decoded, INT16, 100.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-20000", text);
+    const uint16_t zero[] = {0U};
+    decoded = decode(zero, 1U, UINT16, Full, Big);
+    formatDecoded(decoded, UINT16, -1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("0", text);  // never "-0"
+    decoded = decode(zero, 1U, INT16, Full, Big);
+    formatDecoded(decoded, INT16, -5.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("0", text);
+
+    char tiny[8];
+    formatted = formatDecoded(decode(serial, 4U, UINT64, Full, Big), UINT64, 1.0F, tiny, sizeof tiny);
+    TEST_ASSERT_EQUAL_UINT(0U, formatted.length);
+    TEST_ASSERT_FALSE(formatted.finite);
+    TEST_ASSERT_EQUAL_UINT(0U, formatDecoded(decoded, INT16, 1.0F, nullptr, 0U).length);
+}
+
+void test_modbus_codec_formats_float32_with_shortest_round_trip(void) {
+    using namespace ModbusValueCodec;
+    char text[64];
+    DecodedValue value;
+    value.ok = true;
+    const auto format = [&](const float raw, const float scale) {
+        value.rawFloat = raw;
+        value.raw = static_cast<double>(raw);
+        return formatDecoded(value, FLOAT32, scale, text, sizeof text);
+    };
+
+    // 2^24 - 1 is exact in float32; "%.7g" would print 1.677722e+07.
+    format(16777215.0F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("16777215", text);
+    TEST_ASSERT_TRUE(std::strtof(text, nullptr) == 16777215.0F);
+    // The shortest text that reads back as the same float32 is preferred.
+    format(1234567.75F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("1234567.8", text);
+    TEST_ASSERT_TRUE(std::strtof(text, nullptr) == 1234567.75F);
+    format(0.1F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("0.1", text);
+    format(3.14F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("3.14", text);
+    format(-100.0F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("-100", text);
+    format(1e10F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("1e+10", text);
+    format(123456789.0F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("1.2345679e+08", text);
+    TEST_ASSERT_TRUE(std::strtof(text, nullptr) == 123456789.0F);
+    format(2.5F, 0.5F);
+    TEST_ASSERT_EQUAL_STRING("1.25", text);
+    format(0.0F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("0", text);
+    format(-0.0F, 1.0F);
+    TEST_ASSERT_EQUAL_STRING("0", text);
+    // raw * scale beyond float32 prints the double product with 9 digits.
+    format(3e38F, 10.0F);
+    char expected[64];
+    std::snprintf(expected, sizeof expected, "%.9g", static_cast<double>(3e38F) * 10.0);
+    TEST_ASSERT_EQUAL_STRING(expected, text);
+    TEST_ASSERT_EQUAL_STRING("e+39", text + std::strlen(text) - 4U);
+    Formatted formatted = format(NAN, 1.0F);
+    TEST_ASSERT_FALSE(formatted.finite);
+    TEST_ASSERT_EQUAL_STRING("nan", text);
+}
+
+void test_modbus_codec_format_reading_matches_publication(void) {
+    using namespace ModbusValueCodec;
+    constexpr auto Big = ModbusWordOrder::Big;
+    constexpr auto Little = ModbusWordOrder::Little;
+    constexpr auto Full = RegisterSlice::Full;
+    char text[64];
+
+    const uint16_t nilan[] = {0xFF38U};
+    ReadingText reading = formatReading(nilan, 1U, false, INT16, Full, Big, 0.01F, text, sizeof text);
+    TEST_ASSERT_TRUE(reading.ok);
+    TEST_ASSERT_TRUE(reading.finite);
+    TEST_ASSERT_EQUAL_UINT8(1U, reading.width);
+    TEST_ASSERT_EQUAL_UINT(5U, reading.length);
+    TEST_ASSERT_EQUAL_STRING("-2.00", text);
+
+    // Coils and discrete inputs are packed bits: decoded as uint16 whatever
+    // the data type says.
+    const uint16_t coils[] = {0x0005U};
+    reading = formatReading(coils, 1U, true, INT32, Full, Big, 1.0F, text, sizeof text);
+    TEST_ASSERT_TRUE(reading.ok);
+    TEST_ASSERT_EQUAL_UINT8(1U, reading.width);
+    TEST_ASSERT_EQUAL_STRING("5", text);
+    reading = formatReading(coils, 1U, true, TEXT, Full, Big, 1.0F, text, sizeof text);
+    TEST_ASSERT_TRUE(reading.ok);
+    TEST_ASSERT_EQUAL_STRING("5", text);
+
+    // Too few registers for the type: nothing to publish, width says how many.
+    reading = formatReading(nilan, 1U, false, INT32, Full, Big, 1.0F, text, sizeof text);
+    TEST_ASSERT_FALSE(reading.ok);
+    TEST_ASSERT_EQUAL_UINT8(2U, reading.width);
+    TEST_ASSERT_EQUAL_STRING("", text);
+    reading = formatReading(nilan, 1U, false, TEXT, Full, Big, 1.0F, text, sizeof text);
+    TEST_ASSERT_FALSE(reading.ok);
+    TEST_ASSERT_EQUAL_UINT8(0U, reading.width);
+
+    const uint16_t pi[] = {0xF5C3U, 0x4048U};
+    reading = formatReading(pi, 2U, false, FLOAT32, Full, Little, 1.0F, text, sizeof text);
+    TEST_ASSERT_TRUE(reading.ok);
+    TEST_ASSERT_EQUAL_STRING("3.14", text);
+    const uint16_t notANumber[] = {0x7FC0U, 0U};
+    reading = formatReading(notANumber, 2U, false, FLOAT32, Full, Big, 1.0F, text, sizeof text);
+    TEST_ASSERT_TRUE(reading.ok);
+    TEST_ASSERT_FALSE(reading.finite);
+    TEST_ASSERT_EQUAL_STRING("nan", text);
+
+    const uint16_t serial[] = {0x1234U, 0x5678U, 0x9ABCU, 0xDEF1U};
+    reading = formatReading(serial, 4U, false, UINT64, Full, Big, 1.0F, text, sizeof text);
+    TEST_ASSERT_TRUE(reading.ok);
+    TEST_ASSERT_EQUAL_STRING("1311768467463790321", text);
+
+    const uint16_t sliced[] = {0x1280U};
+    reading = formatReading(sliced, 1U, false, INT16, RegisterSlice::LowByte, Big, 1.0F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("-128", text);
+    reading = formatReading(sliced, 1U, false, UINT16, RegisterSlice::HighByte, Big, 0.5F, text, sizeof text);
+    TEST_ASSERT_EQUAL_STRING("9.0", text);
+
+    reading = formatReading(nullptr, 0U, false, UINT16, Full, Big, 1.0F, text, sizeof text);
+    TEST_ASSERT_FALSE(reading.ok);
+    TEST_ASSERT_EQUAL_STRING("", text);
 }
 
 void test_ota_lifecycle_rejects_duplicates_and_retains_terminal_failure(void) {
@@ -3189,9 +4019,18 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_production_snapshot_core_never_returns_mixed_runtime_fields);
     RUN_TEST(test_modbus_mqtt_coil_payload_contract);
     RUN_TEST(test_modbus_mqtt_holding_payload_grammar_and_conversion);
+    RUN_TEST(test_modbus_mqtt_typed_holding_conversion);
     RUN_TEST(test_modbus_mqtt_production_handler_submits_only_accepted_commands);
     RUN_TEST(test_modbus_configuration_rejects_noninvertible_writable_scales_atomically);
+    RUN_TEST(test_modbus_configuration_coerces_register_shape_per_data_type);
     RUN_TEST(test_modbus_home_assistant_number_bounds_follow_scale_direction);
+    RUN_TEST(test_modbus_command_topics_derive_from_the_state_base);
+    RUN_TEST(test_modbus_codec_decodes_each_data_type);
+    RUN_TEST(test_modbus_codec_encode_round_trips);
+    RUN_TEST(test_modbus_codec_formats_decimals_from_scale);
+    RUN_TEST(test_modbus_codec_formats_wide_integers_exactly);
+    RUN_TEST(test_modbus_codec_formats_float32_with_shortest_round_trip);
+    RUN_TEST(test_modbus_codec_format_reading_matches_publication);
     RUN_TEST(test_ota_lifecycle_rejects_duplicates_and_retains_terminal_failure);
     RUN_TEST(test_ota_quiescence_deadlines_are_independent_and_rollover_safe);
     RUN_TEST(test_ota_progress_calculates_component_and_overall_without_overflow);

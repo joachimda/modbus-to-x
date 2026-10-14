@@ -6,12 +6,8 @@
 #include "ModbusDataType.h"
 #include <Arduino.h>
 #include "ModbusFunctionType.h"
-
-enum class RegisterSlice : uint8_t {
-    Full = 0,
-    LowByte,
-    HighByte
-};
+#include "ModbusWordOrder.h"
+#include "RegisterSlice.h"
 
 struct ModbusDatapoint {
     String id;
@@ -24,6 +20,7 @@ struct ModbusDatapoint {
     String unit;
     String topic;
     RegisterSlice registerSlice{RegisterSlice::Full};
+    ModbusWordOrder wordOrder{ModbusWordOrder::Big};
     uint32_t pollIntervalMs{0};
     uint32_t nextDueAtMs{0};
 };

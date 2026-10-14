@@ -32,6 +32,22 @@ String ModbusTopicBuilder::datapointTopic(const ModbusDevice &device, const Modb
     return resolved;
 }
 
+String ModbusTopicBuilder::commandTopic(const ModbusDevice &device, const ModbusDatapoint &dp) const {
+    return commandTopicForBase(datapointTopic(device, dp));
+}
+
+String ModbusTopicBuilder::commandTopicForBase(String baseTopic) {
+    baseTopic.trim();
+    while (baseTopic.endsWith("/")) {
+        baseTopic.remove(baseTopic.length() - 1);
+    }
+    if (!baseTopic.length()) {
+        return baseTopic;
+    }
+    baseTopic += "/set";
+    return baseTopic;
+}
+
 String ModbusTopicBuilder::availabilityTopic(const ModbusDevice &device) const {
     const String deviceSeg = deviceSegment(device);
 

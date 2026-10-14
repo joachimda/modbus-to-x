@@ -37,13 +37,14 @@ MqttBridgePlan ModbusMqttBridge::buildBridgePlan(const ConfigurationRoot &root,
         for (const auto &datapoint : device.datapoints) {
             if (isReadOnlyFunction(datapoint.function)) continue;
 
+            // Commands are accepted only on <base>/set. The base topic carries
+            // this gateway's own state publications, which must never loop
+            // back into the bus as write commands.
             String explicitTopic = datapoint.topic;
             explicitTopic.trim();
             MqttTopicSpec topic;
             topic.relativeToRoot = !explicitTopic.length();
-            topic.topic = topic.relativeToRoot
-                              ? relativeBuilder.datapointTopic(device, datapoint)
-                              : explicitTopic;
+            topic.topic = relativeBuilder.commandTopic(device, datapoint);
 
             const uint8_t slaveId = device.slaveId;
             const auto function = datapoint.function;
@@ -268,12 +269,14 @@ void ModbusMqttBridge::publishHomeAssistantDiscovery(ModbusDevice &device,
         device.haDiscoveryPublishAttempt.begin();
     }
     const uint32_t attempt = device.haDiscoveryPublishAttempt.current();
-    auto findStateTopicForCommand = [&](const String &commandTopic) -> String {
+    // A writable datapoint gets state feedback from the readable datapoint
+    // that resolves to the same base topic (the command topic is <base>/set).
+    auto findStateTopicForCommand = [&](const String &baseTopic) -> String {
         for (const auto &candidate : device.datapoints) {
             if (!isReadOnlyFunction(candidate.function)) continue;
             String candidateTopic = buildDatapointTopic(device, candidate, mqttStatus.rootTopic);
             candidateTopic.trim();
-            if (candidateTopic == commandTopic) return candidateTopic;
+            if (candidateTopic == baseTopic) return candidateTopic;
         }
         return {};
     };
@@ -320,7 +323,7 @@ void ModbusMqttBridge::publishHomeAssistantDiscovery(ModbusDevice &device,
             if (datapoint.function == READ_HOLDING) document["state_class"] = "measurement";
         } else if (datapoint.function == WRITE_COIL) {
             discoveryTopic = String("homeassistant/switch/") + deviceSegment + "/" + datapointSegment + "/config";
-            document["command_topic"] = datapointTopic;
+            document["command_topic"] = ModbusTopicBuilder::commandTopicForBase(datapointTopic);
             document["payload_on"] = "1";
             document["payload_off"] = "0";
             const String stateTopic = findStateTopicForCommand(datapointTopic);
@@ -328,7 +331,7 @@ void ModbusMqttBridge::publishHomeAssistantDiscovery(ModbusDevice &device,
             else document["optimistic"] = true;
         } else {
             discoveryTopic = String("homeassistant/number/") + deviceSegment + "/" + datapointSegment + "/config";
-            document["command_topic"] = datapointTopic;
+            document["command_topic"] = ModbusTopicBuilder::commandTopicForBase(datapointTopic);
             const String stateTopic = findStateTopicForCommand(datapointTopic);
             if (stateTopic.length()) document["state_topic"] = stateTopic;
             else document["optimistic"] = true;

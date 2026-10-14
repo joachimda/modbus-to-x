@@ -51,6 +51,7 @@
 
 #include "../src/utils/StringUtils.cpp"
 #include "../src/modbus/ModbusConfigDocument.cpp"
+#include "../src/modbus/ModbusTopicBuilder.cpp"
 
 namespace {
 
@@ -2865,6 +2866,32 @@ void test_modbus_home_assistant_number_bounds_follow_scale_direction(void) {
     TEST_ASSERT_FALSE(ModbusMqttWriteCore::numberDiscoveryBounds(NAN).valid());
 }
 
+void test_modbus_command_topics_derive_from_the_state_base(void) {
+    ModbusDevice device{};
+    device.id = "boiler";
+    device.name = "Boiler";
+    device.slaveId = 10U;
+    ModbusDatapoint datapoint{};
+    datapoint.id = "boiler.setpoint";
+    datapoint.name = "Setpoint";
+    datapoint.function = WRITE_HOLDING;
+
+    const ModbusTopicBuilder relative("");
+    TEST_ASSERT_EQUAL_STRING("boiler/setpoint", relative.datapointTopic(device, datapoint).c_str());
+    TEST_ASSERT_EQUAL_STRING("boiler/setpoint/set", relative.commandTopic(device, datapoint).c_str());
+
+    const ModbusTopicBuilder rooted("mbx/");
+    TEST_ASSERT_EQUAL_STRING("mbx/boiler/setpoint", rooted.datapointTopic(device, datapoint).c_str());
+    TEST_ASSERT_EQUAL_STRING("mbx/boiler/setpoint/set", rooted.commandTopic(device, datapoint).c_str());
+
+    // An explicit topic is a base too: the root is not prepended and "/set" is
+    // appended once, regardless of surrounding whitespace or trailing slashes.
+    datapoint.topic = " plant/boiler/sp/ ";
+    TEST_ASSERT_EQUAL_STRING("plant/boiler/sp/set", rooted.commandTopic(device, datapoint).c_str());
+    TEST_ASSERT_EQUAL_STRING("a/b/set", ModbusTopicBuilder::commandTopicForBase("a/b//").c_str());
+    TEST_ASSERT_EQUAL_STRING("", ModbusTopicBuilder::commandTopicForBase("  ").c_str());
+}
+
 void test_ota_lifecycle_rejects_duplicates_and_retains_terminal_failure(void) {
     OtaProgressCore::Lifecycle lifecycle;
     TEST_ASSERT_EQUAL_INT(
@@ -3192,6 +3219,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_modbus_mqtt_production_handler_submits_only_accepted_commands);
     RUN_TEST(test_modbus_configuration_rejects_noninvertible_writable_scales_atomically);
     RUN_TEST(test_modbus_home_assistant_number_bounds_follow_scale_direction);
+    RUN_TEST(test_modbus_command_topics_derive_from_the_state_base);
     RUN_TEST(test_ota_lifecycle_rejects_duplicates_and_retains_terminal_failure);
     RUN_TEST(test_ota_quiescence_deadlines_are_independent_and_rollover_safe);
     RUN_TEST(test_ota_progress_calculates_component_and_overall_without_overflow);

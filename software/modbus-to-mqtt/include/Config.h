@@ -103,6 +103,21 @@
 #define WAVIN_TRANSACTION_BUDGET_MS (OTA_MODBUS_QUIESCE_TIMEOUT_MS - 500U)
 #endif
 
+// After the last attempt has timed out or failed its CRC, input is discarded
+// until the line has been quiet for WAVIN_SETTLE_QUIET_MS, measured from the
+// last byte received and for at most WAVIN_SETTLE_MAX_MS. A reply that is
+// still on its way, or the tail of the display burst that swallowed the
+// attempt, is then not taken for the reply to the next request (Wavin
+// replies carry no register address, so the reply itself cannot tell). The
+// wait is part of the WAVIN_TRANSACTION_BUDGET_MS margin, which is checked
+// at compile time where OTA_MODBUS_QUIESCE_TIMEOUT_MS is defined.
+#ifndef WAVIN_SETTLE_QUIET_MS
+#define WAVIN_SETTLE_QUIET_MS 50U
+#endif
+#ifndef WAVIN_SETTLE_MAX_MS
+#define WAVIN_SETTLE_MAX_MS 150U
+#endif
+
 /****************************************************
  * PREFERENCE STORAGE
  ****************************************************/
@@ -197,6 +212,12 @@
 #endif
 static_assert(WAVIN_TRANSACTION_BUDGET_MS < OTA_MODBUS_QUIESCE_TIMEOUT_MS,
               "the Wavin transaction budget must leave margin within the Modbus quiesce timeout");
+// The quiet-line wait after a final failure runs after the budget and must
+// fit in that margin, or a quiesce arriving during a failing transaction
+// could miss the timeout.
+static_assert(WAVIN_TRANSACTION_BUDGET_MS + WAVIN_SETTLE_MAX_MS < OTA_MODBUS_QUIESCE_TIMEOUT_MS,
+              "the Wavin transaction budget plus the quiet-line wait must leave margin within the "
+              "Modbus quiesce timeout");
 #ifndef OTA_RUNTIME_DRAIN_TIMEOUT_MS
 #define OTA_RUNTIME_DRAIN_TIMEOUT_MS 6000U
 #endif

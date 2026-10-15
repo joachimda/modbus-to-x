@@ -19,7 +19,7 @@ and Modbus owners then process priority quiesce commands concurrently.
 | Guard | Bound | Behavior |
 | --- | ---: | --- |
 | MQTT owner acknowledgment | 1,500 ms | Publish the configured retained will/availability payload when connected, service the client for at most 100 ms, disconnect, and suppress reconnects |
-| Modbus owner acknowledgment | 2,500 ms | Finish at most the RTU transaction already in progress (a Wavin transaction with its retries is held to 2,000 ms), then deactivate the bus |
+| Modbus owner acknowledgment | 2,500 ms | Finish at most the RTU transaction already in progress (a Wavin transaction with its retries is held to 2,000 ms, plus a quiet-line wait of at most 150 ms after a final failure), then deactivate the bus |
 | HTTP jobs, event clients, OTA check/notes transport, and UI-file leases | 6,000 ms | Drain admitted work and close the normal event stream |
 | Failure resume acknowledgment | 2,500 ms | Restore matching MQTT and Modbus owner state |
 | Manual upload start or chunk idle | 30,000 ms | Fail and resume if the declared upload never starts or the transfer stalls |

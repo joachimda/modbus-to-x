@@ -35,16 +35,26 @@ private:
     // or CRC error, pausing drawBackoffMs() in between; a retry starts only
     // if it still fits WAVIN_TRANSACTION_BUDGET_MS. expectedWords is the
     // reply word count the scanner accepts (0 for any); replyWords bounds
-    // the reply the per-attempt timeout must allow for.
+    // the reply the per-attempt timeout must allow for. After a final
+    // timeout or CRC error the line is left quiet (settleLine).
     uint8_t transactWithRetry(uint8_t attempts, const uint8_t *request, size_t requestLength,
                               uint8_t slave, uint8_t function, uint8_t expectedWords,
                               uint8_t replyWords, uint16_t *words, size_t wordCapacity,
                               uint8_t &receivedCount);
 
     // One request and the wait for its reply, for at most timeoutMs.
+    // lastByteAtMs is set to the millis() of the last byte received, or of
+    // the end of the transmission when nothing arrived.
     uint8_t transact(const uint8_t *request, size_t requestLength, uint8_t slave,
                      uint8_t function, uint8_t expectedWords, uint16_t *words,
-                     size_t wordCapacity, uint8_t &receivedCount, uint32_t timeoutMs);
+                     size_t wordCapacity, uint8_t &receivedCount, uint32_t timeoutMs,
+                     uint32_t &lastByteAtMs);
+
+    // Discards input until the line has been quiet for WAVIN_SETTLE_QUIET_MS
+    // since the last byte (at most WAVIN_SETTLE_MAX_MS), so a late reply or
+    // the tail of another master's burst is not taken for the reply to the
+    // next request.
+    void settleLine(uint32_t lastByteAtMs);
 
     ModbusBus &_bus;
 };

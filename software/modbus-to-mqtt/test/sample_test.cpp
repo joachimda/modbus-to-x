@@ -4238,7 +4238,9 @@ void test_wavin_frame_timing_scales_with_baud_and_fits_budget(void) {
             + WavinFrame::attemptTimeoutMs(WAVIN_TURNAROUND_MS, WavinFrame::kMaxRegisters,
                                            MODBUS_MIN_BAUD_RATE, WavinFrame::kMaxBitsPerCharacter),
         WAVIN_TRANSACTION_BUDGET_MS));
-    TEST_ASSERT_TRUE(WAVIN_TRANSACTION_BUDGET_MS < OTA_MODBUS_QUIESCE_TIMEOUT_MS);
+    // The budget's margin within the quiesce timeout (Config.h asserts there
+    // is one) covers at least the quiet-line wait after a final failure.
+    TEST_ASSERT_TRUE(WAVIN_SETTLE_MAX_MS < OTA_MODBUS_QUIESCE_TIMEOUT_MS - WAVIN_TRANSACTION_BUDGET_MS);
 }
 
 void test_modbus_configuration_parses_wavin_datapoints(void) {

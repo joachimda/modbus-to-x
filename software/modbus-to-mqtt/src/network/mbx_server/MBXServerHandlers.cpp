@@ -1229,9 +1229,11 @@ void MBXServerHandlers::handlePutModbusConfigBody(AsyncWebServerRequest *req, co
         JsonDocument response;
         response["error"] = "invalid_modbus_configuration";
         response["reason"] = ModbusConfigDocument::reasonToString(validationError.reason);
-        if (validationError.reason != ModbusConfigDocument::ValidationReason::InvalidJson) {
+        if (ModbusConfigDocument::locatesDatapoint(validationError.reason)) {
             response["deviceIndex"] = validationError.deviceIndex;
             response["datapointIndex"] = validationError.datapointIndex;
+        }
+        if (validationError.reason != ModbusConfigDocument::ValidationReason::InvalidJson) {
             response["message"] = ModbusConfigDocument::reasonDescription(validationError.reason);
         }
         String payload;

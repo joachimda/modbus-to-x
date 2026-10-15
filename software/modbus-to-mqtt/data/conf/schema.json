@@ -24,7 +24,7 @@
         },
         "baud": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1200
         },
         "serialFormat": {
           "type": "string",

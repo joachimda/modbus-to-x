@@ -177,8 +177,8 @@ function validateSchemaConfig(cfg) {
         if (cfg.bus.enabled != null && typeof cfg.bus.enabled !== "boolean") {
             errors.push("Bus enabled must be boolean");
         }
-        if (!Number.isInteger(cfg.bus.baud) || cfg.bus.baud <= 0) {
-            errors.push("Bus baud must be a positive integer");
+        if (!Number.isInteger(cfg.bus.baud) || cfg.bus.baud < 1200) {
+            errors.push("Bus baud must be an integer of at least 1200");
         }
         if (!SERIAL_FORMATS.has(cfg.bus.serialFormat)) {
             errors.push(`Invalid serialFormat ${cfg.bus.serialFormat}`);

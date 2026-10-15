@@ -4312,6 +4312,45 @@ void test_modbus_configuration_parses_wavin_datapoints(void) {
     TEST_ASSERT_EQUAL_UINT8(0U, parsed.devices[0].datapoints[0].category);
 }
 
+void test_modbus_configuration_rejects_baud_below_minimum(void) {
+    ConfigurationRoot parsed;
+    ModbusConfigDocument::ValidationError error;
+    const auto parseWithBaud = [&](const char *baud) {
+        std::string json = modbusConfigurationWithScale(3, "1");
+        const std::string field = "\"baud\":9600";
+        json.replace(json.find(field), field.size(), std::string("\"baud\":") + baud);
+        return ModbusConfigDocument::parse(json.c_str(), json.size(), parsed, &error);
+    };
+
+    // The Wavin timing is checked at compile time against MODBUS_MIN_BAUD_RATE,
+    // so no configuration may go below it; the bus form offers no lower rate.
+    TEST_ASSERT_TRUE(parseWithBaud("1200"));
+    TEST_ASSERT_EQUAL_INT(1200, parsed.bus.baud);
+    TEST_ASSERT_TRUE(parseWithBaud("38400"));
+
+    // Too low, or not an integer: a float, a string, a value outside the int
+    // range or a boolean would otherwise fall back to the default and run the
+    // bus at a rate the stored document does not show.
+    const char *rejected[] = {"1199", "300", "0", "-9600", "9600.5", "\"9600\"", "4294967296", "true"};
+    for (const char *baud : rejected) {
+        TEST_ASSERT_FALSE_MESSAGE(parseWithBaud(baud), baud);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(static_cast<int>(ModbusConfigDocument::ValidationReason::InvalidBaudRate),
+                                      static_cast<int>(error.reason), baud);
+    }
+    TEST_ASSERT_EQUAL_STRING("invalid_baud_rate", ModbusConfigDocument::reasonToString(error.reason));
+    // The rejection concerns the bus, not a datapoint, so the API response
+    // and the log carry no datapoint location for it.
+    TEST_ASSERT_FALSE(ModbusConfigDocument::locatesDatapoint(error.reason));
+    TEST_ASSERT_FALSE(ModbusConfigDocument::locatesDatapoint(ModbusConfigDocument::ValidationReason::InvalidJson));
+    TEST_ASSERT_TRUE(ModbusConfigDocument::locatesDatapoint(
+        ModbusConfigDocument::ValidationReason::InvalidWavinAddress));
+
+    // An absent bus object keeps the default rate.
+    const std::string noBus = R"({"version":1,"devices":[]})";
+    TEST_ASSERT_TRUE(ModbusConfigDocument::parse(noBus.c_str(), noBus.size(), parsed, &error));
+    TEST_ASSERT_EQUAL_INT(DEFAULT_MODBUS_BAUD_RATE, parsed.bus.baud);
+}
+
 void test_modbus_mqtt_wavin_write_carries_register_location(void) {
     ModbusMqttWriteCore::CommandContext context;
     context.slaveId = 1U;
@@ -4441,6 +4480,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_wavin_frame_locates_reply_among_other_traffic);
     RUN_TEST(test_wavin_frame_timing_scales_with_baud_and_fits_budget);
     RUN_TEST(test_modbus_configuration_parses_wavin_datapoints);
+    RUN_TEST(test_modbus_configuration_rejects_baud_below_minimum);
     RUN_TEST(test_modbus_mqtt_wavin_write_carries_register_location);
     return UNITY_END();
 }

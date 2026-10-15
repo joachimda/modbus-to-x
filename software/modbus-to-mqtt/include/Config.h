@@ -52,8 +52,9 @@
 
 #define MODBUS_SLAVE_ID 1
 
-// Lowest baud rate the bus configuration form accepts. Wavin timing is
-// checked against it at compile time (WavinClient.cpp).
+// Lowest baud rate a bus configuration may set: the form offers no lower
+// rate and the schema and the parser (ModbusConfigDocument) reject one.
+// Wavin timing is checked against it at compile time (WavinClient.cpp).
 #ifndef MODBUS_MIN_BAUD_RATE
 #define MODBUS_MIN_BAUD_RATE 1200U
 #endif

@@ -81,7 +81,7 @@ bool ModbusConfigLoader::parseConfiguration(Logger *logger, const char *json,
     if (logger != nullptr) {
         String message = String("Modbus configuration rejected: reason=")
                          + ModbusConfigDocument::reasonToString(error->reason);
-        if (error->reason != ModbusConfigDocument::ValidationReason::InvalidJson) {
+        if (ModbusConfigDocument::locatesDatapoint(error->reason)) {
             message += String(", deviceIndex=") + String(error->deviceIndex)
                        + ", datapointIndex=" + String(error->datapointIndex);
         }

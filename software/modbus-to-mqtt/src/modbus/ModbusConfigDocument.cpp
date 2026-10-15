@@ -224,9 +224,24 @@ bool parse(const char *json, const size_t length, ConfigurationRoot &outConfig,
         candidate.bus.serialFormat = DEFAULT_MODBUS_MODE;
         candidate.bus.enabled = false;
     } else {
-        candidate.bus.baud = bus["baud"] | DEFAULT_MODBUS_BAUD_RATE;
+        // A float, a string or a value outside the int range must not fall
+        // back to the default: the bus would run at a rate the stored
+        // document does not show.
+        const JsonVariantConst baud = bus["baud"];
+        if (baud.isNull()) {
+            candidate.bus.baud = DEFAULT_MODBUS_BAUD_RATE;
+        } else if (baud.is<int>()) {
+            candidate.bus.baud = baud.as<int>();
+        } else {
+            return fail(validationError, ValidationReason::InvalidBaudRate);
+        }
         candidate.bus.serialFormat = String(bus["serialFormat"] | DEFAULT_MODBUS_MODE);
         candidate.bus.enabled = bus["enabled"] | false;
+    }
+    // The bus form offers no lower rate, and the Wavin timing is checked
+    // against this floor at compile time (WavinClient.cpp).
+    if (candidate.bus.baud < static_cast<int>(MODBUS_MIN_BAUD_RATE)) {
+        return fail(validationError, ValidationReason::InvalidBaudRate);
     }
 
     const JsonArray devices = document["devices"].as<JsonArray>();
@@ -335,10 +350,13 @@ const char *reasonToString(const ValidationReason reason) {
         case ValidationReason::InvalidScale: return "invalid_scale";
         case ValidationReason::InvalidRegisterCount: return "invalid_register_count";
         case ValidationReason::InvalidWavinAddress: return "invalid_wavin_address";
+        case ValidationReason::InvalidBaudRate: return "invalid_baud_rate";
         case ValidationReason::None: break;
     }
     return "none";
 }
+
+static_assert(MODBUS_MIN_BAUD_RATE == 1200U, "update the InvalidBaudRate description");
 
 const char *reasonDescription(const ValidationReason reason) {
     switch (reason) {
@@ -349,9 +367,24 @@ const char *reasonDescription(const ValidationReason reason) {
             return "FC6 and Wavin 0x44 write exactly one register; use FC16 for 32-bit and 64-bit data types";
         case ValidationReason::InvalidWavinAddress:
             return "Wavin functions need address (register index), category and page in 0-255";
+        case ValidationReason::InvalidBaudRate: return "Bus baud rate must be an integer of at least 1200";
         case ValidationReason::None: break;
     }
     return "";
+}
+
+bool locatesDatapoint(const ValidationReason reason) {
+    switch (reason) {
+        case ValidationReason::InvalidScale:
+        case ValidationReason::InvalidRegisterCount:
+        case ValidationReason::InvalidWavinAddress:
+            return true;
+        case ValidationReason::None:
+        case ValidationReason::InvalidJson:
+        case ValidationReason::InvalidBaudRate:
+            break;
+    }
+    return false;
 }
 
 const char *warningToString(const ParseWarning warning) {

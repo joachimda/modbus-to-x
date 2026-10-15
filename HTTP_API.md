@@ -48,6 +48,8 @@ succeeds, a missing, invalid, expired, or revoked token returns HTTP 401.
 
 Modbus and MQTT configuration replacements validate the fully resolved MQTT topic plan before writing either configuration file. A rejected command-topic wildcard, duplicate, or state/command collision returns HTTP 400 with `error`, `reason`, `topic`, and the affected device/datapoint identities. The persisted configuration and active bridge remain unchanged.
 
+`PUT /api/config/modbus` also validates the document itself. A document that fails returns HTTP 400 with `error` = `invalid_modbus_configuration` and `reason` = `invalid_json`, `invalid_scale`, `invalid_register_count`, `invalid_wavin_address` or `invalid_baud_rate` (`bus.baud` must be an integer of at least 1200). `message` states the rule for every reason but `invalid_json`; `deviceIndex` and `datapointIndex` locate the datapoint for `invalid_scale`, `invalid_register_count` and `invalid_wavin_address` and are absent for the other reasons. The persisted configuration is unchanged.
+
 ### Ad hoc Modbus execution
 
 `POST /api/modbus/execute` takes the query parameters `devId`, `dpId`, `func_code` (1-6, 16, or 67/68 for Wavin), `addr` (0-65535), `len` (1-65535), optionally `slave` (1-247) and, for writes, `value`. A missing or out-of-range parameter returns HTTP 400 without touching the bus. The saved datapoint is looked up as `dpId` within the device `devId` (an unknown `devId` falls back to the first datapoint with that id); its data type, scale, register slice and word order are used to interpret register values.

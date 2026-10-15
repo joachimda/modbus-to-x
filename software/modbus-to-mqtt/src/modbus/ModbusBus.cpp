@@ -5,15 +5,25 @@
 #include "Config.h"
 #include "Logger.h"
 
-using SerialModeMap = std::map<String, uint32_t>;
-static const SerialModeMap kSerialModes = {
-    {"8N1", SERIAL_8N1},
-    {"8N2", SERIAL_8N2},
-    {"8E1", SERIAL_8E1},
-    {"8E2", SERIAL_8E2},
-    {"8O1", SERIAL_8O1},
-    {"8O2", SERIAL_8O2}
+// A serial format name's UART configuration and the bits one character
+// takes on the wire (start, data, parity and stop bits). No entry may exceed
+// WavinFrame::kMaxBitsPerCharacter, which the Wavin timing is checked
+// against at compile time.
+struct SerialFormatSpec {
+    uint32_t config;
+    uint8_t bitsPerCharacter;
 };
+
+using SerialFormatMap = std::map<String, SerialFormatSpec>;
+static const SerialFormatMap kSerialFormats = {
+    {"8N1", {SERIAL_8N1, 10U}},
+    {"8N2", {SERIAL_8N2, 11U}},
+    {"8E1", {SERIAL_8E1, 11U}},
+    {"8E2", {SERIAL_8E2, 12U}},
+    {"8O1", {SERIAL_8O1, 11U}},
+    {"8O2", {SERIAL_8O2, 12U}}
+};
+static const SerialFormatSpec kDefaultSerialFormat = {SERIAL_8N1, 10U};
 
 ModbusBus *ModbusBus::s_instance = nullptr;
 
@@ -46,7 +56,10 @@ ModbusBus::Guard::~Guard() {
     }
 }
 
-ModbusBus::ModbusBus(Logger *logger) : _logger(logger) {
+ModbusBus::ModbusBus(Logger *logger)
+    : _logger(logger),
+      _baud(DEFAULT_MODBUS_BAUD_RATE),
+      _bitsPerCharacter(kDefaultSerialFormat.bitsPerCharacter) {
     s_instance = this;
     _node.preTransmission(preTransmitTrampoline);
     _node.postTransmission(postTransmitTrampoline);
@@ -75,6 +88,14 @@ Stream &ModbusBus::stream() {
         return *_tee;
     }
     return Serial1;
+}
+
+uint32_t ModbusBus::baudRate() const {
+    return _baud;
+}
+
+uint8_t ModbusBus::bitsPerCharacter() const {
+    return _bitsPerCharacter;
 }
 
 bool ModbusBus::isActive() const {
@@ -122,11 +143,14 @@ void ModbusBus::initializeWiring(const Bus &busConfig) {
     pinMode(RS485_DERE_PIN, OUTPUT);
     digitalWrite(RS485_DERE_PIN, LOW);
 
-    const auto formatIt = kSerialModes.find(busConfig.serialFormat);
-    const uint32_t mode = (formatIt != kSerialModes.end()) ? formatIt->second : SERIAL_8N1;
+    const auto formatIt = kSerialFormats.find(busConfig.serialFormat);
+    const SerialFormatSpec &format =
+        (formatIt != kSerialFormats.end()) ? formatIt->second : kDefaultSerialFormat;
     const uint32_t baud = busConfig.baud ? busConfig.baud : DEFAULT_MODBUS_BAUD_RATE;
+    _baud = baud;
+    _bitsPerCharacter = format.bitsPerCharacter;
 
-    Serial1.begin(baud, mode, RX2, TX2);
+    Serial1.begin(baud, format.config, RX2, TX2);
 
     if (!_tee) {
         _tee = new TeeStream(Serial1, _logger);

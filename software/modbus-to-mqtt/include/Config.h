@@ -52,17 +52,27 @@
 
 #define MODBUS_SLAVE_ID 1
 
-// How long a Wavin (0x43/0x44) request waits for its reply. The controller
-// answers within a few milliseconds; a request lost to a collision with the
-// wall display (a second master on the bus) gets no reply at all, so a short
-// timeout plus a retry recovers faster than a long one.
-#ifndef WAVIN_RESPONSE_TIMEOUT_MS
-#define WAVIN_RESPONSE_TIMEOUT_MS 500U
+// Lowest baud rate the bus configuration form accepts. Wavin timing is
+// checked against it at compile time (WavinClient.cpp).
+#ifndef MODBUS_MIN_BAUD_RATE
+#define MODBUS_MIN_BAUD_RATE 1200U
+#endif
+
+// How long a Wavin (0x43/0x44) attempt waits for its reply to start. The
+// controller answers within a few milliseconds; a request lost to a
+// collision with the wall display (a second master on the bus) gets no reply
+// at all, so a short wait plus a retry recovers faster than a long one. The
+// time the reply itself takes on the wire is added per attempt from the
+// bus's baud rate and character size, so a full 22-register read also
+// completes at low baud rates (about 13 ms at 38400 8N1, 409 ms at 1200).
+#ifndef WAVIN_TURNAROUND_MS
+#define WAVIN_TURNAROUND_MS 500U
 #endif
 
 // Attempts per Wavin read and 0x44 write when the reply times out or fails its
 // CRC. 0x44 sets absolute values, so repeating a write whose reply was lost
-// cannot double-apply.
+// cannot double-apply. This is an upper bound: a retry starts only if it
+// still fits WAVIN_TRANSACTION_BUDGET_MS.
 #ifndef WAVIN_READ_ATTEMPTS
 #define WAVIN_READ_ATTEMPTS 3U
 #endif
@@ -77,6 +87,20 @@
 #endif
 #ifndef WAVIN_RETRY_BACKOFF_MAX_MS
 #define WAVIN_RETRY_BACKOFF_MAX_MS 250U
+#endif
+
+// Longest a Wavin transaction, retries included, may take. The OTA
+// quiescence waits OTA_MODBUS_QUIESCE_TIMEOUT_MS for the Modbus owner to
+// finish the transaction in progress; that bound was sized for
+// ModbusMaster's 2000 ms response timeout. A retry starts only if the pause
+// before it plus a full attempt (request and reply on the wire, plus
+// WAVIN_TURNAROUND_MS) still fit this budget. The 500 ms margin covers what
+// is not counted: direction switching (RS485_DIR_GUARD_US), the input
+// drain, the 1 ms polling granularity, the final frame scan, the quiet-line
+// wait after a final failure and the other services' share of the main
+// loop.
+#ifndef WAVIN_TRANSACTION_BUDGET_MS
+#define WAVIN_TRANSACTION_BUDGET_MS (OTA_MODBUS_QUIESCE_TIMEOUT_MS - 500U)
 #endif
 
 /****************************************************
@@ -160,7 +184,8 @@
 
 // OTA quiescence is bounded independently for each owner. ModbusMaster uses a
 // two-second response timeout, so the Modbus allowance covers one transaction
-// plus local owner-loop margin.
+// plus local owner-loop margin; a Wavin transaction, retries included, is
+// held to WAVIN_TRANSACTION_BUDGET_MS for the same reason.
 #ifndef OTA_MQTT_QUIESCE_TIMEOUT_MS
 #define OTA_MQTT_QUIESCE_TIMEOUT_MS 1500U
 #endif
@@ -170,6 +195,8 @@
 #ifndef OTA_MODBUS_QUIESCE_TIMEOUT_MS
 #define OTA_MODBUS_QUIESCE_TIMEOUT_MS 2500U
 #endif
+static_assert(WAVIN_TRANSACTION_BUDGET_MS < OTA_MODBUS_QUIESCE_TIMEOUT_MS,
+              "the Wavin transaction budget must leave margin within the Modbus quiesce timeout");
 #ifndef OTA_RUNTIME_DRAIN_TIMEOUT_MS
 #define OTA_RUNTIME_DRAIN_TIMEOUT_MS 6000U
 #endif

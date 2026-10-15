@@ -4160,6 +4160,87 @@ void test_wavin_frame_locates_reply_among_other_traffic(void) {
     TEST_ASSERT_TRUE(located.crcMismatch);
 }
 
+void test_wavin_frame_timing_scales_with_baud_and_fits_budget(void) {
+    // Wire time at 8N1 (10 bits per character), rounded up to whole ms.
+    TEST_ASSERT_EQUAL_UINT32(13U, WavinFrame::wireTimeMs(49U, 38400U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(52U, WavinFrame::wireTimeMs(49U, 9600U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(409U, WavinFrame::wireTimeMs(49U, 1200U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(3U, WavinFrame::wireTimeMs(WavinFrame::kReadRequestSize, 38400U, 10U));
+    // 8E2 has 12 bits per character; an unset baud rate costs nothing rather
+    // than dividing by zero.
+    TEST_ASSERT_EQUAL_UINT32(490U, WavinFrame::wireTimeMs(49U, 1200U, 12U));
+    TEST_ASSERT_EQUAL_UINT32(0U, WavinFrame::wireTimeMs(49U, 0U, 10U));
+
+    // Reply sizes: header (3) + data + CRC (2).
+    TEST_ASSERT_EQUAL_UINT(7U, WavinFrame::responseSize(1U));
+    TEST_ASSERT_EQUAL_UINT(49U, WavinFrame::responseSize(WavinFrame::kMaxRegisters));
+    TEST_ASSERT_EQUAL_UINT(WavinFrame::kMaxResponseSize,
+                           WavinFrame::responseSize(WavinFrame::kMaxRegisters));
+
+    // One attempt waits for the turnaround plus the largest reply on the wire.
+    TEST_ASSERT_EQUAL_UINT32(502U, WavinFrame::attemptTimeoutMs(500U, 1U, 38400U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(513U, WavinFrame::attemptTimeoutMs(500U, 22U, 38400U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(508U, WavinFrame::attemptTimeoutMs(500U, 1U, 9600U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(552U, WavinFrame::attemptTimeoutMs(500U, 22U, 9600U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(559U, WavinFrame::attemptTimeoutMs(500U, 1U, 1200U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(909U, WavinFrame::attemptTimeoutMs(500U, 22U, 1200U, 10U));
+
+    // A retry fits when the time spent, the pause and a full attempt stay
+    // within the budget; the comparison does not overflow.
+    TEST_ASSERT_TRUE(WavinFrame::attemptFits(1000U, 250U, 750U, 2000U));
+    TEST_ASSERT_FALSE(WavinFrame::attemptFits(1000U, 250U, 751U, 2000U));
+    TEST_ASSERT_FALSE(WavinFrame::attemptFits(0xFFFFFFFFU, 1U, 1U, 2000U));
+
+    // Attempts a read gets when every attempt times out, with the configured
+    // turnaround, budget and attempt limit: the first always, each retry
+    // only if its pause and a full attempt (request and reply on the wire
+    // plus the turnaround) still fit. The pause is random, so the count is
+    // given for the shortest and the longest pause.
+    const auto attempts = [](const uint8_t words, const uint32_t baud, const uint32_t pauseMs) {
+        const uint32_t attemptMs = WavinFrame::wireTimeMs(WavinFrame::kReadRequestSize, baud, 10U)
+                                   + WavinFrame::attemptTimeoutMs(WAVIN_TURNAROUND_MS, words, baud, 10U);
+        uint32_t elapsed = attemptMs;
+        uint8_t count = 1U;
+        while (count < WAVIN_READ_ATTEMPTS
+               && WavinFrame::attemptFits(elapsed, pauseMs, attemptMs, WAVIN_TRANSACTION_BUDGET_MS)) {
+            elapsed += pauseMs + attemptMs;
+            ++count;
+        }
+        return count;
+    };
+    constexpr uint32_t shortest = WAVIN_RETRY_BACKOFF_MIN_MS;
+    constexpr uint32_t longest = WAVIN_RETRY_BACKOFF_MAX_MS;
+    // 38400 8N1, what the AHC 9000 uses: all three attempts unless both
+    // pauses draw near their maximum (3 x 500 + 2 x 250 is the whole budget).
+    TEST_ASSERT_EQUAL_UINT8(3U, attempts(1U, 38400U, shortest));
+    TEST_ASSERT_EQUAL_UINT8(3U, attempts(22U, 38400U, shortest));
+    TEST_ASSERT_EQUAL_UINT8(2U, attempts(1U, 38400U, longest));
+    TEST_ASSERT_EQUAL_UINT8(2U, attempts(22U, 38400U, longest));
+    // 9600 8N1, the firmware default.
+    TEST_ASSERT_EQUAL_UINT8(3U, attempts(1U, 9600U, shortest));
+    TEST_ASSERT_EQUAL_UINT8(3U, attempts(22U, 9600U, shortest));
+    TEST_ASSERT_EQUAL_UINT8(2U, attempts(1U, 9600U, longest));
+    TEST_ASSERT_EQUAL_UINT8(2U, attempts(22U, 9600U, longest));
+    // 1200 8N1, the lowest rate the bus form accepts: a full read gets one
+    // attempt, a single register two.
+    TEST_ASSERT_EQUAL_UINT8(2U, attempts(1U, 1200U, shortest));
+    TEST_ASSERT_EQUAL_UINT8(2U, attempts(1U, 1200U, longest));
+    TEST_ASSERT_EQUAL_UINT8(1U, attempts(22U, 1200U, shortest));
+    TEST_ASSERT_EQUAL_UINT8(1U, attempts(22U, 1200U, longest));
+
+    // The first attempt always fits, even the largest reply at the lowest
+    // baud rate with the largest characters (8E2), so no datapoint becomes
+    // unreadable; WavinClient.cpp asserts the same at compile time.
+    TEST_ASSERT_TRUE(WavinFrame::attemptFits(
+        0U, 0U,
+        WavinFrame::wireTimeMs(WavinFrame::kMaxWriteRequestSize, MODBUS_MIN_BAUD_RATE,
+                               WavinFrame::kMaxBitsPerCharacter)
+            + WavinFrame::attemptTimeoutMs(WAVIN_TURNAROUND_MS, WavinFrame::kMaxRegisters,
+                                           MODBUS_MIN_BAUD_RATE, WavinFrame::kMaxBitsPerCharacter),
+        WAVIN_TRANSACTION_BUDGET_MS));
+    TEST_ASSERT_TRUE(WAVIN_TRANSACTION_BUDGET_MS < OTA_MODBUS_QUIESCE_TIMEOUT_MS);
+}
+
 void test_modbus_configuration_parses_wavin_datapoints(void) {
     ConfigurationRoot parsed;
     ModbusConfigDocument::ValidationError error;
@@ -4356,6 +4437,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_wavin_frame_builds_read_and_write_requests);
     RUN_TEST(test_wavin_frame_scans_replies_and_exceptions);
     RUN_TEST(test_wavin_frame_locates_reply_among_other_traffic);
+    RUN_TEST(test_wavin_frame_timing_scales_with_baud_and_fits_budget);
     RUN_TEST(test_modbus_configuration_parses_wavin_datapoints);
     RUN_TEST(test_modbus_mqtt_wavin_write_carries_register_location);
     return UNITY_END();

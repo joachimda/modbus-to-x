@@ -28,12 +28,23 @@ private:
     // exception replies from the controller are final.
     static bool isRetryable(uint8_t status);
 
-    // Random pause between attempts (WAVIN_RETRY_BACKOFF_MIN_MS..MAX_MS).
-    static void backOff();
+    // Random pause before a retry, WAVIN_RETRY_BACKOFF_MIN_MS..MAX_MS.
+    static uint32_t drawBackoffMs();
 
+    // Sends the request up to `attempts` times while the result is a timeout
+    // or CRC error, pausing drawBackoffMs() in between; a retry starts only
+    // if it still fits WAVIN_TRANSACTION_BUDGET_MS. expectedWords is the
+    // reply word count the scanner accepts (0 for any); replyWords bounds
+    // the reply the per-attempt timeout must allow for.
+    uint8_t transactWithRetry(uint8_t attempts, const uint8_t *request, size_t requestLength,
+                              uint8_t slave, uint8_t function, uint8_t expectedWords,
+                              uint8_t replyWords, uint16_t *words, size_t wordCapacity,
+                              uint8_t &receivedCount);
+
+    // One request and the wait for its reply, for at most timeoutMs.
     uint8_t transact(const uint8_t *request, size_t requestLength, uint8_t slave,
                      uint8_t function, uint8_t expectedWords, uint16_t *words,
-                     size_t wordCapacity, uint8_t &receivedCount);
+                     size_t wordCapacity, uint8_t &receivedCount, uint32_t timeoutMs);
 
     ModbusBus &_bus;
 };

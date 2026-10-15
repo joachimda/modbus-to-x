@@ -3,3 +3,6 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+# Firmware and flash images are build outputs; releases are built by CI
+*.bin

@@ -1,5 +1,6 @@
 #include "modbus/Rs485Port.h"
 
+#include <esp_random.h>
 #include <map>
 
 #include "Config.h"
@@ -10,7 +11,7 @@ namespace {
 
 // A serial format name's UART configuration and the bits one character
 // takes on the wire (start, data, parity and stop bits). No entry may exceed
-// WavinFrame::kMaxBitsPerCharacter, which the Wavin timing is checked
+// RtuTiming::kMaxBitsPerCharacter, which the protocols' timing is checked
 // against at compile time.
 struct SerialFormatSpec {
     uint32_t config;
@@ -123,6 +124,28 @@ void Rs485Port::send(const uint8_t *data, const size_t length) {
     endTransmit();
 }
 
+void Rs485Port::discardInput() {
+    Stream &io = stream();
+    while (io.available() > 0) (void)io.read();
+}
+
+int Rs485Port::read() {
+    Stream &io = stream();
+    return io.available() > 0 ? io.read() : -1;
+}
+
+uint32_t Rs485Port::nowMs() const {
+    return millis();
+}
+
+void Rs485Port::idleMs(const uint32_t ms) {
+    delay(ms);
+}
+
+uint32_t Rs485Port::randomWord() {
+    return esp_random();
+}
+
 void Rs485Port::beginTransmit() {
     digitalWrite(RS485_DERE_PIN, HIGH);
     if (_tee) _tee->enableCapture(false);
@@ -134,29 +157,6 @@ void Rs485Port::endTransmit() {
     digitalWrite(RS485_DERE_PIN, LOW);
     if (_tee) _tee->enableCapture(true);
     delayMicroseconds(RS485_DIR_GUARD_US);
-}
-
-void Rs485Port::discardInput() {
-    Stream &io = stream();
-    while (io.available() > 0) (void)io.read();
-}
-
-void Rs485Port::waitForQuietLine(const uint32_t lastByteAtMs, const uint32_t quietMs,
-                                 const uint32_t maxMs) {
-    Stream &io = stream();
-    const uint32_t startedAt = millis();
-    uint32_t quietSince = lastByteAtMs;
-    // Measured from the caller's last byte: after a wait in which nothing
-    // arrived the line is already quiet and this returns at once. The cap
-    // keeps a talker that never stops from holding the caller.
-    while (millis() - quietSince < quietMs && millis() - startedAt < maxMs) {
-        if (io.available() > 0) {
-            (void)io.read();
-            quietSince = millis();
-            continue;
-        }
-        delay(1);
-    }
 }
 
 void Rs485Port::incrementError() {

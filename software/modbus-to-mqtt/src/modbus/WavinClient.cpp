@@ -6,7 +6,7 @@
 
 #include "Config.h"
 #include "ModbusMaster.h"
-#include "modbus/ModbusBus.h"
+#include "modbus/Rs485Port.h"
 #include "modbus/WavinFrame.h"
 
 static_assert(WAVIN_READ_ATTEMPTS >= 1U && WAVIN_WRITE_ATTEMPTS >= 1U, "at least one attempt");
@@ -27,7 +27,7 @@ static_assert(WavinFrame::attemptFits(
               "one Wavin attempt with the largest reply at the lowest baud rate must fit the "
               "transaction budget");
 
-WavinClient::WavinClient(ModbusBus &bus) : _bus(bus) {
+WavinClient::WavinClient(Rs485Port &port) : _port(port) {
 }
 
 uint8_t WavinClient::readRegisters(const uint8_t slave, const uint8_t category, const uint8_t index,
@@ -67,8 +67,8 @@ uint8_t WavinClient::transactWithRetry(const uint8_t attempts, const uint8_t *re
     // An attempt waits for the controller's turnaround plus the time the
     // largest reply takes on the wire. What it costs the budget also counts
     // the request's own wire time.
-    const uint32_t baud = _bus.baudRate();
-    const uint8_t bitsPerCharacter = _bus.bitsPerCharacter();
+    const uint32_t baud = _port.baudRate();
+    const uint8_t bitsPerCharacter = _port.bitsPerCharacter();
     const uint32_t timeoutMs = WavinFrame::attemptTimeoutMs(WAVIN_TURNAROUND_MS, replyWords, baud,
                                                             bitsPerCharacter);
     const uint32_t attemptMs = WavinFrame::wireTimeMs(requestLength, baud, bitsPerCharacter) + timeoutMs;
@@ -94,26 +94,8 @@ uint8_t WavinClient::transactWithRetry(const uint8_t attempts, const uint8_t *re
         // reply to the next request. A late reply to an earlier attempt that
         // lands during a retry answers the same request and is harmless, so
         // only the final failure waits for the line to go quiet.
-        settleLine(lastByteAt);
+        _port.waitForQuietLine(lastByteAt, WAVIN_SETTLE_QUIET_MS, WAVIN_SETTLE_MAX_MS);
         return status;
-    }
-}
-
-void WavinClient::settleLine(const uint32_t lastByteAtMs) {
-    Stream &io = _bus.stream();
-    const uint32_t startedAt = millis();
-    uint32_t quietSince = lastByteAtMs;
-    // Measured from the attempt's last byte: after a timeout in which nothing
-    // arrived the line is already quiet and this returns at once. The cap
-    // keeps a display that never stops talking from holding the owner.
-    while (millis() - quietSince < WAVIN_SETTLE_QUIET_MS
-           && millis() - startedAt < WAVIN_SETTLE_MAX_MS) {
-        if (io.available() > 0) {
-            (void)io.read();
-            quietSince = millis();
-            continue;
-        }
-        delay(1);
     }
 }
 
@@ -130,15 +112,12 @@ uint8_t WavinClient::transact(const uint8_t *request, const size_t requestLength
                               const uint8_t function, const uint8_t expectedWords, uint16_t *words,
                               const size_t wordCapacity, uint8_t &receivedCount,
                               const uint32_t timeoutMs, uint32_t &lastByteAtMs) {
-    Stream &io = _bus.stream();
     // Bytes left over from another master's traffic would be mistaken for
     // the start of our reply.
-    while (io.available() > 0) (void)io.read();
+    _port.discardInput();
+    _port.send(request, requestLength);
 
-    _bus.beginTransmit();
-    io.write(request, requestLength);
-    _bus.endTransmit();
-
+    Stream &io = _port.stream();
     uint8_t buffer[WavinFrame::kMaxResponseSize];
     size_t received = 0U;
     bool crcMismatch = false;

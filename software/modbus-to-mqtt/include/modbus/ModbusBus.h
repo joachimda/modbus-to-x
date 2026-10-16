@@ -2,89 +2,40 @@
 #define MODBUSBUS_H
 
 #include <atomic>
-#include <Arduino.h>
 #include "ModbusMaster.h"
+#include "modbus/Rs485Port.h"
 #include "modbus/config_structs/Bus.h"
-#include "utils/TeeStream.h"
 
 class Logger;
 
+// The RS-485 port together with the ModbusMaster node that speaks standard
+// Modbus RTU on it, and the enable flag that the configuration and the OTA
+// quiescence toggle. Protocols ModbusMaster does not speak (Wavin) use
+// port() directly.
 class ModbusBus {
 public:
-    class Guard {
-    public:
-        Guard(ModbusBus &bus, bool owns);
-        Guard(const Guard &) = delete;
-        Guard &operator=(const Guard &) = delete;
-        Guard(Guard &&other) noexcept;
-        Guard &operator=(Guard &&other) noexcept;
-        ~Guard();
-        explicit operator bool() const { return _owns; }
-    private:
-        ModbusBus *_bus;
-        bool _owns;
-    };
-
     explicit ModbusBus(Logger *logger);
 
     bool begin(const Bus &busConfig);
 
-    Guard acquire();
+    Rs485Port &port();
 
+    // Bound to the port's direction control. Call
+    // node().begin(slave, port().stream()) before a transaction.
     ModbusMaster &node();
-
-    Stream &stream();
-
-    // Serial settings the bus runs with (the defaults until begin()), for
-    // timing that depends on the wire speed. bitsPerCharacter() counts
-    // start, data, parity and stop bits: 10 for 8N1, 12 for 8E2.
-    uint32_t baudRate() const;
-
-    uint8_t bitsPerCharacter() const;
 
     bool isActive() const;
 
     void setActive(bool enabled);
 
-    bool isInitialized() const;
-
-    void incrementError();
-
-    uint32_t errorCount() const;
-
-    String dumpRx() const;
-
-    void enableCapture(bool enable);
-
-    // Direction control for frames written to stream() directly rather than
-    // through ModbusMaster (non-standard protocols such as Wavin's). Call
-    // beginTransmit() before writing and endTransmit() once the frame is out.
-    void beginTransmit();
-
-    void endTransmit();
-
 private:
-    void initializeWiring(const Bus &busConfig);
-
-    void onPreTransmission();
-
-    void onPostTransmission();
-
     static void preTransmitTrampoline();
 
     static void postTransmitTrampoline();
 
-    void release();
-
-    Logger *_logger;
+    Rs485Port _port;
     ModbusMaster _node;
-    TeeStream *_tee{nullptr};
     std::atomic<bool> _active{false};
-    std::atomic<bool> _initialized{false};
-    std::atomic<bool> _busy{false};
-    std::atomic<uint32_t> _errorCount{0};
-    uint32_t _baud;
-    uint8_t _bitsPerCharacter;
 
     static ModbusBus *s_instance;
 };

@@ -114,7 +114,7 @@ LocateResult locateResponse(const uint8_t *buffer, size_t length, uint8_t slave,
 // transaction budget can be checked at compile time. Whole milliseconds,
 // rounded up.
 
-// The serial formats the bus accepts (kSerialFormats in ModbusBus.cpp) use at
+// The serial formats the bus accepts (kSerialFormats in Rs485Port.cpp) use at
 // most 12 bits per character: 8E2 and 8O2 have a start bit, 8 data bits, a
 // parity bit and 2 stop bits.
 constexpr uint8_t kMaxBitsPerCharacter = 12U;

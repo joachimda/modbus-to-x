@@ -37,11 +37,13 @@
 #include "../include/services/ota/OtaSessionCore.h"
 #include "../include/Config.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
 #include <functional>
+#include <utility>
 #include <atomic>
 #include <string>
 #include <thread>
@@ -53,7 +55,11 @@
 #include "../src/modbus/ModbusValueCodec.cpp"
 #include "../src/modbus/ModbusConfigDocument.cpp"
 #include "../src/modbus/ModbusTopicBuilder.cpp"
+#include "../src/modbus/RtuFrame.cpp"
+#include "../src/modbus/RtuTransport.cpp"
 #include "../src/modbus/WavinFrame.cpp"
+#include "../src/modbus/WavinClient.cpp"
+#include "../include/modbus/RtuLink.h"
 
 namespace {
 
@@ -3951,14 +3957,24 @@ void test_ota_ui_filesystem_gate_prevents_access_until_safe_remount(void) {
     TEST_ASSERT_EQUAL_UINT(2U, openCalls);
 }
 
-void test_wavin_frame_crc_matches_controller_replies(void) {
+void test_rtu_frame_crc_matches_controller_replies(void) {
     // Exception replies captured from an AHC 9000 answering FC3, FC1 and FC4.
     const uint8_t fc3[] = {0x01, 0x83, 0x01};
     const uint8_t fc1[] = {0x01, 0x81, 0x01};
     const uint8_t fc4[] = {0x01, 0x84, 0x01};
-    TEST_ASSERT_EQUAL_HEX16(0xF080U, WavinFrame::crc16(fc3, sizeof fc3));
-    TEST_ASSERT_EQUAL_HEX16(0x9081U, WavinFrame::crc16(fc1, sizeof fc1));
-    TEST_ASSERT_EQUAL_HEX16(0xC082U, WavinFrame::crc16(fc4, sizeof fc4));
+    TEST_ASSERT_EQUAL_HEX16(0xF080U, RtuFrame::crc16(fc3, sizeof fc3));
+    TEST_ASSERT_EQUAL_HEX16(0x9081U, RtuFrame::crc16(fc1, sizeof fc1));
+    TEST_ASSERT_EQUAL_HEX16(0xC082U, RtuFrame::crc16(fc4, sizeof fc4));
+
+    // The CRC goes on the wire low byte first, and a whole frame checks to
+    // zero.
+    uint8_t frame[5] = {0x01, 0x83, 0x01};
+    TEST_ASSERT_EQUAL_UINT(5U, RtuFrame::appendCrc(frame, 3U));
+    TEST_ASSERT_EQUAL_HEX8(0x80U, frame[3]);
+    TEST_ASSERT_EQUAL_HEX8(0xF0U, frame[4]);
+    TEST_ASSERT_TRUE(RtuFrame::crcValid(frame, sizeof frame));
+    frame[2] ^= 0x01U;
+    TEST_ASSERT_FALSE(RtuFrame::crcValid(frame, sizeof frame));
 }
 
 void test_wavin_frame_builds_read_and_write_requests(void) {
@@ -3982,42 +3998,65 @@ void test_wavin_frame_builds_read_and_write_requests(void) {
     const uint16_t five[5] = {};
     TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildWrite(1U, 2U, 0U, 3U, five, 5U, frame, sizeof frame));
     TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildWrite(1U, 2U, 0U, 3U, &value, 1U, frame, 9U));
+
+    // The shapes the scanner is given: a reply carries at most the requested
+    // registers (any count up to the maximum for a write), another master's
+    // read is 8 bytes and its write is sized by its register count.
+    TEST_ASSERT_EQUAL_UINT(9U, WavinFrame::replyShape(2U).maxLength);
+    TEST_ASSERT_EQUAL_UINT(WavinFrame::kMaxResponseSize, WavinFrame::replyShape(0U).maxLength);
+    TEST_ASSERT_EQUAL_UINT(WavinFrame::kMaxResponseSize, WavinFrame::replyShape(200U).maxLength);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(RtuFrame::FrameShape::Kind::Fixed),
+                          static_cast<int>(WavinFrame::peerRequestShape(0x43U).kind));
+    TEST_ASSERT_EQUAL_UINT(8U, WavinFrame::peerRequestShape(0x43U).fixedLength);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(RtuFrame::FrameShape::Kind::Counted),
+                          static_cast<int>(WavinFrame::peerRequestShape(0x44U).kind));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(RtuFrame::FrameShape::Kind::None),
+                          static_cast<int>(WavinFrame::peerRequestShape(0x03U).kind));
 }
 
-void test_wavin_frame_scans_replies_and_exceptions(void) {
-    using WavinFrame::ScanStatus;
+void test_rtu_frame_scans_replies_and_exceptions(void) {
+    using RtuFrame::ScanStatus;
+    const RtuFrame::FrameShape peerRead = WavinFrame::peerRequestShape(0x43U);
+    const RtuFrame::FrameShape peerWrite = WavinFrame::peerRequestShape(0x44U);
+    const RtuFrame::FrameShape anyWrite = WavinFrame::replyShape(WavinFrame::kMaxRegisters);
     uint16_t words[4] = {};
 
     const uint8_t reply[] = {0x01, 0x43, 0x04, 0x00, 0xD2, 0x01, 0x2C, 0x54, 0x87};
     for (size_t partial = 1U; partial < sizeof reply; ++partial) {
         TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete),
-                              static_cast<int>(WavinFrame::scanResponse(reply, partial, 1U, 0x43U, 2U,
-                                                                        words, 4U).status));
+                              static_cast<int>(RtuFrame::scan(reply, partial, 1U, 0x43U,
+                                                              WavinFrame::replyShape(2U), peerRead).status));
     }
-    WavinFrame::ScanResult scan = WavinFrame::scanResponse(reply, sizeof reply, 1U, 0x43U, 2U, words, 4U);
+    RtuFrame::ScanResult scan =
+        RtuFrame::scan(reply, sizeof reply, 1U, 0x43U, WavinFrame::replyShape(2U), peerRead);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(scan.status));
     TEST_ASSERT_EQUAL_UINT(sizeof reply, scan.frameLength);
-    TEST_ASSERT_EQUAL_UINT8(2U, scan.wordCount);
+    TEST_ASSERT_EQUAL_UINT8(2U, WavinFrame::decodeReply(reply, scan.frameLength, words, 4U));
     TEST_ASSERT_EQUAL_UINT16(210U, words[0]);
     TEST_ASSERT_EQUAL_UINT16(300U, words[1]);
+    // A reply with more registers than fit the caller's words still reports
+    // how many it carried; one too short to be a reply reports none.
+    TEST_ASSERT_EQUAL_UINT8(2U, WavinFrame::decodeReply(reply, scan.frameLength, words, 1U));
+    TEST_ASSERT_EQUAL_UINT8(0U, WavinFrame::decodeReply(reply, 4U, words, 4U));
 
     // A reply with more words than requested is not ours (a second master's
     // traffic); one with fewer is what the controller answers on some pages.
-    scan = WavinFrame::scanResponse(reply, sizeof reply, 1U, 0x43U, 1U, words, 4U);
+    scan = RtuFrame::scan(reply, sizeof reply, 1U, 0x43U, WavinFrame::replyShape(1U), peerRead);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip), static_cast<int>(scan.status));
     TEST_ASSERT_FALSE(scan.crcMismatch);
-    words[0] = words[1] = 0U;
-    scan = WavinFrame::scanResponse(reply, sizeof reply, 1U, 0x43U, 4U, words, 4U);
+    scan = RtuFrame::scan(reply, sizeof reply, 1U, 0x43U, WavinFrame::replyShape(4U), peerRead);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(scan.status));
-    TEST_ASSERT_EQUAL_UINT8(2U, scan.wordCount);
-    TEST_ASSERT_EQUAL_UINT16(210U, words[0]);
-    TEST_ASSERT_EQUAL_UINT16(300U, words[1]);
+    TEST_ASSERT_EQUAL_UINT(sizeof reply, scan.frameLength);
+    // An odd byte count is not a register reply either.
+    uint8_t oddCount[] = {0x01, 0x43, 0x03, 0x00, 0xD2, 0x01, 0x00, 0x00};
+    RtuFrame::appendCrc(oddCount, 6U);
+    scan = RtuFrame::scan(oddCount, sizeof oddCount, 1U, 0x43U, WavinFrame::replyShape(4U), peerRead);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip), static_cast<int>(scan.status));
+    TEST_ASSERT_FALSE(scan.crcMismatch);
     // Writes accept any word count.
     uint8_t writeReply[] = {0x01, 0x44, 0x02, 0x00, 0xD2, 0x00, 0x00};
-    const uint16_t writeCrc = WavinFrame::crc16(writeReply, 5U);
-    writeReply[5] = static_cast<uint8_t>(writeCrc & 0xFFU);
-    writeReply[6] = static_cast<uint8_t>(writeCrc >> 8U);
-    scan = WavinFrame::scanResponse(writeReply, sizeof writeReply, 1U, 0x44U, 0U, words, 4U);
+    RtuFrame::appendCrc(writeReply, 5U);
+    scan = RtuFrame::scan(writeReply, sizeof writeReply, 1U, 0x44U, anyWrite, peerWrite);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(scan.status));
     TEST_ASSERT_EQUAL_UINT(sizeof writeReply, scan.frameLength);
 
@@ -4025,28 +4064,31 @@ void test_wavin_frame_scans_replies_and_exceptions(void) {
     uint8_t corrupted[sizeof reply];
     std::memcpy(corrupted, reply, sizeof reply);
     corrupted[4] ^= 0x01U;
-    scan = WavinFrame::scanResponse(corrupted, sizeof corrupted, 1U, 0x43U, 2U, words, 4U);
+    scan = RtuFrame::scan(corrupted, sizeof corrupted, 1U, 0x43U, WavinFrame::replyShape(2U), peerRead);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip), static_cast<int>(scan.status));
     TEST_ASSERT_TRUE(scan.crcMismatch);
 
     // Other slaves and other functions are skipped byte by byte.
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip),
-                          static_cast<int>(WavinFrame::scanResponse(reply, sizeof reply, 2U, 0x43U, 2U,
-                                                                    words, 4U).status));
+                          static_cast<int>(RtuFrame::scan(reply, sizeof reply, 2U, 0x43U,
+                                                          WavinFrame::replyShape(2U), peerRead).status));
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip),
-                          static_cast<int>(WavinFrame::scanResponse(reply, sizeof reply, 1U, 0x44U, 0U,
-                                                                    words, 4U).status));
+                          static_cast<int>(RtuFrame::scan(reply, sizeof reply, 1U, 0x44U, anyWrite,
+                                                          peerWrite).status));
 
     // Exception reply from the controller.
-    const uint8_t exception[] = {0x01, 0xC3, 0x02, 0x00, 0x00};
-    uint8_t exceptionFrame[sizeof exception];
-    std::memcpy(exceptionFrame, exception, sizeof exception);
-    const uint16_t crc = WavinFrame::crc16(exceptionFrame, 3U);
-    exceptionFrame[3] = static_cast<uint8_t>(crc & 0xFFU);
-    exceptionFrame[4] = static_cast<uint8_t>(crc >> 8U);
-    scan = WavinFrame::scanResponse(exceptionFrame, sizeof exceptionFrame, 1U, 0x43U, 2U, words, 4U);
+    uint8_t exceptionFrame[] = {0x01, 0xC3, 0x02, 0x00, 0x00};
+    RtuFrame::appendCrc(exceptionFrame, 3U);
+    scan = RtuFrame::scan(exceptionFrame, sizeof exceptionFrame, 1U, 0x43U, WavinFrame::replyShape(2U),
+                          peerRead);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Exception), static_cast<int>(scan.status));
     TEST_ASSERT_EQUAL_UINT8(0x02U, scan.exceptionCode);
+    TEST_ASSERT_EQUAL_UINT(RtuFrame::kExceptionSize, scan.frameLength);
+    exceptionFrame[2] ^= 0x01U;
+    scan = RtuFrame::scan(exceptionFrame, sizeof exceptionFrame, 1U, 0x43U, WavinFrame::replyShape(2U),
+                          peerRead);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip), static_cast<int>(scan.status));
+    TEST_ASSERT_TRUE(scan.crcMismatch);
 
     // Our reply after another master's request to the same slave: the request
     // (byte count taken from its category) fails its CRC as a reply, is
@@ -4055,18 +4097,25 @@ void test_wavin_frame_scans_replies_and_exceptions(void) {
     uint8_t stream[8U + sizeof reply];
     WavinFrame::buildRead(1U, 0x02U, 0x00U, 0x05U, 0x0BU, stream, 8U);
     std::memcpy(stream + 8U, reply, sizeof reply);
-    scan = WavinFrame::scanResponse(stream, sizeof stream, 1U, 0x43U, 2U, words, 4U);
+    scan = RtuFrame::scan(stream, sizeof stream, 1U, 0x43U, WavinFrame::replyShape(2U), peerRead);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip), static_cast<int>(scan.status));
     TEST_ASSERT_EQUAL_UINT(8U, scan.frameLength);
     TEST_ASSERT_FALSE(scan.crcMismatch);
-    scan = WavinFrame::scanResponse(stream + 8U, sizeof stream - 8U, 1U, 0x43U, 2U, words, 4U);
+    scan = RtuFrame::scan(stream + 8U, sizeof stream - 8U, 1U, 0x43U, WavinFrame::replyShape(2U), peerRead);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(scan.status));
+    // Without a shape for the other master's requests, the same bytes can
+    // only be a corrupted reply.
+    scan = RtuFrame::scan(stream, sizeof stream, 1U, 0x43U, WavinFrame::replyShape(2U),
+                          RtuFrame::FrameShape::none());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip), static_cast<int>(scan.status));
+    TEST_ASSERT_EQUAL_UINT(1U, scan.frameLength);
+    TEST_ASSERT_TRUE(scan.crcMismatch);
 
     // Until the whole request has arrived, its failed reply CRC is not yet a
     // corrupted reply; once no more bytes can come, it is.
-    scan = WavinFrame::scanResponse(stream, 7U, 1U, 0x43U, 2U, words, 4U);
+    scan = RtuFrame::scan(stream, 7U, 1U, 0x43U, WavinFrame::replyShape(2U), peerRead);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(scan.status));
-    scan = WavinFrame::scanResponse(stream, 7U, 1U, 0x43U, 2U, words, 4U, true);
+    scan = RtuFrame::scan(stream, 7U, 1U, 0x43U, WavinFrame::replyShape(2U), peerRead, true);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip), static_cast<int>(scan.status));
     TEST_ASSERT_TRUE(scan.crcMismatch);
     // The same for a write request from the display (10 bytes for one word).
@@ -4074,61 +4123,78 @@ void test_wavin_frame_scans_replies_and_exceptions(void) {
     const uint16_t setpoint = 215U;
     TEST_ASSERT_EQUAL_UINT(10U, WavinFrame::buildWrite(1U, 0x02U, 0x00U, 0x05U, &setpoint, 1U,
                                                        writeRequest, sizeof writeRequest));
-    scan = WavinFrame::scanResponse(writeRequest, 9U, 1U, 0x44U, 0U, words, 4U);
+    scan = RtuFrame::scan(writeRequest, 9U, 1U, 0x44U, anyWrite, peerWrite);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(scan.status));
-    scan = WavinFrame::scanResponse(writeRequest, 10U, 1U, 0x44U, 0U, words, 4U);
+    scan = RtuFrame::scan(writeRequest, 10U, 1U, 0x44U, anyWrite, peerWrite);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip), static_cast<int>(scan.status));
     TEST_ASSERT_EQUAL_UINT(10U, scan.frameLength);
     TEST_ASSERT_FALSE(scan.crcMismatch);
+
+    // A fixed-length reply shape (standard Modbus write echoes) is complete
+    // at exactly its length.
+    uint8_t echo[] = {0x01, 0x06, 0x00, 0x10, 0x00, 0x2A, 0x00, 0x00};
+    RtuFrame::appendCrc(echo, 6U);
+    scan = RtuFrame::scan(echo, 7U, 1U, 0x06U, RtuFrame::FrameShape::fixed(8U), RtuFrame::FrameShape::none());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(scan.status));
+    scan = RtuFrame::scan(echo, 8U, 1U, 0x06U, RtuFrame::FrameShape::fixed(8U), RtuFrame::FrameShape::none());
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(scan.status));
+    TEST_ASSERT_EQUAL_UINT(8U, scan.frameLength);
 }
 
-void test_wavin_frame_locates_reply_among_other_traffic(void) {
-    using WavinFrame::ScanStatus;
+void test_rtu_frame_locates_reply_among_other_traffic(void) {
+    using RtuFrame::ScanStatus;
+    const RtuFrame::FrameShape peerRead = WavinFrame::peerRequestShape(0x43U);
+    const RtuFrame::FrameShape peerWrite = WavinFrame::peerRequestShape(0x44U);
+    const RtuFrame::FrameShape anyWrite = WavinFrame::replyShape(WavinFrame::kMaxRegisters);
     uint16_t words[4] = {};
     const uint8_t reply[] = {0x01, 0x43, 0x04, 0x00, 0xD2, 0x01, 0x2C, 0x54, 0x87};
 
     // The reply alone, byte by byte.
     for (size_t partial = 1U; partial < sizeof reply; ++partial) {
-        const WavinFrame::LocateResult located =
-            WavinFrame::locateResponse(reply, partial, 1U, 0x43U, 2U, words, 4U);
+        const RtuFrame::LocateResult located =
+            RtuFrame::locate(reply, partial, 1U, 0x43U, WavinFrame::replyShape(2U), peerRead);
         TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(located.status));
         TEST_ASSERT_EQUAL_UINT(0U, located.dropCount);
         TEST_ASSERT_FALSE(located.crcMismatch);
     }
-    WavinFrame::LocateResult located =
-        WavinFrame::locateResponse(reply, sizeof reply, 1U, 0x43U, 2U, words, 4U);
+    RtuFrame::LocateResult located =
+        RtuFrame::locate(reply, sizeof reply, 1U, 0x43U, WavinFrame::replyShape(2U), peerRead);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(located.status));
-    TEST_ASSERT_EQUAL_UINT8(2U, located.wordCount);
+    TEST_ASSERT_EQUAL_UINT(0U, located.frameOffset);
+    TEST_ASSERT_EQUAL_UINT(sizeof reply, located.frameLength);
+    TEST_ASSERT_EQUAL_UINT8(2U, WavinFrame::decodeReply(reply + located.frameOffset, located.frameLength,
+                                                        words, 4U));
     TEST_ASSERT_EQUAL_UINT16(210U, words[0]);
 
     // Stale bytes at the head that claim the largest frame (22 registers,
     // 44 data bytes) must not hide the write reply behind them: the reply is
     // found, not timed out.
     uint8_t writeReply[] = {0x01, 0x44, 0x02, 0x00, 0xD2, 0x00, 0x00};
-    const uint16_t writeCrc = WavinFrame::crc16(writeReply, 5U);
-    writeReply[5] = static_cast<uint8_t>(writeCrc & 0xFFU);
-    writeReply[6] = static_cast<uint8_t>(writeCrc >> 8U);
+    RtuFrame::appendCrc(writeReply, 5U);
     uint8_t stale[3U + sizeof writeReply] = {0x01, 0x44, 2U * WavinFrame::kMaxRegisters};
     std::memcpy(stale + 3U, writeReply, sizeof writeReply);
-    located = WavinFrame::locateResponse(stale, 3U, 1U, 0x44U, 0U, nullptr, 0U);
+    located = RtuFrame::locate(stale, 3U, 1U, 0x44U, anyWrite, peerWrite);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(located.status));
     TEST_ASSERT_EQUAL_UINT(0U, located.dropCount);
-    located = WavinFrame::locateResponse(stale, sizeof stale, 1U, 0x44U, 0U, nullptr, 0U);
+    located = RtuFrame::locate(stale, sizeof stale, 1U, 0x44U, anyWrite, peerWrite);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(located.status));
+    TEST_ASSERT_EQUAL_UINT(3U, located.frameOffset);
+    TEST_ASSERT_EQUAL_UINT(sizeof writeReply, located.frameLength);
     TEST_ASSERT_FALSE(located.crcMismatch);
 
     // The display's request to the same slave, then nothing: a timeout, not
     // a CRC error, and the request's bytes are dropped once recognised.
     uint8_t request[8];
     WavinFrame::buildRead(1U, 0x02U, 0x00U, 0x05U, 0x0BU, request, sizeof request);
-    located = WavinFrame::locateResponse(request, 7U, 1U, 0x43U, 1U, words, 4U);
+    located = RtuFrame::locate(request, 7U, 1U, 0x43U, WavinFrame::replyShape(1U), peerRead);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(located.status));
     TEST_ASSERT_FALSE(located.crcMismatch);
-    located = WavinFrame::locateResponse(request, sizeof request, 1U, 0x43U, 1U, words, 4U);
+    located = RtuFrame::locate(request, sizeof request, 1U, 0x43U, WavinFrame::replyShape(1U), peerRead);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(located.status));
     TEST_ASSERT_EQUAL_UINT(sizeof request, located.dropCount);
     TEST_ASSERT_FALSE(located.crcMismatch);
-    located = WavinFrame::locateResponse(request, sizeof request, 1U, 0x43U, 1U, words, 4U, true);
+    located = RtuFrame::locate(request, sizeof request, 1U, 0x43U, WavinFrame::replyShape(1U), peerRead,
+                               true);
     TEST_ASSERT_FALSE(located.crcMismatch);
 
     // A reply of ours with a flipped bit is a CRC error, also when it arrived
@@ -4136,40 +4202,51 @@ void test_wavin_frame_locates_reply_among_other_traffic(void) {
     uint8_t corrupted[sizeof reply];
     std::memcpy(corrupted, reply, sizeof reply);
     corrupted[4] ^= 0x01U;
-    located = WavinFrame::locateResponse(corrupted, sizeof corrupted, 1U, 0x43U, 2U, words, 4U);
+    located = RtuFrame::locate(corrupted, sizeof corrupted, 1U, 0x43U, WavinFrame::replyShape(2U), peerRead);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(located.status));
     TEST_ASSERT_TRUE(located.crcMismatch);
     TEST_ASSERT_EQUAL_UINT(sizeof corrupted, located.dropCount);
     uint8_t mixed[sizeof request + sizeof corrupted];
     std::memcpy(mixed, request, sizeof request);
     std::memcpy(mixed + sizeof request, corrupted, sizeof corrupted);
-    located = WavinFrame::locateResponse(mixed, sizeof mixed, 1U, 0x43U, 2U, words, 4U, true);
+    located = RtuFrame::locate(mixed, sizeof mixed, 1U, 0x43U, WavinFrame::replyShape(2U), peerRead, true);
     TEST_ASSERT_TRUE(located.crcMismatch);
 
     // A short corrupted reply (one register, 7 bytes) could be the start of a
     // request until the line goes quiet.
     uint8_t shortReply[] = {0x01, 0x43, 0x02, 0x00, 0xD2, 0x00, 0x00};
-    const uint16_t shortCrc = WavinFrame::crc16(shortReply, 5U);
-    shortReply[5] = static_cast<uint8_t>(shortCrc & 0xFFU);
-    shortReply[6] = static_cast<uint8_t>((shortCrc >> 8U) ^ 0x01U);
-    located = WavinFrame::locateResponse(shortReply, sizeof shortReply, 1U, 0x43U, 1U, words, 4U);
+    RtuFrame::appendCrc(shortReply, 5U);
+    shortReply[6] ^= 0x01U;
+    located = RtuFrame::locate(shortReply, sizeof shortReply, 1U, 0x43U, WavinFrame::replyShape(1U), peerRead);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Incomplete), static_cast<int>(located.status));
     TEST_ASSERT_FALSE(located.crcMismatch);
     TEST_ASSERT_EQUAL_UINT(0U, located.dropCount);
-    located = WavinFrame::locateResponse(shortReply, sizeof shortReply, 1U, 0x43U, 1U, words, 4U, true);
+    located = RtuFrame::locate(shortReply, sizeof shortReply, 1U, 0x43U, WavinFrame::replyShape(1U), peerRead,
+                               true);
     TEST_ASSERT_TRUE(located.crcMismatch);
+
+    // An exception reply behind another slave's frame is found too.
+    uint8_t exceptionFrame[] = {0x01, 0xC3, 0x02, 0x00, 0x00};
+    RtuFrame::appendCrc(exceptionFrame, 3U);
+    uint8_t behind[2U + sizeof exceptionFrame] = {0x05, 0x43};
+    std::memcpy(behind + 2U, exceptionFrame, sizeof exceptionFrame);
+    located = RtuFrame::locate(behind, sizeof behind, 1U, 0x43U, WavinFrame::replyShape(2U), peerRead);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Exception), static_cast<int>(located.status));
+    TEST_ASSERT_EQUAL_UINT8(0x02U, located.exceptionCode);
+    TEST_ASSERT_EQUAL_UINT(2U, located.frameOffset);
+    TEST_ASSERT_EQUAL_UINT(2U, located.dropCount);
 }
 
-void test_wavin_frame_timing_scales_with_baud_and_fits_budget(void) {
+void test_rtu_timing_scales_with_baud_and_fits_budget(void) {
     // Wire time at 8N1 (10 bits per character), rounded up to whole ms.
-    TEST_ASSERT_EQUAL_UINT32(13U, WavinFrame::wireTimeMs(49U, 38400U, 10U));
-    TEST_ASSERT_EQUAL_UINT32(52U, WavinFrame::wireTimeMs(49U, 9600U, 10U));
-    TEST_ASSERT_EQUAL_UINT32(409U, WavinFrame::wireTimeMs(49U, 1200U, 10U));
-    TEST_ASSERT_EQUAL_UINT32(3U, WavinFrame::wireTimeMs(WavinFrame::kReadRequestSize, 38400U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(13U, RtuTiming::wireTimeMs(49U, 38400U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(52U, RtuTiming::wireTimeMs(49U, 9600U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(409U, RtuTiming::wireTimeMs(49U, 1200U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(3U, RtuTiming::wireTimeMs(WavinFrame::kReadRequestSize, 38400U, 10U));
     // 8E2 has 12 bits per character; an unset baud rate costs nothing rather
     // than dividing by zero.
-    TEST_ASSERT_EQUAL_UINT32(490U, WavinFrame::wireTimeMs(49U, 1200U, 12U));
-    TEST_ASSERT_EQUAL_UINT32(0U, WavinFrame::wireTimeMs(49U, 0U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(490U, RtuTiming::wireTimeMs(49U, 1200U, 12U));
+    TEST_ASSERT_EQUAL_UINT32(0U, RtuTiming::wireTimeMs(49U, 0U, 10U));
 
     // Reply sizes: header (3) + data + CRC (2).
     TEST_ASSERT_EQUAL_UINT(7U, WavinFrame::responseSize(1U));
@@ -4178,18 +4255,18 @@ void test_wavin_frame_timing_scales_with_baud_and_fits_budget(void) {
                            WavinFrame::responseSize(WavinFrame::kMaxRegisters));
 
     // One attempt waits for the turnaround plus the largest reply on the wire.
-    TEST_ASSERT_EQUAL_UINT32(502U, WavinFrame::attemptTimeoutMs(500U, 1U, 38400U, 10U));
-    TEST_ASSERT_EQUAL_UINT32(513U, WavinFrame::attemptTimeoutMs(500U, 22U, 38400U, 10U));
-    TEST_ASSERT_EQUAL_UINT32(508U, WavinFrame::attemptTimeoutMs(500U, 1U, 9600U, 10U));
-    TEST_ASSERT_EQUAL_UINT32(552U, WavinFrame::attemptTimeoutMs(500U, 22U, 9600U, 10U));
-    TEST_ASSERT_EQUAL_UINT32(559U, WavinFrame::attemptTimeoutMs(500U, 1U, 1200U, 10U));
-    TEST_ASSERT_EQUAL_UINT32(909U, WavinFrame::attemptTimeoutMs(500U, 22U, 1200U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(502U, RtuTiming::attemptTimeoutMs(500U, WavinFrame::responseSize(1U), 38400U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(513U, RtuTiming::attemptTimeoutMs(500U, WavinFrame::responseSize(22U), 38400U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(508U, RtuTiming::attemptTimeoutMs(500U, WavinFrame::responseSize(1U), 9600U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(552U, RtuTiming::attemptTimeoutMs(500U, WavinFrame::responseSize(22U), 9600U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(559U, RtuTiming::attemptTimeoutMs(500U, WavinFrame::responseSize(1U), 1200U, 10U));
+    TEST_ASSERT_EQUAL_UINT32(909U, RtuTiming::attemptTimeoutMs(500U, WavinFrame::responseSize(22U), 1200U, 10U));
 
     // A retry fits when the time spent, the pause and a full attempt stay
     // within the budget; the comparison does not overflow.
-    TEST_ASSERT_TRUE(WavinFrame::attemptFits(1000U, 250U, 750U, 2000U));
-    TEST_ASSERT_FALSE(WavinFrame::attemptFits(1000U, 250U, 751U, 2000U));
-    TEST_ASSERT_FALSE(WavinFrame::attemptFits(0xFFFFFFFFU, 1U, 1U, 2000U));
+    TEST_ASSERT_TRUE(RtuTiming::attemptFits(1000U, 250U, 750U, 2000U));
+    TEST_ASSERT_FALSE(RtuTiming::attemptFits(1000U, 250U, 751U, 2000U));
+    TEST_ASSERT_FALSE(RtuTiming::attemptFits(0xFFFFFFFFU, 1U, 1U, 2000U));
 
     // Attempts a read gets when every attempt times out, with the configured
     // turnaround, budget and attempt limit: the first always, each retry
@@ -4197,12 +4274,13 @@ void test_wavin_frame_timing_scales_with_baud_and_fits_budget(void) {
     // plus the turnaround) still fit. The pause is random, so the count is
     // given for the shortest and the longest pause.
     const auto attempts = [](const uint8_t words, const uint32_t baud, const uint32_t pauseMs) {
-        const uint32_t attemptMs = WavinFrame::wireTimeMs(WavinFrame::kReadRequestSize, baud, 10U)
-                                   + WavinFrame::attemptTimeoutMs(WAVIN_TURNAROUND_MS, words, baud, 10U);
+        const uint32_t attemptMs =
+            RtuTiming::wireTimeMs(WavinFrame::kReadRequestSize, baud, 10U)
+            + RtuTiming::attemptTimeoutMs(WAVIN_TURNAROUND_MS, WavinFrame::responseSize(words), baud, 10U);
         uint32_t elapsed = attemptMs;
         uint8_t count = 1U;
         while (count < WAVIN_READ_ATTEMPTS
-               && WavinFrame::attemptFits(elapsed, pauseMs, attemptMs, WAVIN_TRANSACTION_BUDGET_MS)) {
+               && RtuTiming::attemptFits(elapsed, pauseMs, attemptMs, WAVIN_TRANSACTION_BUDGET_MS)) {
             elapsed += pauseMs + attemptMs;
             ++count;
         }
@@ -4231,16 +4309,399 @@ void test_wavin_frame_timing_scales_with_baud_and_fits_budget(void) {
     // The first attempt always fits, even the largest reply at the lowest
     // baud rate with the largest characters (8E2), so no datapoint becomes
     // unreadable; WavinClient.cpp asserts the same at compile time.
-    TEST_ASSERT_TRUE(WavinFrame::attemptFits(
+    TEST_ASSERT_TRUE(RtuTiming::attemptFits(
         0U, 0U,
-        WavinFrame::wireTimeMs(WavinFrame::kMaxWriteRequestSize, MODBUS_MIN_BAUD_RATE,
-                               WavinFrame::kMaxBitsPerCharacter)
-            + WavinFrame::attemptTimeoutMs(WAVIN_TURNAROUND_MS, WavinFrame::kMaxRegisters,
-                                           MODBUS_MIN_BAUD_RATE, WavinFrame::kMaxBitsPerCharacter),
+        RtuTiming::wireTimeMs(WavinFrame::kMaxWriteRequestSize, MODBUS_MIN_BAUD_RATE,
+                              RtuTiming::kMaxBitsPerCharacter)
+            + RtuTiming::attemptTimeoutMs(WAVIN_TURNAROUND_MS, WavinFrame::kMaxResponseSize,
+                                          MODBUS_MIN_BAUD_RATE, RtuTiming::kMaxBitsPerCharacter),
         WAVIN_TRANSACTION_BUDGET_MS));
-    // The budget's margin within the quiesce timeout (Config.h asserts there
-    // is one) covers at least the quiet-line wait after a final failure.
-    TEST_ASSERT_TRUE(WAVIN_SETTLE_MAX_MS < OTA_MODBUS_QUIESCE_TIMEOUT_MS - WAVIN_TRANSACTION_BUDGET_MS);
+}
+
+// A scripted RS-485 line for the transport. Frames sent are recorded; the
+// bytes scripted for the n-th send arrive the given delay after it has
+// left the wire. Time only passes when the transport idles, so a test is
+// deterministic and runs instantly.
+class FakeRtuLink : public RtuLink {
+public:
+    struct Arrival {
+        uint32_t delayMs;
+        std::vector<uint8_t> bytes;
+    };
+
+    uint32_t baud{38400U};
+    uint8_t bits{10U};
+    uint32_t randomValue{0U};
+    uint32_t now{1000U};
+    std::vector<std::vector<uint8_t>> sent;
+    // replies[n] is what arrives after the (n + 1)-th send.
+    std::vector<std::vector<Arrival>> replies;
+
+    uint32_t baudRate() const override { return baud; }
+    uint8_t bitsPerCharacter() const override { return bits; }
+
+    void send(const uint8_t *data, const size_t length) override {
+        sent.emplace_back(data, data + length);
+        now += RtuTiming::wireTimeMs(length, baud, bits);
+        const size_t index = sent.size() - 1U;
+        if (index < replies.size()) {
+            for (const Arrival &arrival : replies[index]) schedule(now + arrival.delayMs, arrival.bytes);
+        }
+    }
+
+    void discardInput() override {
+        while (read() >= 0) {
+        }
+    }
+
+    int read() override {
+        if (_pending.empty() || _pending.front().first > now) return -1;
+        const int value = _pending.front().second;
+        _pending.erase(_pending.begin());
+        return value;
+    }
+
+    uint32_t nowMs() const override { return now; }
+    void idleMs(const uint32_t ms) override { now += ms; }
+    uint32_t randomWord() override { return randomValue; }
+
+    // Bytes scripted but not yet arrived.
+    size_t undelivered() const {
+        size_t count = 0U;
+        for (const auto &entry : _pending) count += entry.first > now ? 1U : 0U;
+        return count;
+    }
+
+private:
+    void schedule(const uint32_t atMs, const std::vector<uint8_t> &bytes) {
+        for (const uint8_t value : bytes) _pending.emplace_back(atMs, value);
+        std::stable_sort(_pending.begin(), _pending.end(),
+                         [](const std::pair<uint32_t, uint8_t> &a, const std::pair<uint32_t, uint8_t> &b) {
+                             return a.first < b.first;
+                         });
+    }
+
+    std::vector<std::pair<uint32_t, uint8_t>> _pending;
+};
+
+namespace {
+
+constexpr RtuPolicy kTestPolicy = {500U, 2000U, 100U, 250U, 50U, 150U};
+
+RtuRequest wavinReadRequest(const uint8_t *frame, const size_t length, const uint8_t count,
+                            const uint8_t attempts) {
+    RtuRequest request{};
+    request.frame = frame;
+    request.length = length;
+    request.slave = 1U;
+    request.function = WavinFrame::kReadFunction;
+    request.reply = WavinFrame::replyShape(count);
+    request.peerRequest = WavinFrame::peerRequestShape(WavinFrame::kReadFunction);
+    request.maxReplyLength = request.reply.maxLength;
+    request.attempts = attempts;
+    return request;
+}
+
+std::vector<uint8_t> framed(std::vector<uint8_t> bytes) {
+    bytes.resize(bytes.size() + RtuFrame::kCrcSize);
+    RtuFrame::appendCrc(bytes.data(), bytes.size() - RtuFrame::kCrcSize);
+    return bytes;
+}
+
+}  // namespace
+
+void test_rtu_transport_returns_the_reply_found_among_other_traffic(void) {
+    FakeRtuLink link;
+    uint8_t request[WavinFrame::kReadRequestSize];
+    TEST_ASSERT_EQUAL_UINT(8U, WavinFrame::buildRead(1U, 1U, 4U, 0U, 2U, request, sizeof request));
+    // On the line 5 ms after the request: the display's request to the same
+    // slave, a reply to another slave, then our reply.
+    std::vector<uint8_t> traffic(8U);
+    WavinFrame::buildRead(1U, 0x02U, 0x00U, 0x05U, 0x0BU, traffic.data(), traffic.size());
+    const std::vector<uint8_t> otherSlave = framed({0x02, 0x43, 0x02, 0x00, 0x01});
+    const std::vector<uint8_t> reply = {0x01, 0x43, 0x04, 0x00, 0xD2, 0x01, 0x2C, 0x54, 0x87};
+    traffic.insert(traffic.end(), otherSlave.begin(), otherSlave.end());
+    traffic.insert(traffic.end(), reply.begin(), reply.end());
+    link.replies = {{{5U, traffic}}};
+
+    RtuTransport transport(link, kTestPolicy);
+    uint8_t frame[WavinFrame::kMaxResponseSize] = {};
+    size_t length = 0U;
+    uint32_t startedAt = link.now;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess,
+                           transport.exchange(wavinReadRequest(request, sizeof request, 2U, 3U), frame,
+                                              sizeof frame, length));
+    TEST_ASSERT_EQUAL_UINT(reply.size(), length);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(reply.data(), frame, reply.size());
+    TEST_ASSERT_EQUAL_UINT(1U, link.sent.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(request, link.sent[0].data(), sizeof request);
+    // Returned as soon as the reply was complete: the request's wire time
+    // plus the 5 ms, not the timeout.
+    TEST_ASSERT_EQUAL_UINT32(RtuTiming::wireTimeMs(8U, 38400U, 10U) + 5U, link.now - startedAt);
+    uint16_t words[2] = {};
+    TEST_ASSERT_EQUAL_UINT8(2U, WavinFrame::decodeReply(frame, length, words, 2U));
+    TEST_ASSERT_EQUAL_UINT16(210U, words[0]);
+    TEST_ASSERT_EQUAL_UINT16(300U, words[1]);
+
+    // A reply arriving in two bursts, with idle polls in between, is complete
+    // when its last byte is.
+    FakeRtuLink split;
+    split.replies = {{{5U, {0x01, 0x43, 0x04, 0x00}}, {9U, {0xD2, 0x01, 0x2C, 0x54, 0x87}}}};
+    startedAt = split.now;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess,
+                           RtuTransport(split, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 3U), frame, sizeof frame, length));
+    TEST_ASSERT_EQUAL_UINT(reply.size(), length);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(reply.data(), frame, reply.size());
+    TEST_ASSERT_EQUAL_UINT32(RtuTiming::wireTimeMs(8U, 38400U, 10U) + 9U, split.now - startedAt);
+
+    // The caller's buffer must hold the largest reply of the shape: one
+    // that does is enough, one byte short (or none) is a caller error
+    // reported before anything is sent, never a cut reply passed as whole.
+    FakeRtuLink small;
+    small.replies = {{{5U, reply}}};
+    uint8_t exact[WavinFrame::responseSize(2U)] = {};
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess,
+                           RtuTransport(small, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 3U), exact, sizeof exact, length));
+    TEST_ASSERT_EQUAL_UINT(reply.size(), length);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(reply.data(), exact, reply.size());
+    uint8_t tiny[WavinFrame::responseSize(2U) - 1U] = {};
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue,
+                           RtuTransport(small, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 3U), tiny, sizeof tiny, length));
+    TEST_ASSERT_EQUAL_UINT(0U, length);
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue,
+                           RtuTransport(small, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 3U), nullptr, 0U, length));
+    TEST_ASSERT_EQUAL_UINT(1U, small.sent.size());
+}
+
+void test_rtu_transport_retries_timeouts_and_crc_errors_within_the_budget(void) {
+    uint8_t request[WavinFrame::kReadRequestSize];
+    WavinFrame::buildRead(1U, 1U, 4U, 0U, 2U, request, sizeof request);
+    const std::vector<uint8_t> reply = {0x01, 0x43, 0x04, 0x00, 0xD2, 0x01, 0x2C, 0x54, 0x87};
+    const uint32_t requestMs = RtuTiming::wireTimeMs(8U, 38400U, 10U);
+    const uint32_t timeoutMs = RtuTiming::attemptTimeoutMs(500U, WavinFrame::responseSize(2U), 38400U, 10U);
+    uint8_t frame[WavinFrame::kMaxResponseSize] = {};
+    size_t length = 0U;
+
+    // A silent first attempt, then the reply: two sends with the drawn
+    // backoff between them. randomValue 0 draws the shortest pause.
+    FakeRtuLink link;
+    link.replies = {{}, {{5U, reply}}};
+    uint32_t startedAt = link.now;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess,
+                           RtuTransport(link, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 3U), frame, sizeof frame, length));
+    TEST_ASSERT_EQUAL_UINT(2U, link.sent.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(reply.data(), frame, reply.size());
+    TEST_ASSERT_EQUAL_UINT32(requestMs + timeoutMs + 100U + requestMs + 5U, link.now - startedAt);
+
+    // A frame that lands during the backoff pause (the display's reply from
+    // the controller, which carries no address of its own and would pass
+    // for ours) is drained before the retry is sent, so the retry gets its
+    // own reply: one register, 42, not the two words of the stale frame.
+    FakeRtuLink stale;
+    stale.replies = {{{timeoutMs + 30U, framed({0x01, 0x43, 0x04, 0x12, 0x34, 0x56, 0x78})}},
+                     {{5U, framed({0x01, 0x43, 0x02, 0x00, 0x2A})}}};
+    startedAt = stale.now;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess,
+                           RtuTransport(stale, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 3U), frame, sizeof frame, length));
+    TEST_ASSERT_EQUAL_UINT(2U, stale.sent.size());
+    uint16_t words[2] = {};
+    TEST_ASSERT_EQUAL_UINT8(1U, WavinFrame::decodeReply(frame, length, words, 2U));
+    TEST_ASSERT_EQUAL_UINT16(42U, words[0]);
+    TEST_ASSERT_EQUAL_UINT32(requestMs + timeoutMs + 100U + requestMs + 5U, stale.now - startedAt);
+
+    // A corrupted reply is retried like a timeout.
+    std::vector<uint8_t> corrupted = reply;
+    corrupted[4] ^= 0x01U;
+    FakeRtuLink crc;
+    crc.replies = {{{5U, corrupted}}, {{5U, reply}}};
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess,
+                           RtuTransport(crc, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 3U), frame, sizeof frame, length));
+    TEST_ASSERT_EQUAL_UINT(2U, crc.sent.size());
+    // ... and reported when it was the last attempt.
+    FakeRtuLink crcOnly;
+    crcOnly.replies = {{{5U, corrupted}}};
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kInvalidCrc,
+                           RtuTransport(crcOnly, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 1U), frame, sizeof frame, length));
+    TEST_ASSERT_EQUAL_UINT(1U, crcOnly.sent.size());
+    TEST_ASSERT_EQUAL_UINT(0U, length);
+    // A corrupted reply shorter than the display's request cannot be told
+    // from the start of such a request while bytes may still come; once the
+    // attempt has timed out it is known to be corrupted and reported as such.
+    std::vector<uint8_t> shortCorrupted = framed({0x01, 0x43, 0x02, 0x00, 0x2A});
+    shortCorrupted[4] ^= 0x01U;
+    FakeRtuLink shortCrc;
+    shortCrc.replies = {{{5U, shortCorrupted}}};
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kInvalidCrc,
+                           RtuTransport(shortCrc, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 1U), frame, sizeof frame, length));
+    TEST_ASSERT_EQUAL_UINT(1U, shortCrc.sent.size());
+    TEST_ASSERT_EQUAL_UINT(0U, length);
+
+    // Nothing ever answers. With the shortest pauses all three attempts fit
+    // the 2000 ms budget; with the longest (randomValue 150 draws 250 ms)
+    // the third does not, so the failure is final after two. The clock
+    // wraps during the first case, as millis() does after 49 days.
+    FakeRtuLink silent;
+    silent.now = 0xFFFFFF00U;
+    startedAt = silent.now;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kResponseTimedOut,
+                           RtuTransport(silent, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 3U), frame, sizeof frame, length));
+    TEST_ASSERT_EQUAL_UINT(3U, silent.sent.size());
+    TEST_ASSERT_EQUAL_UINT32(3U * (requestMs + timeoutMs) + 2U * 100U, silent.now - startedAt);
+    TEST_ASSERT_TRUE(silent.now < startedAt);
+    FakeRtuLink slow;
+    slow.randomValue = 150U;
+    startedAt = slow.now;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kResponseTimedOut,
+                           RtuTransport(slow, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 3U), frame, sizeof frame, length));
+    TEST_ASSERT_EQUAL_UINT(2U, slow.sent.size());
+    TEST_ASSERT_EQUAL_UINT32(2U * (requestMs + timeoutMs) + 250U, slow.now - startedAt);
+    // A single attempt is never repeated.
+    FakeRtuLink once;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kResponseTimedOut,
+                           RtuTransport(once, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 1U), frame, sizeof frame, length));
+    TEST_ASSERT_EQUAL_UINT(1U, once.sent.size());
+
+    // At 1200 baud a full 22-register read costs 976 ms per attempt, so no
+    // retry fits and the second attempt is never sent.
+    FakeRtuLink low;
+    low.baud = 1200U;
+    uint8_t full[WavinFrame::kReadRequestSize];
+    WavinFrame::buildRead(1U, 1U, 0U, 0U, WavinFrame::kMaxRegisters, full, sizeof full);
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kResponseTimedOut,
+                           RtuTransport(low, kTestPolicy).exchange(
+                               wavinReadRequest(full, sizeof full, WavinFrame::kMaxRegisters, 3U), frame,
+                               sizeof frame, length));
+    TEST_ASSERT_EQUAL_UINT(1U, low.sent.size());
+}
+
+void test_rtu_transport_exceptions_are_final_and_the_line_is_settled_after_a_failure(void) {
+    uint8_t request[WavinFrame::kReadRequestSize];
+    WavinFrame::buildRead(1U, 1U, 4U, 0U, 2U, request, sizeof request);
+    const uint32_t requestMs = RtuTiming::wireTimeMs(8U, 38400U, 10U);
+    const uint32_t timeoutMs = RtuTiming::attemptTimeoutMs(500U, WavinFrame::responseSize(2U), 38400U, 10U);
+    uint8_t frame[WavinFrame::kMaxResponseSize] = {};
+    size_t length = 0U;
+
+    // An exception reply is the controller's answer: returned at once, no
+    // retry, nothing more read.
+    FakeRtuLink link;
+    link.replies = {{{5U, framed({0x01, 0xC3, 0x02})}}};
+    TEST_ASSERT_EQUAL_HEX8(0x02U,
+                           RtuTransport(link, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 3U), frame, sizeof frame, length));
+    TEST_ASSERT_EQUAL_UINT(1U, link.sent.size());
+    TEST_ASSERT_EQUAL_UINT(0U, length);
+
+    // The attempt sees the start of another slave's frame shortly before it
+    // times out, and the rest of that burst plus a late reply of ours land
+    // just after. The settle wait discards them until the line has been
+    // quiet for 50 ms, so the next exchange does not take the late reply
+    // for its own; a byte arriving after the wait has returned is left for
+    // the next exchange's drain.
+    const std::vector<uint8_t> lateReply = {0x01, 0x43, 0x04, 0x00, 0xD2, 0x01, 0x2C, 0x54, 0x87};
+    FakeRtuLink late;
+    late.replies = {{{timeoutMs - 20U, {0x02, 0x43, 0x02}},
+                     {timeoutMs + 4U, {0x00, 0x01, 0x00, 0x00}},
+                     {timeoutMs + 8U, lateReply},
+                     {timeoutMs + 400U, {0xAA}}},
+                    {{5U, framed({0x01, 0x43, 0x02, 0x00, 0x2A})}}};
+    uint32_t startedAt = late.now;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kResponseTimedOut,
+                           RtuTransport(late, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 1U), frame, sizeof frame, length));
+    // Settled 50 ms after the last byte of the late reply, within the cap.
+    TEST_ASSERT_EQUAL_UINT32(requestMs + timeoutMs + 8U + 50U, late.now - startedAt);
+    TEST_ASSERT_EQUAL_UINT(1U, late.undelivered());
+    TEST_ASSERT_EQUAL_INT(-1, late.read());
+    // The next exchange gets its own reply (one register, 42), not the late one.
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess,
+                           RtuTransport(late, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 1U), frame, sizeof frame, length));
+    uint16_t words[2] = {};
+    TEST_ASSERT_EQUAL_UINT8(1U, WavinFrame::decodeReply(frame, length, words, 2U));
+    TEST_ASSERT_EQUAL_UINT16(42U, words[0]);
+
+    // After a silent timeout nothing was received, so the settle wait
+    // returns at once.
+    FakeRtuLink silent;
+    startedAt = silent.now;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kResponseTimedOut,
+                           RtuTransport(silent, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 1U), frame, sizeof frame, length));
+    TEST_ASSERT_EQUAL_UINT32(requestMs + timeoutMs, silent.now - startedAt);
+
+    // Another master's frame ends just before the timeout and nothing
+    // follows: the quiet window is measured from its last byte, not from
+    // the first byte the attempt saw.
+    FakeRtuLink tail;
+    tail.replies = {{{timeoutMs - 20U, {0x02, 0x43}}, {timeoutMs - 2U, {0x02, 0x00, 0x01}}}};
+    startedAt = tail.now;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kResponseTimedOut,
+                           RtuTransport(tail, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 1U), frame, sizeof frame, length));
+    TEST_ASSERT_EQUAL_UINT32(requestMs + timeoutMs - 2U + 50U, tail.now - startedAt);
+
+    // A talker that never stops is given up on after the 150 ms cap.
+    FakeRtuLink chatter;
+    std::vector<FakeRtuLink::Arrival> stream;
+    for (uint32_t at = timeoutMs - 10U; at < timeoutMs + 400U; at += 10U) stream.push_back({at, {0x02}});
+    chatter.replies = {stream};
+    startedAt = chatter.now;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kResponseTimedOut,
+                           RtuTransport(chatter, kTestPolicy).exchange(
+                               wavinReadRequest(request, sizeof request, 2U, 1U), frame, sizeof frame, length));
+    TEST_ASSERT_EQUAL_UINT32(requestMs + timeoutMs + 150U, chatter.now - startedAt);
+}
+
+void test_wavin_client_reads_and_writes_through_the_transport(void) {
+    FakeRtuLink link;
+    const std::vector<uint8_t> readReply = {0x01, 0x43, 0x04, 0x00, 0xD2, 0x01, 0x2C, 0x54, 0x87};
+    link.replies = {{{5U, readReply}}, {{5U, framed({0x01, 0x44, 0x02, 0x00, 0xD2})}}, {{5U, readReply}}};
+    WavinClient client(link);
+
+    // A read decodes the registers the reply carried.
+    uint16_t words[4] = {};
+    uint8_t received = 0U;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, client.readRegisters(1U, 1U, 4U, 0U, 2U, words, 4U, received));
+    TEST_ASSERT_EQUAL_UINT8(2U, received);
+    TEST_ASSERT_EQUAL_UINT16(210U, words[0]);
+    TEST_ASSERT_EQUAL_UINT16(300U, words[1]);
+    uint8_t expected[WavinFrame::kMaxWriteRequestSize];
+    TEST_ASSERT_EQUAL_UINT(8U, WavinFrame::buildRead(1U, 1U, 4U, 0U, 2U, expected, sizeof expected));
+    TEST_ASSERT_EQUAL_UINT(1U, link.sent.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, link.sent[0].data(), 8U);
+
+    // A write is acknowledged by the echo.
+    const uint16_t value = 210U;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, client.writeRegisters(1U, 2U, 0U, 3U, &value, 1U));
+    TEST_ASSERT_EQUAL_UINT(10U, WavinFrame::buildWrite(1U, 2U, 0U, 3U, &value, 1U, expected, sizeof expected));
+    TEST_ASSERT_EQUAL_UINT(2U, link.sent.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, link.sent[1].data(), 10U);
+
+    // Fewer registers than asked for are reported as received.
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, client.readRegisters(1U, 1U, 4U, 0U, 4U, words, 4U, received));
+    TEST_ASSERT_EQUAL_UINT8(2U, received);
+
+    // Requests the frame cannot carry are rejected before anything is sent.
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue,
+                           client.readRegisters(1U, 1U, 4U, 0U, WavinFrame::kMaxRegisters + 1U, words, 4U,
+                                                received));
+    TEST_ASSERT_EQUAL_UINT8(0U, received);
+    const uint16_t five[5] = {};
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue, client.writeRegisters(1U, 2U, 0U, 3U, five, 5U));
+    TEST_ASSERT_EQUAL_UINT(3U, link.sent.size());
 }
 
 void test_modbus_configuration_parses_wavin_datapoints(void) {
@@ -4338,6 +4799,11 @@ void test_modbus_configuration_rejects_baud_below_minimum(void) {
                                       static_cast<int>(error.reason), baud);
     }
     TEST_ASSERT_EQUAL_STRING("invalid_baud_rate", ModbusConfigDocument::reasonToString(error.reason));
+    TEST_ASSERT_EQUAL_STRING("Bus baud rate must be an integer of at least 1200",
+                             ModbusConfigDocument::reasonDescription(error.reason));
+    // Absent (null) keeps the default rate.
+    TEST_ASSERT_TRUE(parseWithBaud("null"));
+    TEST_ASSERT_EQUAL_INT(DEFAULT_MODBUS_BAUD_RATE, parsed.bus.baud);
     // The rejection concerns the bus, not a datapoint, so the API response
     // and the log carry no datapoint location for it.
     TEST_ASSERT_FALSE(ModbusConfigDocument::locatesDatapoint(error.reason));
@@ -4474,11 +4940,15 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_ota_progress_publisher_coalesces_and_applies_queue_heap_guards);
     RUN_TEST(test_ota_admission_gate_waits_for_existing_ui_lease_and_restores_selectively);
     RUN_TEST(test_ota_ui_filesystem_gate_prevents_access_until_safe_remount);
-    RUN_TEST(test_wavin_frame_crc_matches_controller_replies);
+    RUN_TEST(test_rtu_frame_crc_matches_controller_replies);
     RUN_TEST(test_wavin_frame_builds_read_and_write_requests);
-    RUN_TEST(test_wavin_frame_scans_replies_and_exceptions);
-    RUN_TEST(test_wavin_frame_locates_reply_among_other_traffic);
-    RUN_TEST(test_wavin_frame_timing_scales_with_baud_and_fits_budget);
+    RUN_TEST(test_rtu_frame_scans_replies_and_exceptions);
+    RUN_TEST(test_rtu_frame_locates_reply_among_other_traffic);
+    RUN_TEST(test_rtu_timing_scales_with_baud_and_fits_budget);
+    RUN_TEST(test_rtu_transport_returns_the_reply_found_among_other_traffic);
+    RUN_TEST(test_rtu_transport_retries_timeouts_and_crc_errors_within_the_budget);
+    RUN_TEST(test_rtu_transport_exceptions_are_final_and_the_line_is_settled_after_a_failure);
+    RUN_TEST(test_wavin_client_reads_and_writes_through_the_transport);
     RUN_TEST(test_modbus_configuration_parses_wavin_datapoints);
     RUN_TEST(test_modbus_configuration_rejects_baud_below_minimum);
     RUN_TEST(test_modbus_mqtt_wavin_write_carries_register_location);

@@ -1840,6 +1840,17 @@
 					)
 				)
 			)
+			(property "Sim.Pins" "1=K 2=A"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
 			(property "ki_keywords" "LED diode"
 				(at 0 0 0)
 				(show_name no)
@@ -3412,250 +3423,6 @@
 			)
 			(embedded_fonts no)
 		)
-		(symbol "mbx:PESD0402-140"
-			(pin_names
-				(offset 0.254)
-			)
-			(exclude_from_sim no)
-			(in_bom yes)
-			(on_board yes)
-			(in_pos_files yes)
-			(duplicate_pin_numbers_are_jumpers no)
-			(property "Reference" "D"
-				(at 6.604 4.572 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(effects
-					(font
-						(size 1.524 1.524)
-					)
-				)
-			)
-			(property "Value" "PESD0402-140"
-				(at 6.35 -3.81 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(effects
-					(font
-						(size 1.524 1.524)
-					)
-				)
-			)
-			(property "Footprint" "project_footprints:PESD0402-140_LTF"
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font
-						(size 1.27 1.27)
-						(italic yes)
-					)
-				)
-			)
-			(property "Datasheet" "PESD0402-140"
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font
-						(size 1.27 1.27)
-						(italic yes)
-					)
-				)
-			)
-			(property "Description" ""
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "ki_locked" ""
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "ki_keywords" "PESD0402-140"
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "ki_fp_filters" "PESD0402-140_LTF PESD0402-140_LTF-M PESD0402-140_LTF-L"
-				(at 0 0 0)
-				(show_name no)
-				(do_not_autoplace no)
-				(hide yes)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(symbol "PESD0402-140_0_1"
-				(polyline
-					(pts
-						(xy 2.54 0) (xy 3.81 0)
-					)
-					(stroke
-						(width 0.2032)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 3.81 1.905) (xy 3.81 -1.905)
-					)
-					(stroke
-						(width 0.2032)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 3.81 -1.905) (xy 6.35 0)
-					)
-					(stroke
-						(width 0.2032)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 6.35 0) (xy 3.81 1.905)
-					)
-					(stroke
-						(width 0.2032)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 6.35 0) (xy 8.89 1.905)
-					)
-					(stroke
-						(width 0.2032)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 6.35 -1.905) (xy 6.35 1.905)
-					)
-					(stroke
-						(width 0.2032)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 8.89 1.905) (xy 8.89 -1.905)
-					)
-					(stroke
-						(width 0.2032)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 8.89 0) (xy 10.16 0)
-					)
-					(stroke
-						(width 0.2032)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(polyline
-					(pts
-						(xy 8.89 -1.905) (xy 6.35 0)
-					)
-					(stroke
-						(width 0.2032)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-				(pin unspecified line
-					(at 12.7 0 180)
-					(length 2.54)
-					(name ""
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "1"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin unspecified line
-					(at 0 0 0)
-					(length 2.54)
-					(name ""
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "2"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-			)
-			(embedded_fonts no)
-		)
 		(symbol "power:GND"
 			(power global)
 			(pin_numbers
@@ -4371,7 +4138,7 @@
 				)
 			)
 			(property "Value" "3983"
-				(at 0 0 0)
+				(at 1.27 -3.81 0)
 				(show_name no)
 				(do_not_autoplace no)
 				(effects
@@ -4381,7 +4148,7 @@
 				)
 			)
 			(property "Footprint" "project_footprints:SW_3983_ADA"
-				(at 0 0 0)
+				(at 4.826 6.858 0)
 				(show_name no)
 				(do_not_autoplace no)
 				(hide yes)
@@ -4393,7 +4160,7 @@
 				)
 			)
 			(property "Datasheet" "3983"
-				(at 0 0 0)
+				(at 1.27 -3.81 0)
 				(show_name no)
 				(do_not_autoplace no)
 				(hide yes)
@@ -4506,7 +4273,9 @@
 						(type none)
 					)
 				)
-				(pin unspecified line
+			)
+			(symbol "3983_1_1"
+				(pin passive line
 					(at 0 0 0)
 					(length 2.54)
 					(name "1"
@@ -4524,7 +4293,7 @@
 						)
 					)
 				)
-				(pin unspecified line
+				(pin passive line
 					(at 15.24 0 180)
 					(length 2.54)
 					(name "2"
@@ -7900,6 +7669,252 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "project_symbols:PESD0402-140"
+			(pin_names
+				(offset 0.254)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "D"
+				(at 6.604 4.572 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.524 1.524)
+					)
+				)
+			)
+			(property "Value" "PESD0402-140"
+				(at 6.35 -3.81 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.524 1.524)
+					)
+				)
+			)
+			(property "Footprint" "project_footprints:PESD0402-140_LTF"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+						(italic yes)
+					)
+				)
+			)
+			(property "Datasheet" "PESD0402-140"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+						(italic yes)
+					)
+				)
+			)
+			(property "Description" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_locked" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_keywords" "PESD0402-140"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_fp_filters" "PESD0402-140_LTF PESD0402-140_LTF-M PESD0402-140_LTF-L"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "PESD0402-140_0_1"
+				(polyline
+					(pts
+						(xy 2.54 0) (xy 3.81 0)
+					)
+					(stroke
+						(width 0.2032)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 3.81 1.905) (xy 3.81 -1.905)
+					)
+					(stroke
+						(width 0.2032)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 3.81 -1.905) (xy 6.35 0)
+					)
+					(stroke
+						(width 0.2032)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 6.35 0) (xy 3.81 1.905)
+					)
+					(stroke
+						(width 0.2032)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 6.35 0) (xy 8.89 1.905)
+					)
+					(stroke
+						(width 0.2032)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 6.35 -1.905) (xy 6.35 1.905)
+					)
+					(stroke
+						(width 0.2032)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 8.89 1.905) (xy 8.89 -1.905)
+					)
+					(stroke
+						(width 0.2032)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 8.89 0) (xy 10.16 0)
+					)
+					(stroke
+						(width 0.2032)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 8.89 -1.905) (xy 6.35 0)
+					)
+					(stroke
+						(width 0.2032)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "PESD0402-140_1_1"
+				(pin passive line
+					(at 12.7 0 180)
+					(length 2.54)
+					(name ""
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 0 0 0)
+					(length 2.54)
+					(name ""
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "project_symbols:T495D337K006ATE100"
 			(body_styles demorgan)
 			(pin_names
@@ -8070,7 +8085,7 @@
 						(type none)
 					)
 				)
-				(pin unspecified line
+				(pin passive line
 					(at 0 0 0)
 					(length 2.54)
 					(name ""
@@ -8088,7 +8103,7 @@
 						)
 					)
 				)
-				(pin unspecified line
+				(pin passive line
 					(at 7.62 0 180)
 					(length 2.54)
 					(name ""
@@ -8180,7 +8195,7 @@
 						(type none)
 					)
 				)
-				(pin unspecified line
+				(pin passive line
 					(at 0 0 270)
 					(length 2.54)
 					(name ""
@@ -8198,7 +8213,7 @@
 						)
 					)
 				)
-				(pin unspecified line
+				(pin passive line
 					(at 0 -7.62 90)
 					(length 2.54)
 					(name ""
@@ -8366,7 +8381,7 @@
 	)
 	(text "J7: 2.54 mm header, three shunts\nUSB: fit 1-2, 3-4 and 5-6\nPROG: remove all three shunts"
 		(exclude_from_sim no)
-		(at 148.082 126.238 0)
+		(at 148.59 125.73 0)
 		(effects
 			(font
 				(size 1 1)
@@ -8437,7 +8452,7 @@
 	)
 	(text "Power"
 		(exclude_from_sim no)
-		(at 61.468 20.32 0)
+		(at 60.96 20.32 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -9151,7 +9166,7 @@
 	)
 	(wire
 		(pts
-			(xy 60.96 114.935) (xy 60.96 113.03)
+			(xy 60.96 115.57) (xy 60.96 113.03)
 		)
 		(stroke
 			(width 0)
@@ -11398,7 +11413,7 @@
 				)
 			)
 		)
-		(property "Description" "LED White SMD"
+		(property "Description" "Light emitting diode"
 			(at 30.48 156.21 0)
 			(hide yes)
 			(show_name no)
@@ -11432,6 +11447,17 @@
 			)
 		)
 		(property "StockLocation" "REEL"
+			(at 30.48 156.21 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Sim.Pins" "1=K 2=A"
 			(at 30.48 156.21 0)
 			(hide yes)
 			(show_name no)
@@ -11649,7 +11675,7 @@
 		)
 	)
 	(symbol
-		(lib_id "mbx:PESD0402-140")
+		(lib_id "project_symbols:PESD0402-140")
 		(at 138.43 71.12 180)
 		(unit 1)
 		(body_style 1)
@@ -11660,18 +11686,17 @@
 		(dnp no)
 		(uuid "1e9f9c4d-78c4-4ed6-8186-01f0ea04ddd7")
 		(property "Reference" "D8"
-			(at 135.89 74.422 90)
+			(at 131.826 67.818 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.524 1.524)
 				)
-				(justify right)
 			)
 		)
 		(property "Value" "PESD0402-140"
-			(at 133.3499 67.31 90)
+			(at 132.08 67.31 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -11679,7 +11704,6 @@
 				(font
 					(size 1.524 1.524)
 				)
-				(justify right)
 			)
 		)
 		(property "Footprint" "project_footprints:PESD0402-140_LTF"
@@ -11821,7 +11845,7 @@
 				)
 			)
 		)
-		(property "Description" "LED White SMD"
+		(property "Description" "Light emitting diode"
 			(at 25.4 156.21 0)
 			(hide yes)
 			(show_name no)
@@ -11855,6 +11879,17 @@
 			)
 		)
 		(property "StockLocation" "REEL"
+			(at 25.4 156.21 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Sim.Pins" "1=K 2=A"
 			(at 25.4 156.21 0)
 			(hide yes)
 			(show_name no)
@@ -13389,7 +13424,7 @@
 				)
 			)
 		)
-		(property "Description" "LED White SMD"
+		(property "Description" "Light emitting diode"
 			(at 20.32 156.21 0)
 			(hide yes)
 			(show_name no)
@@ -13423,6 +13458,17 @@
 			)
 		)
 		(property "StockLocation" "REEL"
+			(at 20.32 156.21 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Sim.Pins" "1=K 2=A"
 			(at 20.32 156.21 0)
 			(hide yes)
 			(show_name no)
@@ -14470,6 +14516,7 @@
 		)
 		(property "Value" "330uF"
 			(at 86.614 46.228 0)
+			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -14887,7 +14934,7 @@
 				)
 			)
 		)
-		(property "Description" "LED White SMD"
+		(property "Description" "Light emitting diode"
 			(at 48.26 190.5 0)
 			(hide yes)
 			(show_name no)
@@ -14921,6 +14968,17 @@
 			)
 		)
 		(property "StockLocation" "REEL"
+			(at 48.26 190.5 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Sim.Pins" "1=K 2=A"
 			(at 48.26 190.5 0)
 			(hide yes)
 			(show_name no)
@@ -16359,7 +16417,7 @@
 		)
 	)
 	(symbol
-		(lib_id "mbx:PESD0402-140")
+		(lib_id "project_symbols:PESD0402-140")
 		(at 138.43 78.74 180)
 		(unit 1)
 		(body_style 1)
@@ -16370,18 +16428,17 @@
 		(dnp no)
 		(uuid "b88d184f-9d23-44f0-a003-6c6e71ad19e7")
 		(property "Reference" "D9"
-			(at 135.89 82.042 90)
+			(at 131.826 75.184 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.524 1.524)
 				)
-				(justify right)
 			)
 		)
 		(property "Value" "PESD0402-140"
-			(at 133.3499 74.93 90)
+			(at 132.08 74.93 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -16389,7 +16446,6 @@
 				(font
 					(size 1.524 1.524)
 				)
-				(justify right)
 			)
 		)
 		(property "Footprint" "project_footprints:PESD0402-140_LTF"
@@ -17833,17 +17889,6 @@
 				)
 			)
 		)
-		(property "InventoryId" "IC #43"
-			(at 59.69 39.37 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
 		(property "MPN" "LM2596S-3.3-EV"
 			(at 59.69 39.37 0)
 			(hide yes)
@@ -18322,6 +18367,7 @@
 		)
 		(property "Value" "330uF"
 			(at 95.504 46.228 0)
+			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -19346,7 +19392,7 @@
 	)
 	(symbol
 		(lib_id "power:GND")
-		(at 60.96 114.935 0)
+		(at 60.96 115.57 0)
 		(unit 1)
 		(body_style 1)
 		(exclude_from_sim no)
@@ -19356,7 +19402,7 @@
 		(dnp no)
 		(uuid "f6987286-63d6-4969-8c96-07cb3d13238d")
 		(property "Reference" "#PWR038"
-			(at 60.96 121.285 0)
+			(at 60.96 121.92 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -19367,7 +19413,7 @@
 			)
 		)
 		(property "Value" "GND"
-			(at 60.96 118.872 0)
+			(at 60.96 119.507 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -19377,7 +19423,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 60.96 114.935 0)
+			(at 60.96 115.57 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -19388,7 +19434,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 60.96 114.935 0)
+			(at 60.96 115.57 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -19399,7 +19445,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 60.96 114.935 0)
+			(at 60.96 115.57 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -19789,17 +19835,6 @@
 			)
 		)
 		(property "Description" "Generic screw terminal, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)"
-			(at 101.6 152.4 0)
-			(hide yes)
-			(show_name no)
-			(do_not_autoplace no)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "InventoryId" "Conn. #TBD"
 			(at 101.6 152.4 0)
 			(hide yes)
 			(show_name no)

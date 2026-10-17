@@ -4405,7 +4405,7 @@
 					(type none)
 				)
 			)
-			(pin unspecified line
+			(pin passive line
 				(at 0 0 270)
 				(length 2.54)
 				(name ""
@@ -4423,7 +4423,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin passive line
 				(at 0 -7.62 90)
 				(length 2.54)
 				(name ""

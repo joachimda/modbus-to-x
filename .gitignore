@@ -96,3 +96,7 @@ fp-info-cache
 .vscode/ipch
 
 /issues
+
+# Python
+__pycache__/
+*.pyc

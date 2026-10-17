@@ -61,9 +61,9 @@ The project is split between dedicated hardware design files and a PlatformIO fi
    ```
 2. Choose an environment in `platformio.ini`:
    - `mbx-custom-board-dev` — development build, serial upload (default).
-   - `mbx-custom-board-dev-ota` — development build, OTA upload (configure `upload_port` for your device).
+   - `mbx-custom-board-dev-ota` — development build, OTA upload (reads the device address from `MBX_DEV_OTA_HOST` and the OTA password from `MBX_DEV_OTA_PASSWORD`).
    - `mbx-custom-board-release` — release build (used by the GitHub Actions workflow).
-   - `mbx-custom-board-release-primer` — primes a dev device to receive HTTP OTA updates.
+   - `mbx-custom-board-release-primer` — primes a dev device to receive HTTP OTA updates (same environment variables as `mbx-custom-board-dev-ota`).
 3. Build the firmware (PlatformIO will fetch dependencies and embed git metadata):
    ```bash
    pio run
@@ -73,7 +73,8 @@ The project is split between dedicated hardware design files and a PlatformIO fi
    # Serial upload
    pio run -e mbx-custom-board-dev -t upload
 
-   # OTA upload to a provisioned gateway
+   # OTA upload to a provisioned gateway; address and password come from your shell
+   export MBX_DEV_OTA_HOST=<device-ip> MBX_DEV_OTA_PASSWORD=<ota-password>
    pio run -e mbx-custom-board-dev-ota -t upload
    ```
 5. Upload the web UI and config assets to SPIFFS when they change:

@@ -67,11 +67,11 @@ Run firmware commands from `software/modbus-to-mqtt/`:
   browser; see the README for the provisioning and OTA scenario flags.
 
 The `mbx-custom-board-dev-ota` and `mbx-custom-board-release-primer`
-environments upload over the network. They read the device password from the
-`MBX_DEV_OTA_PASSWORD` environment variable both when building (it is compiled
-in as the ArduinoOTA password) and when uploading, and they carry the owner's
-device address in `upload_port`; change the address locally and leave that
-change out of commits.
+environments upload over the network. They read the device address from the
+`MBX_DEV_OTA_HOST` environment variable and the device password from
+`MBX_DEV_OTA_PASSWORD`, the latter both when building (it is compiled in as
+the ArduinoOTA password) and when uploading. Neither value is committed; set
+both in your shell before using these environments.
 
 CI (`.github/workflows/ci.yml`) builds the firmware and SPIFFS image and runs
 the native and web test suites on pushes and pull requests to `main`, but only

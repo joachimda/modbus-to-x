@@ -294,7 +294,7 @@
       "internal_id": "",
       "mfg": "",
       "mpn": "",
-      "sch_revision": "0.1"
+      "sch_revision": "${HW_REV}"
     },
     "layer_pairs": [],
     "layer_presets": [],
@@ -827,7 +827,9 @@
       "modbus-to-x"
     ]
   ],
-  "text_variables": {},
+  "text_variables": {
+    "HW_REV": "1.0.0"
+  },
   "tuning_profiles": {
     "meta": {
       "version": 0

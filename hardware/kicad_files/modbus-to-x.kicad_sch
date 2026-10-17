@@ -5,9 +5,9 @@
 	(uuid "d5b026e9-d5a5-415b-84cb-4c68355c0f8f")
 	(paper "A4")
 	(title_block
-		(title "Modbus-to-X")
+		(title "MBX Carrier")
 		(date "2025-07-06")
-		(rev "0.1")
+		(rev "${HW_REV}")
 		(company "Joachim Andersen")
 	)
 	(lib_symbols
@@ -8450,6 +8450,17 @@
 		)
 		(uuid "902263d0-5279-4c92-afe3-789030547e87")
 	)
+	(text "Board ID: code = ID2 ID1 ID0\n1.0.0 = code 1:\nfit R22 R25 R27 R28\nDNP R23 R24 R26\nDetails: hardware/BOARD-ID.md"
+		(exclude_from_sim no)
+		(at 250.19 151.13 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left top)
+		)
+		(uuid "aa990771-88b1-472b-8cb8-097c665eafbf")
+	)
 	(text "Power"
 		(exclude_from_sim no)
 		(at 60.96 20.32 0)
@@ -8489,6 +8500,17 @@
 			)
 		)
 		(uuid "ee13b15a-e07c-4bde-9e27-4f9131276369")
+	)
+	(text "Board ID"
+		(exclude_from_sim no)
+		(at 190.5 134.62 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "f1f92588-bc64-4a3f-ae74-01202f76f63d")
 	)
 	(text "DE/RE Pull-Down"
 		(exclude_from_sim no)
@@ -8801,20 +8823,8 @@
 		(uuid "0d4f9a6a-dde4-4999-b5a8-57e5297af206")
 	)
 	(no_connect
-		(at 233.68 48.26)
-		(uuid "1635677a-3a12-48ad-be6e-4fc17c1611f2")
-	)
-	(no_connect
-		(at 233.68 45.72)
-		(uuid "16c0f3dd-001b-4015-b89d-84ff8c175569")
-	)
-	(no_connect
 		(at 119.38 95.25)
 		(uuid "210d55b6-f7c5-41b7-a1a9-8852b49f6340")
-	)
-	(no_connect
-		(at 233.68 38.1)
-		(uuid "26129389-4451-44fb-9acb-6fcc58997d24")
 	)
 	(no_connect
 		(at 138.43 147.32)
@@ -8895,10 +8905,6 @@
 	(no_connect
 		(at 271.78 60.96)
 		(uuid "e1561d9e-2eea-4bd3-9f74-b19165e95809")
-	)
-	(no_connect
-		(at 233.68 43.18)
-		(uuid "e27515ea-789d-40a2-a8c4-4cfecb1e5a04")
 	)
 	(no_connect
 		(at 233.68 83.82)
@@ -9236,6 +9242,16 @@
 	)
 	(wire
 		(pts
+			(xy 233.68 48.26) (xy 231.14 48.26)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3d39ce92-1c2e-4a40-86b0-43eaefb9bed3")
+	)
+	(wire
+		(pts
 			(xy 68.58 146.05) (xy 69.85 146.05)
 		)
 		(stroke
@@ -9283,6 +9299,16 @@
 			(type default)
 		)
 		(uuid "44676fbd-26e0-45d4-bb6c-96ed1a77daf4")
+	)
+	(wire
+		(pts
+			(xy 233.68 43.18) (xy 231.14 43.18)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "49cf3bc8-e7a8-4342-b828-1dd787e2c493")
 	)
 	(wire
 		(pts
@@ -9353,6 +9379,16 @@
 			(type default)
 		)
 		(uuid "5e2d5689-9fb7-443a-b484-37e88b77f5ae")
+	)
+	(wire
+		(pts
+			(xy 198.12 148.59) (xy 198.12 151.13)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5ea1fb20-f686-420b-a2fb-49538dad7bed")
 	)
 	(wire
 		(pts
@@ -9506,6 +9542,16 @@
 	)
 	(wire
 		(pts
+			(xy 228.6 148.59) (xy 228.6 151.13)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "7ee64f79-0bc3-49d1-9ef7-b978d2297cbd")
+	)
+	(wire
+		(pts
 			(xy 52.07 97.79) (xy 55.88 97.79)
 		)
 		(stroke
@@ -9523,6 +9569,16 @@
 			(type default)
 		)
 		(uuid "8459acf8-0643-4f5e-b13a-9d03f7d356bc")
+	)
+	(wire
+		(pts
+			(xy 243.84 148.59) (xy 243.84 151.13)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "84b7ab39-a308-4be1-8578-69f76dd8a1a9")
 	)
 	(wire
 		(pts
@@ -9563,6 +9619,26 @@
 			(type default)
 		)
 		(uuid "87561092-9557-4682-a829-dcf4cd8a1a17")
+	)
+	(wire
+		(pts
+			(xy 233.68 45.72) (xy 231.14 45.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8a1c75bc-f82c-492f-b18f-8a4a8a293a45")
+	)
+	(wire
+		(pts
+			(xy 233.68 38.1) (xy 231.14 38.1)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8b51551b-7bed-4ba5-9484-412f737ccea5")
 	)
 	(wire
 		(pts
@@ -10076,6 +10152,16 @@
 	)
 	(wire
 		(pts
+			(xy 213.36 148.59) (xy 213.36 151.13)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e345403b-7e9c-4786-a3a5-7456a1703e92")
+	)
+	(wire
+		(pts
 			(xy 25.4 36.83) (xy 29.21 36.83)
 		)
 		(stroke
@@ -10274,6 +10360,16 @@
 		)
 		(uuid "164a8881-1aa2-4968-a629-327af7d9175f")
 	)
+	(label "HW_ID_PRESENT"
+		(at 243.84 148.59 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "185d8293-8bf3-4f01-9843-02242f5d6307")
+	)
 	(label "TX_{2}"
 		(at 20.32 111.76 0)
 		(effects
@@ -10353,6 +10449,16 @@
 			(justify left bottom)
 		)
 		(uuid "27b3b155-ca41-4074-bed6-2b4dbfa0c567")
+	)
+	(label "HW_ID2"
+		(at 228.6 149.86 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "2c36639c-cef5-4cde-94da-1b05e427b5f2")
 	)
 	(label "TX_0"
 		(at 176.53 43.18 0)
@@ -10604,6 +10710,16 @@
 		)
 		(uuid "9378aed8-d474-4803-9a36-7f1e74951938")
 	)
+	(label "HW_ID0"
+		(at 198.12 149.86 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "9752195e-e97c-4b1f-8a94-fe66ca95d51c")
+	)
 	(label "V_EXT"
 		(at 140.97 157.48 0)
 		(effects
@@ -10624,6 +10740,26 @@
 		)
 		(uuid "9ffe57a4-8e68-43f5-994c-c55916b6bfa7")
 	)
+	(label "HW_ID2"
+		(at 231.14 38.1 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "affc57eb-68de-4c28-a1f9-d2e532df5f3b")
+	)
+	(label "HW_ID_PRESENT"
+		(at 231.14 48.26 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "b17779f4-0666-4769-87e0-29baa72a164a")
+	)
 	(label "USB_DTR"
 		(at 179.07 58.42 0)
 		(effects
@@ -10643,6 +10779,16 @@
 			(justify left bottom)
 		)
 		(uuid "b31838b6-834b-4805-8a03-19af16327e90")
+	)
+	(label "HW_ID0"
+		(at 231.14 43.18 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "ba0e49e8-a515-4135-a2c5-4d3a0df001a9")
 	)
 	(label "TX_{2}"
 		(at 271.78 38.1 0)
@@ -10714,6 +10860,16 @@
 		)
 		(uuid "d065fcde-f1e2-4cf7-bd2c-a6eade70425b")
 	)
+	(label "HW_ID1"
+		(at 231.14 45.72 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "d218f00f-50a1-4459-b16e-22c04831ddfb")
+	)
 	(label "RS485+"
 		(at 106.68 149.86 0)
 		(effects
@@ -10733,6 +10889,16 @@
 			(justify left bottom)
 		)
 		(uuid "d3281e28-05ea-4e59-b04d-00cdfe255670")
+	)
+	(label "HW_ID1"
+		(at 213.36 149.86 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "d3a2bc57-25b7-45bc-adff-fbbb7ab63065")
 	)
 	(label "D+"
 		(at 119.38 100.33 180)
@@ -11484,6 +11650,118 @@
 		)
 	)
 	(symbol
+		(lib_id "Device:R")
+		(at 228.6 144.78 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp yes)
+		(uuid "0f4df813-6c6c-424b-8466-317f062ce72b")
+		(property "Reference" "R26"
+			(at 230.632 144.78 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "10K"
+			(at 228.6 144.78 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 228.6 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://www.yageo.com/upload/media/product/app/datasheet/rchip/pyu-rt_1-to-0.01_rohs_l.pdf"
+			(at 228.6 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "10 kOhms ±0.5% 0.1W, 1/10W Chip Resistor"
+			(at 228.6 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "MPN" "RT0603DRE0710KL"
+			(at 228.6 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Manufacturer" "Yageo"
+			(at 228.6 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "StockLocation" "R #35"
+			(at 228.6 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "c9c1e2d0-0af0-4a8a-9857-65b35f9881d3")
+		)
+		(pin "2"
+			(uuid "47ee2271-4e23-41a7-9ae4-ad4e236ce71c")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "R26")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:GND")
 		(at 151.13 38.1 0)
 		(unit 1)
@@ -11910,6 +12188,118 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "D5")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 228.6 154.94 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "20318d6f-1191-4c2d-807f-82dfce20fd97")
+		(property "Reference" "R27"
+			(at 230.632 154.94 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "10K"
+			(at 228.6 154.94 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 228.6 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://www.yageo.com/upload/media/product/app/datasheet/rchip/pyu-rt_1-to-0.01_rohs_l.pdf"
+			(at 228.6 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "10 kOhms ±0.5% 0.1W, 1/10W Chip Resistor"
+			(at 228.6 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "MPN" "RT0603DRE0710KL"
+			(at 228.6 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Manufacturer" "Yageo"
+			(at 228.6 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "StockLocation" "R #35"
+			(at 228.6 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "d564926f-69cf-4cf8-be7f-eebfe82b1323")
+		)
+		(pin "2"
+			(uuid "49ed7899-706a-4692-ac6f-4f8782e546f4")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "R27")
 					(unit 1)
 				)
 			)
@@ -12454,6 +12844,195 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "C6")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 198.12 154.94 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp yes)
+		(uuid "3089393c-2ed1-474e-97b2-ef436aa9c23e")
+		(property "Reference" "R23"
+			(at 200.152 154.94 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "10K"
+			(at 198.12 154.94 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 198.12 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://www.yageo.com/upload/media/product/app/datasheet/rchip/pyu-rt_1-to-0.01_rohs_l.pdf"
+			(at 198.12 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "10 kOhms ±0.5% 0.1W, 1/10W Chip Resistor"
+			(at 198.12 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "MPN" "RT0603DRE0710KL"
+			(at 198.12 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Manufacturer" "Yageo"
+			(at 198.12 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "StockLocation" "R #35"
+			(at 198.12 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "2"
+			(uuid "2b59f96a-b8f4-497e-9bbc-48df0e766296")
+		)
+		(pin "1"
+			(uuid "06ba8ab8-acee-43a0-a507-5b85ac6ea3ad")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "R23")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:VDD")
+		(at 228.6 140.97 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "30b0e96b-f8e7-4729-8b3f-442b34c9d02c")
+		(property "Reference" "#PWR048"
+			(at 228.6 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "VDD33"
+			(at 228.6 137.414 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 228.6 140.97 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 228.6 140.97 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"VDD\""
+			(at 228.6 140.97 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "12ba6fbf-5c30-4bcc-9959-d918bd6c4afd")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "#PWR048")
 					(unit 1)
 				)
 			)
@@ -14058,6 +14637,118 @@
 		)
 	)
 	(symbol
+		(lib_id "Device:R")
+		(at 198.12 144.78 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "5a5642f0-92cf-464e-a6c5-182dea4d7ebf")
+		(property "Reference" "R22"
+			(at 200.152 144.78 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "10K"
+			(at 198.12 144.78 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 198.12 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://www.yageo.com/upload/media/product/app/datasheet/rchip/pyu-rt_1-to-0.01_rohs_l.pdf"
+			(at 198.12 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "10 kOhms ±0.5% 0.1W, 1/10W Chip Resistor"
+			(at 198.12 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "MPN" "RT0603DRE0710KL"
+			(at 198.12 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Manufacturer" "Yageo"
+			(at 198.12 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "StockLocation" "R #35"
+			(at 198.12 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "2"
+			(uuid "439b1b69-e66d-4d8d-8995-48a03ae3006d")
+		)
+		(pin "1"
+			(uuid "a82c321b-559c-4104-a911-67aa9cb79d09")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "R22")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:GND")
 		(at 137.16 189.23 0)
 		(unit 1)
@@ -14688,6 +15379,83 @@
 		)
 	)
 	(symbol
+		(lib_id "power:VDD")
+		(at 198.12 140.97 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "7a32a0c8-cf88-4004-bb69-31db29af6270")
+		(property "Reference" "#PWR046"
+			(at 198.12 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "VDD33"
+			(at 198.12 137.414 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 198.12 140.97 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 198.12 140.97 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"VDD\""
+			(at 198.12 140.97 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "38e240cd-e0d5-4505-b12f-273bab8df347")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "#PWR046")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:GND")
 		(at 166.37 66.04 0)
 		(unit 1)
@@ -14873,6 +15641,118 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "R19")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 243.84 154.94 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "8413c7ce-b87c-46c2-8d41-71a7673caced")
+		(property "Reference" "R28"
+			(at 245.872 154.94 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "2K"
+			(at 243.84 154.94 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric_Pad0.98x0.95mm_HandSolder"
+			(at 243.84 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://media.distrelec.com/Web/Downloads/_t/ds/RND_155T_Thin_Film_Resistors_eng_tds.pdf"
+			(at 243.84 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Resistor Thin film   2 KOhm      ±0.1%   SMD 0603 1/6W"
+			(at 243.84 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "MPN" "155TC0325B2001T5H"
+			(at 243.84 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Manufacturer" "RND"
+			(at 243.84 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "StockLocation" "R #15"
+			(at 243.84 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "e072a18a-f16f-4816-8ded-d3b766dff6f2")
+		)
+		(pin "2"
+			(uuid "0ac1184a-870e-437c-8a9e-0dc16d4dff4f")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "R28")
 					(unit 1)
 				)
 			)
@@ -15307,6 +16187,83 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "#PWR08")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 213.36 158.75 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "9a0ca6f3-934e-4160-9dd1-1eb6dfc19719")
+		(property "Reference" "#PWR050"
+			(at 213.36 165.1 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 213.36 162.56 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 213.36 158.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 213.36 158.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 213.36 158.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "ad841950-4ce3-4713-8abd-62f3ec13c734")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "#PWR050")
 					(unit 1)
 				)
 			)
@@ -15822,6 +16779,118 @@
 		)
 	)
 	(symbol
+		(lib_id "Device:R")
+		(at 213.36 144.78 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp yes)
+		(uuid "a1f58483-aa83-4cf4-bd95-b37f9c14975c")
+		(property "Reference" "R24"
+			(at 215.392 144.78 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "10K"
+			(at 213.36 144.78 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 213.36 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://www.yageo.com/upload/media/product/app/datasheet/rchip/pyu-rt_1-to-0.01_rohs_l.pdf"
+			(at 213.36 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "10 kOhms ±0.5% 0.1W, 1/10W Chip Resistor"
+			(at 213.36 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "MPN" "RT0603DRE0710KL"
+			(at 213.36 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Manufacturer" "Yageo"
+			(at 213.36 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "StockLocation" "R #35"
+			(at 213.36 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "8ec44e24-3f59-409e-86f5-9e0f3d7b82fe")
+		)
+		(pin "2"
+			(uuid "309d5734-1fa4-48d2-844e-5d47aa4c18a8")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "R24")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:GND")
 		(at 59.69 46.99 0)
 		(unit 1)
@@ -16019,6 +17088,83 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "C4")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 243.84 158.75 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "aaff1171-83de-44ae-a080-71fe87036f07")
+		(property "Reference" "#PWR052"
+			(at 243.84 165.1 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 243.84 162.56 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 243.84 158.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 243.84 158.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 243.84 158.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "44f751be-b39a-4d85-b2de-a098428281b9")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "#PWR052")
 					(unit 1)
 				)
 			)
@@ -16735,6 +17881,83 @@
 		)
 	)
 	(symbol
+		(lib_id "power:GND")
+		(at 228.6 158.75 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "bd42555d-b970-4d36-9720-1a7635faaadd")
+		(property "Reference" "#PWR051"
+			(at 228.6 165.1 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 228.6 162.56 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 228.6 158.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 228.6 158.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 228.6 158.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "d677d392-3bed-434b-b05e-a2a15f09b547")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "#PWR051")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "Device:R")
 		(at 207.01 71.12 0)
 		(unit 1)
@@ -17398,6 +18621,83 @@
 		)
 	)
 	(symbol
+		(lib_id "power:VDD")
+		(at 213.36 140.97 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "c7f8e036-789d-40bf-ad31-28803c6d0a9d")
+		(property "Reference" "#PWR047"
+			(at 213.36 144.78 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "VDD33"
+			(at 213.36 137.414 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 213.36 140.97 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 213.36 140.97 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"VDD\""
+			(at 213.36 140.97 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "4df21079-826b-4ab4-8017-8ee847418c48")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "#PWR047")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:GND")
 		(at 41.91 121.92 0)
 		(unit 1)
@@ -17740,6 +19040,83 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "U4")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 198.12 158.75 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "d24ced02-44f3-4622-b265-d73e4eab14a3")
+		(property "Reference" "#PWR049"
+			(at 198.12 165.1 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 198.12 162.56 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 198.12 158.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 198.12 158.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 198.12 158.75 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "cd179bd1-8342-4584-a968-be194c0013f6")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "#PWR049")
 					(unit 1)
 				)
 			)
@@ -18338,6 +19715,118 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "#PWR025")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 213.36 154.94 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "e99932ec-650f-4692-b0f4-6ef921938908")
+		(property "Reference" "R25"
+			(at 215.392 154.94 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "10K"
+			(at 213.36 154.94 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 213.36 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://www.yageo.com/upload/media/product/app/datasheet/rchip/pyu-rt_1-to-0.01_rohs_l.pdf"
+			(at 213.36 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "10 kOhms ±0.5% 0.1W, 1/10W Chip Resistor"
+			(at 213.36 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "MPN" "RT0603DRE0710KL"
+			(at 213.36 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Manufacturer" "Yageo"
+			(at 213.36 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "StockLocation" "R #35"
+			(at 213.36 154.94 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "2"
+			(uuid "6c8ce3c9-a9b6-43bb-ae9b-13a4dab63da6")
+		)
+		(pin "1"
+			(uuid "31983cc1-ccda-4a4c-8b91-1b076f08c05c")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "R25")
 					(unit 1)
 				)
 			)

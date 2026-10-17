@@ -109,6 +109,47 @@ LocateResult locateResponse(const uint8_t *buffer, size_t length, uint8_t slave,
                             uint8_t expectedWords, uint16_t *words, size_t wordCapacity,
                             bool final = false);
 
+// Timing of a transaction, for the retry policy in WavinClient. Pure and
+// constexpr (single expressions: the firmware builds as C++11) so the
+// transaction budget can be checked at compile time. Whole milliseconds,
+// rounded up.
+
+// The serial formats the bus accepts (kSerialFormats in ModbusBus.cpp) use at
+// most 12 bits per character: 8E2 and 8O2 have a start bit, 8 data bits, a
+// parity bit and 2 stop bits.
+constexpr uint8_t kMaxBitsPerCharacter = 12U;
+
+// Time `bytes` characters take on the wire at `baud`, with bitsPerCharacter
+// bits per character including start, parity and stop bits (10 for 8N1, 12
+// for 8E2).
+constexpr uint32_t wireTimeMs(const size_t bytes, const uint32_t baud, const uint8_t bitsPerCharacter) {
+    return baud == 0U
+               ? 0U
+               : static_cast<uint32_t>(
+                   (static_cast<uint64_t>(bytes) * bitsPerCharacter * 1000U + baud - 1U) / baud);
+}
+
+// Size of a reply carrying `words` registers: header (3), data and CRC (2).
+constexpr size_t responseSize(const uint8_t words) {
+    return 3U + 2U * static_cast<size_t>(words) + 2U;
+}
+
+// How long one attempt waits for the reply to a request for `words`
+// registers: the controller's turnaround plus the time the largest reply it
+// can get takes on the wire.
+constexpr uint32_t attemptTimeoutMs(const uint32_t turnaroundMs, const uint8_t words,
+                                    const uint32_t baud, const uint8_t bitsPerCharacter) {
+    return turnaroundMs + wireTimeMs(responseSize(words), baud, bitsPerCharacter);
+}
+
+// Whether an attempt costing attemptMs (its request on the wire plus its
+// timeout) fits a transaction budget, after elapsedMs have been spent and
+// with a pause of pauseMs before it.
+constexpr bool attemptFits(const uint32_t elapsedMs, const uint32_t pauseMs, const uint32_t attemptMs,
+                           const uint32_t budgetMs) {
+    return static_cast<uint64_t>(elapsedMs) + pauseMs + attemptMs <= budgetMs;
+}
+
 }  // namespace WavinFrame
 
 #endif

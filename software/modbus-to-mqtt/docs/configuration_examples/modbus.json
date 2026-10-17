@@ -20,7 +20,8 @@
       ],
       "properties": {
         "baud": {
-          "type": "integer"
+          "type": "integer",
+          "minimum": 1200
         },
         "serialFormat": {
           "type": "string",

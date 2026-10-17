@@ -35,6 +35,13 @@ public:
 
     Stream &stream();
 
+    // Serial settings the bus runs with (the defaults until begin()), for
+    // timing that depends on the wire speed. bitsPerCharacter() counts
+    // start, data, parity and stop bits: 10 for 8N1, 12 for 8E2.
+    uint32_t baudRate() const;
+
+    uint8_t bitsPerCharacter() const;
+
     bool isActive() const;
 
     void setActive(bool enabled);
@@ -76,6 +83,8 @@ private:
     std::atomic<bool> _initialized{false};
     std::atomic<bool> _busy{false};
     std::atomic<uint32_t> _errorCount{0};
+    uint32_t _baud;
+    uint8_t _bitsPerCharacter;
 
     static ModbusBus *s_instance;
 };

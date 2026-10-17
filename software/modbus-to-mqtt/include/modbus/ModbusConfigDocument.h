@@ -18,6 +18,9 @@ enum class ValidationReason : uint8_t {
     // A Wavin function (0x43/0x44) with an index, category or page outside
     // 0..255.
     InvalidWavinAddress,
+    // A bus baud rate below MODBUS_MIN_BAUD_RATE, or one that is not an
+    // integer.
+    InvalidBaudRate,
 };
 
 struct ValidationError {
@@ -71,6 +74,10 @@ const char *reasonToString(ValidationReason reason);
 
 // Human-readable explanation of a rejection, for API responses.
 const char *reasonDescription(ValidationReason reason);
+
+// Whether a rejection for this reason points at a datapoint, so that the
+// deviceIndex and datapointIndex of the ValidationError mean something.
+bool locatesDatapoint(ValidationReason reason);
 
 const char *warningToString(ParseWarning warning);
 

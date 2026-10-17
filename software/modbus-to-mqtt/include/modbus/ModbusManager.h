@@ -84,6 +84,8 @@ private:
 
     void drainCommands();
 
+    bool controlPending() const;
+
     void processCommand(Command &command);
 
     void quiesceForOtaOwned(uint32_t operationId, ModbusOperationResult &result);

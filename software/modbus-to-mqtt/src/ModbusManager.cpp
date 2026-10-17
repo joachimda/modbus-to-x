@@ -347,6 +347,11 @@ void ModbusManager::drainCommands() {
         if (command != nullptr) command->release();
     }
     for (size_t i = 0; i < MODBUS_COMMANDS_PER_CYCLE; ++i) {
+        // A control command that arrived while the previous command ran gets
+        // the next loop() call. The rest of this batch would otherwise hold
+        // the bus for one transaction each (a Wavin write with its retries
+        // takes about two seconds) before the quiesce could reject it.
+        if (controlPending()) break;
         Command *command = nullptr;
         if (xQueueReceive(_commandQueue, &command, 0) != pdTRUE) break;
         if (command != nullptr && command->tryStart()) {
@@ -355,6 +360,15 @@ void ModbusManager::drainCommands() {
         }
         if (command != nullptr) command->release();
     }
+}
+
+bool ModbusManager::controlPending() const {
+    if (_controlQueue != nullptr && uxQueueMessagesWaiting(_controlQueue) > 0U) return true;
+    // requestQuiesceForOta() closes ordinary admission before it posts the
+    // quiesce command, so a closed admission announces a control command
+    // until the owner has quiesced. It then stays closed until the resume,
+    // while the ordinary commands still queued are drained (and rejected).
+    return !_otaQuiesced && !_ordinaryAdmissionOpen.load(std::memory_order_acquire);
 }
 
 void ModbusManager::processCommand(Command &command) {
@@ -476,10 +490,17 @@ void ModbusManager::loop() {
         return;
     }
 
-    // This is the activation/control boundary. Polling below performs at most
-    // one RTU transaction, so a priority OTA command is observed before any
-    // subsequent transaction begins.
+    // This is the activation/control boundary. drainCommands() stops between
+    // queued commands once a control command is pending, and polling is
+    // skipped while one is, so after a priority OTA command arrives at most
+    // one transaction (with its retries) runs before the command is observed:
+    // the one in progress, whether a poll or a queued command. The control
+    // command is processed first on the next loop() call.
     drainCommands();
+    if (controlPending()) {
+        updateRuntimeSnapshot();
+        return;
+    }
 
     if (!_bus.isActive()) {
         IndicatorService::instance().setModbusConnected(false);

@@ -2,11 +2,30 @@
 
 #include <Arduino.h>
 #include <cstring>
+#include <esp_random.h>
 
 #include "Config.h"
 #include "ModbusMaster.h"
 #include "modbus/ModbusBus.h"
 #include "modbus/WavinFrame.h"
+
+static_assert(WAVIN_READ_ATTEMPTS >= 1U && WAVIN_WRITE_ATTEMPTS >= 1U, "at least one attempt");
+static_assert(WAVIN_RETRY_BACKOFF_MIN_MS <= WAVIN_RETRY_BACKOFF_MAX_MS, "backoff range");
+static_assert(WAVIN_SETTLE_QUIET_MS <= WAVIN_SETTLE_MAX_MS, "settle range");
+// The first attempt is always made, so by itself it must fit the transaction
+// budget even for the largest reply at the lowest baud rate the bus
+// configuration allows; otherwise a datapoint could become unreadable. Later
+// attempts are started only if they fit (transactWithRetry).
+static_assert(WavinFrame::attemptFits(
+                  0U, 0U,
+                  WavinFrame::wireTimeMs(WavinFrame::kMaxWriteRequestSize, MODBUS_MIN_BAUD_RATE,
+                                         WavinFrame::kMaxBitsPerCharacter)
+                      + WavinFrame::attemptTimeoutMs(WAVIN_TURNAROUND_MS, WavinFrame::kMaxRegisters,
+                                                     MODBUS_MIN_BAUD_RATE,
+                                                     WavinFrame::kMaxBitsPerCharacter),
+                  WAVIN_TRANSACTION_BUDGET_MS),
+              "one Wavin attempt with the largest reply at the lowest baud rate must fit the "
+              "transaction budget");
 
 WavinClient::WavinClient(ModbusBus &bus) : _bus(bus) {
 }
@@ -20,14 +39,9 @@ uint8_t WavinClient::readRegisters(const uint8_t slave, const uint8_t category, 
                                                 sizeof request);
     if (length == 0U) return ModbusMaster::ku8MBIllegalDataValue;
     // A wall display polling the same bus occasionally collides with a
-    // request. Reads have no side effects, so they are retried; writes are not.
-    uint8_t status = WavinFrame::kResponseTimedOut;
-    for (uint8_t attempt = 0U; attempt < WAVIN_READ_ATTEMPTS; ++attempt) {
-        status = transact(request, length, slave, WavinFrame::kReadFunction, count, words,
-                          wordCapacity, receivedCount);
-        if (status != WavinFrame::kResponseTimedOut && status != WavinFrame::kInvalidCrc) break;
-    }
-    return status;
+    // request. Reads have no side effects, so they are retried.
+    return transactWithRetry(WAVIN_READ_ATTEMPTS, request, length, slave, WavinFrame::kReadFunction,
+                             count, count, words, wordCapacity, receivedCount);
 }
 
 uint8_t WavinClient::writeRegisters(const uint8_t slave, const uint8_t category, const uint8_t index,
@@ -36,15 +50,86 @@ uint8_t WavinClient::writeRegisters(const uint8_t slave, const uint8_t category,
     const size_t length = WavinFrame::buildWrite(slave, category, index, page, words, count, request,
                                                  sizeof request);
     if (length == 0U) return ModbusMaster::ku8MBIllegalDataValue;
-    // The reply's content is not specified beyond its framing, so any word
-    // count is accepted and discarded.
+    // 0x44 sets registers to absolute values, so repeating a write whose reply
+    // was lost to a collision leaves the same result: it is retried like a
+    // read. The reply echoes the written data, but any word count up to
+    // kMaxRegisters is accepted, so the timeout allows for the largest.
     uint8_t ignored = 0U;
-    return transact(request, length, slave, WavinFrame::kWriteFunction, 0U, nullptr, 0U, ignored);
+    return transactWithRetry(WAVIN_WRITE_ATTEMPTS, request, length, slave, WavinFrame::kWriteFunction,
+                             0U, WavinFrame::kMaxRegisters, nullptr, 0U, ignored);
+}
+
+uint8_t WavinClient::transactWithRetry(const uint8_t attempts, const uint8_t *request,
+                                       const size_t requestLength, const uint8_t slave,
+                                       const uint8_t function, const uint8_t expectedWords,
+                                       const uint8_t replyWords, uint16_t *words,
+                                       const size_t wordCapacity, uint8_t &receivedCount) {
+    // An attempt waits for the controller's turnaround plus the time the
+    // largest reply takes on the wire. What it costs the budget also counts
+    // the request's own wire time.
+    const uint32_t baud = _bus.baudRate();
+    const uint8_t bitsPerCharacter = _bus.bitsPerCharacter();
+    const uint32_t timeoutMs = WavinFrame::attemptTimeoutMs(WAVIN_TURNAROUND_MS, replyWords, baud,
+                                                            bitsPerCharacter);
+    const uint32_t attemptMs = WavinFrame::wireTimeMs(requestLength, baud, bitsPerCharacter) + timeoutMs;
+    const uint32_t startedAt = millis();
+    for (uint8_t attempt = 1U;; ++attempt) {
+        uint32_t lastByteAt = 0U;
+        const uint8_t status = transact(request, requestLength, slave, function, expectedWords, words,
+                                        wordCapacity, receivedCount, timeoutMs, lastByteAt);
+        if (!isRetryable(status)) return status;
+        if (attempt < attempts) {
+            // The pause and a full attempt must still fit the transaction
+            // budget the OTA quiescence is sized for; otherwise this failure
+            // is final.
+            const uint32_t pauseMs = drawBackoffMs();
+            if (WavinFrame::attemptFits(millis() - startedAt, pauseMs, attemptMs,
+                                        WAVIN_TRANSACTION_BUDGET_MS)) {
+                delay(pauseMs);
+                continue;
+            }
+        }
+        // The last attempt failed. A reply still on its way, or the tail of
+        // the burst that swallowed the attempt, must not be taken for the
+        // reply to the next request. A late reply to an earlier attempt that
+        // lands during a retry answers the same request and is harmless, so
+        // only the final failure waits for the line to go quiet.
+        settleLine(lastByteAt);
+        return status;
+    }
+}
+
+void WavinClient::settleLine(const uint32_t lastByteAtMs) {
+    Stream &io = _bus.stream();
+    const uint32_t startedAt = millis();
+    uint32_t quietSince = lastByteAtMs;
+    // Measured from the attempt's last byte: after a timeout in which nothing
+    // arrived the line is already quiet and this returns at once. The cap
+    // keeps a display that never stops talking from holding the owner.
+    while (millis() - quietSince < WAVIN_SETTLE_QUIET_MS
+           && millis() - startedAt < WAVIN_SETTLE_MAX_MS) {
+        if (io.available() > 0) {
+            (void)io.read();
+            quietSince = millis();
+            continue;
+        }
+        delay(1);
+    }
+}
+
+uint32_t WavinClient::drawBackoffMs() {
+    const uint32_t span = WAVIN_RETRY_BACKOFF_MAX_MS - WAVIN_RETRY_BACKOFF_MIN_MS + 1U;
+    return WAVIN_RETRY_BACKOFF_MIN_MS + esp_random() % span;
+}
+
+bool WavinClient::isRetryable(const uint8_t status) {
+    return status == WavinFrame::kResponseTimedOut || status == WavinFrame::kInvalidCrc;
 }
 
 uint8_t WavinClient::transact(const uint8_t *request, const size_t requestLength, const uint8_t slave,
                               const uint8_t function, const uint8_t expectedWords, uint16_t *words,
-                              const size_t wordCapacity, uint8_t &receivedCount) {
+                              const size_t wordCapacity, uint8_t &receivedCount,
+                              const uint32_t timeoutMs, uint32_t &lastByteAtMs) {
     Stream &io = _bus.stream();
     // Bytes left over from another master's traffic would be mistaken for
     // the start of our reply.
@@ -58,13 +143,15 @@ uint8_t WavinClient::transact(const uint8_t *request, const size_t requestLength
     size_t received = 0U;
     bool crcMismatch = false;
     const uint32_t startedAt = millis();
-    while (millis() - startedAt < WAVIN_RESPONSE_TIMEOUT_MS) {
+    lastByteAtMs = startedAt;
+    while (millis() - startedAt < timeoutMs) {
         if (io.available() <= 0) {
             delay(1);
             continue;
         }
         const int value = io.read();
         if (value < 0) continue;
+        lastByteAtMs = millis();
         if (received == sizeof buffer) {
             std::memmove(buffer, buffer + 1, received - 1U);
             --received;

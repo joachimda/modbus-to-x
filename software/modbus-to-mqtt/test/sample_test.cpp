@@ -1,4 +1,4 @@
-// Native-host tests for BodyAccumulator (issue #005).
+// Native-host tests for BodyAccumulator and other platform-neutral units.
 //
 // BodyAccumulator has no Arduino dependencies, so we include its
 // translation unit directly to avoid configuring test_build_src /

@@ -4,15 +4,15 @@
 #include <cstddef>
 #include <cstdint>
 
-class ModbusBus;
+class Rs485Port;
 
 // Wavin AHC 9000 transactions (0x43 read, 0x44 write) over the shared RS-485
-// bus. ModbusMaster only speaks the standard function codes, so these frames
-// are written and parsed here (see WavinFrame). The caller must hold the bus
-// guard. Returns a ModbusMaster-compatible status code.
+// port. ModbusMaster only speaks the standard function codes, so these
+// frames are written and parsed here (see WavinFrame). The caller must hold
+// the port's guard. Returns a ModbusMaster-compatible status code.
 class WavinClient {
 public:
-    explicit WavinClient(ModbusBus &bus);
+    explicit WavinClient(Rs485Port &port);
 
     // On success receivedCount holds the number of registers the reply
     // carried, which may be fewer than count.
@@ -36,7 +36,9 @@ private:
     // if it still fits WAVIN_TRANSACTION_BUDGET_MS. expectedWords is the
     // reply word count the scanner accepts (0 for any); replyWords bounds
     // the reply the per-attempt timeout must allow for. After a final
-    // timeout or CRC error the line is left quiet (settleLine).
+    // timeout or CRC error the line is left quiet (WAVIN_SETTLE_QUIET_MS,
+    // at most WAVIN_SETTLE_MAX_MS), so a late reply or the tail of another
+    // master's burst is not taken for the reply to the next request.
     uint8_t transactWithRetry(uint8_t attempts, const uint8_t *request, size_t requestLength,
                               uint8_t slave, uint8_t function, uint8_t expectedWords,
                               uint8_t replyWords, uint16_t *words, size_t wordCapacity,
@@ -50,13 +52,7 @@ private:
                      size_t wordCapacity, uint8_t &receivedCount, uint32_t timeoutMs,
                      uint32_t &lastByteAtMs);
 
-    // Discards input until the line has been quiet for WAVIN_SETTLE_QUIET_MS
-    // since the last byte (at most WAVIN_SETTLE_MAX_MS), so a late reply or
-    // the tail of another master's burst is not taken for the reply to the
-    // next request.
-    void settleLine(uint32_t lastByteAtMs);
-
-    ModbusBus &_bus;
+    Rs485Port &_port;
 };
 
 #endif

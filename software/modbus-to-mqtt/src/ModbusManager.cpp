@@ -533,11 +533,11 @@ void ModbusManager::loop() {
 bool ModbusManager::readModbusDevice(ModbusDevice &device,
                                      const std::vector<ModbusDatapoint *> &dueDatapoints,
                                      const uint32_t now) {
-    auto guard = _bus.acquire();
+    auto guard = _bus.port().acquire();
     if (!guard) return false;
 
     ModbusMaster &node = _bus.node();
-    node.begin(device.slaveId, _bus.stream());
+    node.begin(device.slaveId, _bus.port().stream());
     bool successOnDevice = false;
     for (auto *datapointPointer : dueDatapoints) {
         if (datapointPointer == nullptr) continue;
@@ -554,7 +554,7 @@ bool ModbusManager::readModbusDevice(ModbusDevice &device,
                 // The controller may answer with fewer registers than asked
                 // for; only those received are decoded.
                 uint8_t received = 0U;
-                result = WavinClient(_bus).readRegisters(device.slaveId, datapoint.category,
+                result = WavinClient(_bus.port()).readRegisters(device.slaveId, datapoint.category,
                                                          static_cast<uint8_t>(datapoint.address),
                                                          datapoint.page, wordCount, words.data(),
                                                          words.size(), received);
@@ -606,7 +606,7 @@ bool ModbusManager::readModbusDevice(ModbusDevice &device,
                                + describeAddress(datapoint.function, datapoint.address,
                                                  datapoint.category, datapoint.page)
                                + ", code=" + String(result) + " (" + statusToString(result) + ")"
-                               + _bus.dumpRx()).c_str());
+                               + _bus.port().dumpRx()).c_str());
         }
         ModbusPollScheduler::scheduleNext(datapoint, now);
         return successOnDevice;
@@ -769,15 +769,15 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
         if (result.dataType == TEXT) result.dataType = UINT16;
     }
 
-    auto guard = _bus.acquire();
+    auto guard = _bus.port().acquire();
     if (!guard) {
         result.operation = ModbusOperationResult::Success;
         result.busStatus = 0xE4U;
         return result;
     }
-    _bus.enableCapture(true);
+    _bus.port().enableCapture(true);
     ModbusMaster &node = _bus.node();
-    node.begin(result.slaveId, _bus.stream());
+    node.begin(result.slaveId, _bus.port().stream());
     const uint16_t effectiveLength = request.length;
     // Wavin replies are parsed here rather than by ModbusMaster, and may
     // carry fewer registers than requested.
@@ -803,13 +803,13 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
             result.busStatus = node.writeMultipleRegisters(request.address, wordCount);
             break;
         case WAVIN_READ:
-            result.busStatus = WavinClient(_bus).readRegisters(
+            result.busStatus = WavinClient(_bus.port()).readRegisters(
                 result.slaveId, wavinCategory, static_cast<uint8_t>(request.address), wavinPage,
                 static_cast<uint8_t>(effectiveLength), wavinWords.data(), wavinWords.size(),
                 wavinReceived);
             break;
         case WAVIN_WRITE:
-            result.busStatus = WavinClient(_bus).writeRegisters(
+            result.busStatus = WavinClient(_bus.port()).writeRegisters(
                 result.slaveId, wavinCategory, static_cast<uint8_t>(request.address), wavinPage,
                 words.data(), wordCount);
             break;
@@ -832,7 +832,7 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
         result.count = wordCount;
         for (uint16_t i = 0; i < wordCount; ++i) result.words[i] = words[i];
     }
-    result.rxDump = _bus.dumpRx();
+    result.rxDump = _bus.port().dumpRx();
     result.operation = ModbusOperationResult::Success;
     if (result.busStatus != ModbusMaster::ku8MBSuccess) incrementBusErrorCount();
     return result;
@@ -856,7 +856,7 @@ void ModbusManager::updateRuntimeSnapshot() {
     size_t datapointCount = 0U;
     for (const auto &device : _modbusRoot.devices) datapointCount += device.datapoints.size();
     snapshot.datapointCount = datapointCount;
-    snapshot.errorCount = _bus.errorCount();
+    snapshot.errorCount = _bus.port().errorCount();
     snapshot.ownerViolationCount = _ownerViolationCount.load(std::memory_order_relaxed);
     snapshot.commandFailureCount = _commandFailureCount.load(std::memory_order_relaxed);
     snapshot.commandQueueDepth = (_commandQueue != nullptr ? uxQueueMessagesWaiting(_commandQueue) : 0U)
@@ -877,7 +877,7 @@ void ModbusManager::recordOwnerViolation() {
 }
 
 void ModbusManager::incrementBusErrorCount() {
-    _bus.incrementError();
+    _bus.port().incrementError();
 }
 
 const char *ModbusManager::statusToString(const uint8_t code) {

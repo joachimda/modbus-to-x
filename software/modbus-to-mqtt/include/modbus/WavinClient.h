@@ -4,15 +4,16 @@
 #include <cstddef>
 #include <cstdint>
 
-class Rs485Port;
+class RtuLink;
 
 // Wavin AHC 9000 transactions (0x43 read, 0x44 write) over the shared RS-485
 // port. ModbusMaster only speaks the standard function codes, so these
-// frames are written and parsed here (see WavinFrame). The caller must hold
-// the port's guard. Returns a ModbusMaster-compatible status code.
+// frames are built and decoded here (see WavinFrame) and carried by
+// RtuTransport with the Wavin retry policy from Config.h. The caller must
+// hold the port's guard. Returns a ModbusMaster-compatible status code.
 class WavinClient {
 public:
-    explicit WavinClient(Rs485Port &port);
+    explicit WavinClient(RtuLink &link);
 
     // On success receivedCount holds the number of registers the reply
     // carried, which may be fewer than count.
@@ -24,35 +25,15 @@ public:
                            const uint16_t *words, uint8_t count);
 
 private:
-    // Timeouts and CRC errors (typically a collision with another master);
-    // exception replies from the controller are final.
-    static bool isRetryable(uint8_t status);
+    // Runs the request through the transport and decodes the reply's
+    // registers. replyWords bounds the reply the scanner accepts and the
+    // timeout allows for: the count asked for by a read, kMaxRegisters for
+    // a write, whose reply may echo any count.
+    uint8_t exchange(const uint8_t *request, size_t requestLength, uint8_t slave,
+                     uint8_t function, uint8_t replyWords, uint8_t attempts, uint16_t *words,
+                     size_t wordCapacity, uint8_t &receivedCount);
 
-    // Random pause before a retry, WAVIN_RETRY_BACKOFF_MIN_MS..MAX_MS.
-    static uint32_t drawBackoffMs();
-
-    // Sends the request up to `attempts` times while the result is a timeout
-    // or CRC error, pausing drawBackoffMs() in between; a retry starts only
-    // if it still fits WAVIN_TRANSACTION_BUDGET_MS. expectedWords is the
-    // reply word count the scanner accepts (0 for any); replyWords bounds
-    // the reply the per-attempt timeout must allow for. After a final
-    // timeout or CRC error the line is left quiet (WAVIN_SETTLE_QUIET_MS,
-    // at most WAVIN_SETTLE_MAX_MS), so a late reply or the tail of another
-    // master's burst is not taken for the reply to the next request.
-    uint8_t transactWithRetry(uint8_t attempts, const uint8_t *request, size_t requestLength,
-                              uint8_t slave, uint8_t function, uint8_t expectedWords,
-                              uint8_t replyWords, uint16_t *words, size_t wordCapacity,
-                              uint8_t &receivedCount);
-
-    // One request and the wait for its reply, for at most timeoutMs.
-    // lastByteAtMs is set to the millis() of the last byte received, or of
-    // the end of the transmission when nothing arrived.
-    uint8_t transact(const uint8_t *request, size_t requestLength, uint8_t slave,
-                     uint8_t function, uint8_t expectedWords, uint16_t *words,
-                     size_t wordCapacity, uint8_t &receivedCount, uint32_t timeoutMs,
-                     uint32_t &lastByteAtMs);
-
-    Rs485Port &_port;
+    RtuLink &_link;
 };
 
 #endif

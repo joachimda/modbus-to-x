@@ -2,6 +2,8 @@
 
 #include <ArduinoJson.h>
 
+#include <algorithm>
+
 #include "modbus/ModbusFunctionUtils.h"
 #include "modbus/ModbusManager.h"
 #include "modbus/ModbusMqttWriteCore.h"
@@ -77,7 +79,7 @@ MqttBridgePlan ModbusMqttBridge::buildBridgePlan(const ConfigurationRoot &root,
                     request.hasWavinAddress = isWavinFunction(command.function);
                     request.length = command.registerCount;
                     request.writeValue = command.coilValue ? 1U : 0U;
-                    request.writeWords = command.words;
+                    std::copy(command.words.begin(), command.words.end(), request.writeWords.begin());
                     request.writeCount = command.wordCount;
                     request.hasWriteValue = true;
                     request.expectedGeneration = command.modbusGeneration;

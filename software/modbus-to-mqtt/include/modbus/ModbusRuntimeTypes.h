@@ -62,8 +62,9 @@ struct ModbusCommandRequest {
     // FC5: coil state, non-zero switches the coil on (MQTT command path).
     uint16_t writeValue{0U};
     // FC6/FC16/0x44: register words already encoded for the datapoint's data type
-    // and word order (MQTT command path).
-    std::array<uint16_t, ModbusValueCodec::kMaxWords> writeWords{};
+    // and word order (MQTT command path), or raw words for a 0x44 write of up
+    // to WavinFrame::kMaxRegisters registers (HTTP execute `values`).
+    std::array<uint16_t, WavinFrame::kMaxRegisters> writeWords{};
     uint8_t writeCount{0U};
     // HTTP execute path: the value as text, converted by the owner with the
     // MQTT command grammar. FC5: 0/1/false/true. FC6/FC16 (writeCount 0):

@@ -245,7 +245,7 @@ See [OTA lifecycle and recovery](OTA_LIFECYCLE.md) and the [HTTP API request con
 ```
 
 ### Hardware Documentation
-Detailed hardware notes, KiCad sources, datasheets, and per-revision release notes are kept in [`hardware/`](hardware/). Start with the latest folder under [`hardware/releases/`](hardware/releases/) (for example, `v0.2-alpha`) for the current board spin and consult the KiCad project in [`hardware/kicad_files/`](hardware/kicad_files/) for schematics, layout, and fabrication outputs.
+Detailed hardware notes, KiCad sources, datasheets, and per-revision release notes are kept in [`hardware/`](hardware/). Start with the latest folder under [`hardware/releases/`](hardware/releases/) (for example, `v0.2-alpha`) for the current board spin and consult the KiCad project in [`hardware/kicad_files/`](hardware/kicad_files/) for schematics, layout, and fabrication outputs. The board-ID resistors and the `HW_REV` text variable that marks each revision are described in [`hardware/BOARD-ID.md`](hardware/BOARD-ID.md).
 
 ### Software Documentation
 The firmware entry point, reusable libraries, and static assets live under [`software/modbus-to-mqtt/`](software/modbus-to-mqtt/). Key references:

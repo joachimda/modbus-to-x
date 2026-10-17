@@ -9061,16 +9061,6 @@
 	)
 	(wire
 		(pts
-			(xy 60.96 86.995) (xy 60.96 90.17)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "227f2077-3d9e-4f4e-8ec9-689253933e32")
-	)
-	(wire
-		(pts
 			(xy 25.4 161.29) (xy 25.4 160.02)
 		)
 		(stroke
@@ -9438,6 +9428,16 @@
 			(type default)
 		)
 		(uuid "70c95208-f6a6-47d4-b45f-47c6c63c2e3d")
+	)
+	(wire
+		(pts
+			(xy 60.96 88.9) (xy 60.96 90.17)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "72d0a30e-e017-4b96-9837-d8c74211020b")
 	)
 	(wire
 		(pts
@@ -9821,16 +9821,6 @@
 	)
 	(wire
 		(pts
-			(xy 41.91 82.55) (xy 41.91 83.82)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "bcece8b0-746e-4d62-8874-8a64d97eb0bf")
-	)
-	(wire
-		(pts
 			(xy 140.97 154.94) (xy 138.43 154.94)
 		)
 		(stroke
@@ -10121,6 +10111,16 @@
 	)
 	(wire
 		(pts
+			(xy 41.91 82.55) (xy 41.91 83.82)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f0030afd-5a33-4a44-a77a-67d03afdbd42")
+	)
+	(wire
+		(pts
 			(xy 181.61 86.36) (xy 173.99 86.36)
 		)
 		(stroke
@@ -10318,16 +10318,6 @@
 			(justify right bottom)
 		)
 		(uuid "21e1bdeb-3cc1-4608-a525-93001f8b18cb")
-	)
-	(label "VDD33"
-		(at 60.96 86.995 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "2408a27f-b557-4363-b54a-6ccc2a3faacc")
 	)
 	(label "EN"
 		(at 86.36 185.42 0)
@@ -10619,16 +10609,6 @@
 		)
 		(uuid "9ffe57a4-8e68-43f5-994c-c55916b6bfa7")
 	)
-	(label "VDD33"
-		(at 151.13 25.4 90)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "a46346fe-00d0-46d2-ac50-2c81e8ebb442")
-	)
 	(label "USB_DTR"
 		(at 179.07 58.42 0)
 		(effects
@@ -10668,16 +10648,6 @@
 			(justify left bottom)
 		)
 		(uuid "c54657df-9dc2-4208-80fd-35eebcbc2550")
-	)
-	(label "VDD33"
-		(at 41.91 82.55 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "c5c3df6e-ded4-4472-8bc5-480ed2da865e")
 	)
 	(label "USB_TXD"
 		(at 179.07 40.64 0)
@@ -12133,6 +12103,83 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "R7")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:VDD")
+		(at 41.91 82.55 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "25486892-fbce-45ef-9f25-b520ecde8e0a")
+		(property "Reference" "#PWR05"
+			(at 41.91 86.36 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "VDD33"
+			(at 41.91 78.74 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 41.91 82.55 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 41.91 82.55 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"VDD\""
+			(at 41.91 82.55 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "56f221b3-853d-47bc-83a0-5779e6573693")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "#PWR05")
 					(unit 1)
 				)
 			)
@@ -14317,6 +14364,83 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "C24")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:VDD")
+		(at 60.96 88.9 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "6ff1cab4-bb3d-4d0a-87a0-3fea8547ae0a")
+		(property "Reference" "#PWR019"
+			(at 60.96 92.71 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "VDD33"
+			(at 60.96 85.09 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 60.96 88.9 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 60.96 88.9 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"VDD\""
+			(at 60.96 88.9 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "1a10dedd-98d7-4bca-b795-b28455bb49c7")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "#PWR019")
 					(unit 1)
 				)
 			)
@@ -16980,6 +17104,83 @@
 			(project "modbus-to-x"
 				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
 					(reference "C3")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:VDD")
+		(at 151.13 25.4 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "c014d637-d8a5-4bc7-a987-6c13e92619fe")
+		(property "Reference" "#PWR06"
+			(at 151.13 29.21 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "VDD33"
+			(at 151.13 21.336 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 151.13 25.4 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 151.13 25.4 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"VDD\""
+			(at 151.13 25.4 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "c9e73e40-c56f-4ba4-b056-8009ff47ee38")
+		)
+		(instances
+			(project "modbus-to-x"
+				(path "/d5b026e9-d5a5-415b-84cb-4c68355c0f8f"
+					(reference "#PWR06")
 					(unit 1)
 				)
 			)

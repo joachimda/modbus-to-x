@@ -348,7 +348,7 @@
 			)
 		)
 		(property "Value" "3983"
-			(at 0 0 0)
+			(at 1.27 -3.81 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -358,7 +358,7 @@
 			)
 		)
 		(property "Footprint" "project_footprints:SW_3983_ADA"
-			(at 0 0 0)
+			(at 4.826 6.858 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(hide yes)
@@ -370,7 +370,7 @@
 			)
 		)
 		(property "Datasheet" "3983"
-			(at 0 0 0)
+			(at 1.27 -3.81 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(hide yes)
@@ -483,7 +483,9 @@
 					(type none)
 				)
 			)
-			(pin unspecified line
+		)
+		(symbol "3983_1_1"
+			(pin passive line
 				(at 0 0 0)
 				(length 2.54)
 				(name "1"
@@ -501,7 +503,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin passive line
 				(at 15.24 0 180)
 				(length 2.54)
 				(name "2"
@@ -4082,7 +4084,9 @@
 					(type none)
 				)
 			)
-			(pin unspecified line
+		)
+		(symbol "PESD0402-140_1_1"
+			(pin passive line
 				(at 12.7 0 180)
 				(length 2.54)
 				(name ""
@@ -4100,7 +4104,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin passive line
 				(at 0 0 0)
 				(length 2.54)
 				(name ""
@@ -4291,7 +4295,7 @@
 					(type none)
 				)
 			)
-			(pin unspecified line
+			(pin passive line
 				(at 0 0 0)
 				(length 2.54)
 				(name ""
@@ -4309,7 +4313,7 @@
 					)
 				)
 			)
-			(pin unspecified line
+			(pin passive line
 				(at 7.62 0 180)
 				(length 2.54)
 				(name ""

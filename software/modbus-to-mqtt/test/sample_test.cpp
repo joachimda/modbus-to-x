@@ -3995,8 +3995,12 @@ void test_wavin_frame_builds_read_and_write_requests(void) {
     TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildRead(1U, 1U, 4U, 0U, WavinFrame::kMaxRegisters + 1U,
                                                      frame, sizeof frame));
     TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildRead(1U, 1U, 4U, 0U, 1U, frame, 7U));
-    const uint16_t five[5] = {};
-    TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildWrite(1U, 2U, 0U, 3U, five, 5U, frame, sizeof frame));
+    const uint16_t tooMany[WavinFrame::kMaxRegisters + 1U] = {};
+    TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildWrite(1U, 2U, 0U, 3U, tooMany, WavinFrame::kMaxRegisters + 1U,
+                                                      frame, sizeof frame));
+    TEST_ASSERT_EQUAL_UINT(8U + 2U * WavinFrame::kMaxRegisters,
+                           WavinFrame::buildWrite(1U, 6U, 0U, 3U, tooMany, WavinFrame::kMaxRegisters,
+                                                  frame, sizeof frame));
     TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildWrite(1U, 2U, 0U, 3U, &value, 1U, frame, 9U));
 
     // The shapes the scanner is given: a reply carries at most the requested
@@ -4012,6 +4016,76 @@ void test_wavin_frame_builds_read_and_write_requests(void) {
                           static_cast<int>(WavinFrame::peerRequestShape(0x44U).kind));
     TEST_ASSERT_EQUAL_INT(static_cast<int>(RtuFrame::FrameShape::Kind::None),
                           static_cast<int>(WavinFrame::peerRequestShape(0x03U).kind));
+}
+
+void test_wavin_frame_writes_whole_clock_page(void) {
+    using RtuFrame::ScanStatus;
+    const RtuFrame::FrameShape peerWrite = WavinFrame::peerRequestShape(0x44U);
+    const RtuFrame::FrameShape anyWrite = WavinFrame::replyShape(WavinFrame::kMaxRegisters);
+    // The clock page (category 5) is only accepted whole: 2026-10-17,
+    // Saturday (5, Monday is 0), 14:05:30 in one 7-register write.
+    const uint16_t clock[7] = {2026U, 10U, 17U, 5U, 14U, 5U, 30U};
+    uint8_t frame[WavinFrame::kMaxWriteRequestSize] = {};
+    TEST_ASSERT_EQUAL_UINT(22U, WavinFrame::buildWrite(1U, 5U, 0U, 0U, clock, 7U, frame, sizeof frame));
+    const uint8_t expected[] = {0x01, 0x44, 0x05, 0x00, 0x00, 0x07, 0x07, 0xEA, 0x00, 0x0A, 0x00,
+                                0x11, 0x00, 0x05, 0x00, 0x0E, 0x00, 0x05, 0x00, 0x1E, 0x87, 0x16};
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, frame, sizeof expected);
+
+    // The controller echoes the written data.
+    const uint8_t reply[] = {0x01, 0x44, 0x0E, 0x07, 0xEA, 0x00, 0x0A, 0x00, 0x11, 0x00,
+                             0x05, 0x00, 0x0E, 0x00, 0x05, 0x00, 0x1E, 0xB1, 0x3B};
+    uint16_t words[WavinFrame::kMaxRegisters] = {};
+    const RtuFrame::ScanResult scan = RtuFrame::scan(reply, sizeof reply, 1U, 0x44U, anyWrite, peerWrite);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(scan.status));
+    TEST_ASSERT_EQUAL_UINT(sizeof reply, scan.frameLength);
+    TEST_ASSERT_EQUAL_UINT8(7U, WavinFrame::decodeReply(reply, scan.frameLength, words,
+                                                        WavinFrame::kMaxRegisters));
+    TEST_ASSERT_EQUAL_HEX16_ARRAY(clock, words, 7U);
+
+    // Behind the same write sent by the display, the reply is still found.
+    uint8_t stream[sizeof expected + sizeof reply];
+    std::memcpy(stream, expected, sizeof expected);
+    std::memcpy(stream + sizeof expected, reply, sizeof reply);
+    std::memset(words, 0, sizeof words);
+    const RtuFrame::LocateResult located =
+        RtuFrame::locate(stream, sizeof stream, 1U, 0x44U, anyWrite, peerWrite);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(located.status));
+    TEST_ASSERT_EQUAL_UINT(sizeof expected, located.dropCount);
+    TEST_ASSERT_EQUAL_UINT(sizeof expected, located.frameOffset);
+    TEST_ASSERT_EQUAL_UINT(sizeof reply, located.frameLength);
+    TEST_ASSERT_EQUAL_UINT8(7U, WavinFrame::decodeReply(stream + located.frameOffset, located.frameLength,
+                                                        words, WavinFrame::kMaxRegisters));
+    TEST_ASSERT_EQUAL_HEX16_ARRAY(clock, words, 7U);
+}
+
+void test_wavin_frame_parses_word_lists(void) {
+    uint16_t words[WavinFrame::kMaxRegisters + 1U] = {};
+    uint8_t count = 0U;
+    TEST_ASSERT_TRUE(WavinFrame::parseWordList("2026,10, 17 ,0x5,0X0e,0,65535", words, 23U, count));
+    TEST_ASSERT_EQUAL_UINT8(7U, count);
+    const uint16_t expected[7] = {2026U, 10U, 17U, 5U, 14U, 0U, 65535U};
+    TEST_ASSERT_EQUAL_HEX16_ARRAY(expected, words, 7U);
+    TEST_ASSERT_TRUE(WavinFrame::parseWordList("0xffff", words, 23U, count));
+    TEST_ASSERT_EQUAL_UINT8(1U, count);
+    TEST_ASSERT_EQUAL_HEX16(0xFFFFU, words[0]);
+
+    // Rejected: empty entries, other text, values out of range, and more
+    // words than kMaxRegisters or the capacity.
+    const char *const rejected[] = {"", " ", "1,", ",1", "1,,2", "1;2", "-1", "+1", "1.5", "0x",
+                                    "0x10000", "65536", "1 2", "abc"};
+    for (const char *text : rejected) {
+        count = 9U;
+        TEST_ASSERT_FALSE_MESSAGE(WavinFrame::parseWordList(text, words, 23U, count), text);
+        TEST_ASSERT_EQUAL_UINT8(0U, count);
+    }
+    char list[128] = "0";
+    for (uint8_t i = 1U; i < 23U; ++i) std::strcat(list, ",0");
+    TEST_ASSERT_FALSE(WavinFrame::parseWordList(list, words, 23U, count));
+    list[std::strlen(list) - 2U] = '\0';
+    TEST_ASSERT_TRUE(WavinFrame::parseWordList(list, words, 23U, count));
+    TEST_ASSERT_EQUAL_UINT8(22U, count);
+    TEST_ASSERT_FALSE(WavinFrame::parseWordList("1,2,3", words, 2U, count));
+    TEST_ASSERT_FALSE(WavinFrame::parseWordList(nullptr, words, 23U, count));
 }
 
 void test_rtu_frame_scans_replies_and_exceptions(void) {
@@ -4699,8 +4773,9 @@ void test_wavin_client_reads_and_writes_through_the_transport(void) {
                            client.readRegisters(1U, 1U, 4U, 0U, WavinFrame::kMaxRegisters + 1U, words, 4U,
                                                 received));
     TEST_ASSERT_EQUAL_UINT8(0U, received);
-    const uint16_t five[5] = {};
-    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue, client.writeRegisters(1U, 2U, 0U, 3U, five, 5U));
+    const uint16_t tooMany[WavinFrame::kMaxRegisters + 1U] = {};
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue,
+                           client.writeRegisters(1U, 2U, 0U, 3U, tooMany, WavinFrame::kMaxRegisters + 1U));
     TEST_ASSERT_EQUAL_UINT(3U, link.sent.size());
 }
 
@@ -4942,6 +5017,8 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_ota_ui_filesystem_gate_prevents_access_until_safe_remount);
     RUN_TEST(test_rtu_frame_crc_matches_controller_replies);
     RUN_TEST(test_wavin_frame_builds_read_and_write_requests);
+    RUN_TEST(test_wavin_frame_writes_whole_clock_page);
+    RUN_TEST(test_wavin_frame_parses_word_lists);
     RUN_TEST(test_rtu_frame_scans_replies_and_exceptions);
     RUN_TEST(test_rtu_frame_locates_reply_among_other_traffic);
     RUN_TEST(test_rtu_timing_scales_with_baud_and_fits_budget);

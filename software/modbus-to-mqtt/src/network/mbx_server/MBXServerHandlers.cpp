@@ -1649,6 +1649,21 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
     String sValue;
     if (req->hasParam("value")) sValue = req->getParam("value")->value();
 
+    // A Wavin 0x44 write can instead take `values`: raw register words written
+    // in one frame from addr on, for pages the controller only accepts whole
+    // (clock, schedules). They bypass the datapoint's encoding.
+    String sValues;
+    const bool hasValues = getParam("values", sValues);
+    std::array<uint16_t, WavinFrame::kMaxRegisters> rawWords{};
+    uint8_t rawCount = 0U;
+    if (hasValues
+        && (func != WAVIN_WRITE || sValue.length() > 0
+            || !WavinFrame::parseWordList(sValues.c_str(), rawWords.data(), rawWords.size(), rawCount)
+            || addr + rawCount - 1L > 0xFFL)) {
+        req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
+        return;
+    }
+
     // Execute against Modbus
     JsonDocument doc;
     ModbusManager *mb = getModbusManager();
@@ -1659,9 +1674,11 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
         return;
     }
 
-    const bool hasWriteVal = sValue.length() > 0;
+    const bool hasWriteVal = sValue.length() > 0 || hasValues;
 
-    if (func == 5 || isSingleRegisterWriteCode(static_cast<int>(func))) {
+    if (hasValues) {
+        len = rawCount;
+    } else if (func == 5 || isSingleRegisterWriteCode(static_cast<int>(func))) {
         len = 1;  // single writes; FC16 writes the data type's register width
     }
 
@@ -1677,9 +1694,11 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
     command.page = static_cast<uint8_t>(page);
     command.hasWavinAddress = hasWavinAddress;
     command.writeText = sValue;
+    command.writeWords = rawWords;
+    command.writeCount = rawCount;
     command.hasWriteValue = hasWriteVal;
     if (!scheduleRuntimeJob(req,
-            [mb, command, devId, dpId, sValue, func, addr, len, hasWavinAddress, category, page]
+            [mb, command, devId, dpId, sValue, sValues, func, addr, len, hasWavinAddress, category, page]
             (RuntimeResponse &runtimeResponse) {
                 const ModbusCommandResult result = mb->executeCommand(command);
                 JsonDocument response;
@@ -1701,6 +1720,7 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
                     response["request"]["page"] = page;
                 }
                 if (sValue.length()) response["request"]["value"] = sValue;
+                if (sValues.length()) response["request"]["values"] = sValues;
                 if (result.writeRejection != ModbusMqttWriteCore::RejectionReason::None) {
                     const char *reason = ModbusMqttWriteCore::rejectionReasonToString(result.writeRejection);
                     response["ok"] = false;

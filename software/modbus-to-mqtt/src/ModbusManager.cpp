@@ -1,5 +1,6 @@
 #include "modbus/ModbusManager.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <new>
@@ -727,7 +728,7 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
     // Register writes carry pre-encoded words (MQTT path) or an engineering
     // value to encode with the saved datapoint's data type, scale and word
     // order (HTTP path). A value that cannot be encoded never reaches the bus.
-    std::array<uint16_t, ModbusValueCodec::kMaxWords> words = request.writeWords;
+    std::array<uint16_t, WavinFrame::kMaxRegisters> words = request.writeWords;
     uint8_t wordCount = request.writeCount;
     if (registerWrite) {
         if (wordCount == 0U) {
@@ -753,11 +754,14 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
                 result.writeRejection = conversion.rejection;
                 return result;
             }
-            words = conversion.words;
+            std::copy(conversion.words.begin(), conversion.words.end(), words.begin());
             wordCount = conversion.wordCount;
         }
+        // A 0x44 write given as raw words (HTTP execute `values`) may span
+        // several registers, e.g. a whole clock page; an encoded value is one.
+        const bool rawWavinWords = request.function == WAVIN_WRITE && request.writeCount > 0U;
         if (wordCount == 0U || wordCount > words.size()
-            || (isSingleRegisterWriteCode(request.function) && wordCount != 1U)) {
+            || (isSingleRegisterWriteCode(request.function) && !rawWavinWords && wordCount != 1U)) {
             result.operation = ModbusOperationResult::Success;
             result.busStatus = ModbusMaster::ku8MBIllegalDataValue;
             result.writeRejection = ModbusMqttWriteCore::RejectionReason::UnsupportedDataType;

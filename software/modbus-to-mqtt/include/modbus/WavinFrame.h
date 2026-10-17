@@ -27,7 +27,9 @@ constexpr uint8_t kWriteFunction = 0x44;
 // such replies are accepted and their actual count reported.
 constexpr uint8_t kMaxRegisters = 22U;
 constexpr size_t kReadRequestSize = 8U;
-constexpr size_t kMaxWriteRequestSize = 8U + 2U * 4U;
+// Largest write: header (6) + data + CRC (2). Whole pages that must be written
+// in one frame (clock, schedules) fit.
+constexpr size_t kMaxWriteRequestSize = 8U + 2U * kMaxRegisters;
 // Largest reply: header (3) + data + CRC (2).
 constexpr size_t kMaxResponseSize = 3U + 2U * kMaxRegisters + 2U;
 
@@ -46,6 +48,12 @@ size_t buildRead(uint8_t slave, uint8_t category, uint8_t index, uint8_t page, u
                  uint8_t *out, size_t capacity);
 size_t buildWrite(uint8_t slave, uint8_t category, uint8_t index, uint8_t page,
                   const uint16_t *words, uint8_t count, uint8_t *out, size_t capacity);
+
+// Parses a comma-separated list of register words, each decimal or 0x-prefixed
+// hex in 0..65535 (surrounding spaces allowed), into words. Returns false,
+// leaving count 0, for an empty entry, other text, a value out of range, or
+// more than min(capacity, kMaxRegisters) words.
+bool parseWordList(const char *text, uint16_t *words, size_t capacity, uint8_t &count);
 
 enum class ScanStatus : uint8_t {
     // Not enough bytes yet for a complete frame.

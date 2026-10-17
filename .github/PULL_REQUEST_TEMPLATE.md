@@ -21,7 +21,7 @@ delete the ones that do not. All commands below run from software/modbus-to-mqtt
 - [ ] `pio run -e mbx-custom-board-dev -t buildfs` builds (required when `data/` changed)
 - [ ] `pio test -e native-test` (N/N pass)
 - [ ] `node --test test/web/*.test.mjs` (N/N pass)
-- [ ] Web UI clicked through in a browser, on the device or via `python scripts/run_test_webserver.py`
+- [ ] Web UI clicked through in a browser, on the device or via `python3 scripts/run_test_webserver.py`
 - [ ] Hardware: board revision, Modbus device and bus settings (baud, parity, slave ID), serial or OTA flash, and what was exercised
 
 Not tested:

@@ -94,7 +94,7 @@ The same workflow can also be started manually (Actions → "Release OTA" → "R
 The `scripts/run_test_webserver.py` helper serves the `data/` directory with mocked API responses so you can iterate on the HTML/JS bundle without flashing the device:
 ```bash
 cd software/modbus-to-mqtt
-python scripts/run_test_webserver.py
+python3 scripts/run_test_webserver.py
 # Visit http://127.0.0.1:8000
 ```
 It injects correct MIME types, disables caching, and emulates the SPA's system, OTA, and administrative API behavior, including mutation-request protection.

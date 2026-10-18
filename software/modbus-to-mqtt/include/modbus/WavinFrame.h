@@ -54,12 +54,6 @@ size_t buildRead(uint8_t slave, uint8_t category, uint8_t index, uint8_t page, u
 size_t buildWrite(uint8_t slave, uint8_t category, uint8_t index, uint8_t page,
                   const uint16_t *words, uint8_t count, uint8_t *out, size_t capacity);
 
-// Parses a comma-separated list of register words, each decimal or 0x-prefixed
-// hex in 0..65535 (surrounding spaces allowed), into words. Returns false,
-// leaving count 0, for an empty entry, other text, a value out of range, or
-// more than min(capacity, kMaxRegisters) words.
-bool parseWordList(const char *text, uint16_t *words, size_t capacity, uint8_t &count);
-
 // Shape of the reply to a request for `count` registers: the byte count at
 // offset 2 is even and at most 2 x count, since the controller answers with
 // fewer registers than requested but never with more (a longer frame is

@@ -37,42 +37,6 @@ size_t buildWrite(const uint8_t slave, const uint8_t category, const uint8_t ind
     return RtuFrame::appendCrc(out, size - RtuFrame::kCrcSize);
 }
 
-bool parseWordList(const char *text, uint16_t *words, const size_t capacity, uint8_t &count) {
-    count = 0U;
-    if (text == nullptr || words == nullptr) return false;
-    const size_t limit = capacity < kMaxRegisters ? capacity : kMaxRegisters;
-    uint8_t parsed = 0U;
-    const char *cursor = text;
-    for (;;) {
-        while (*cursor == ' ') ++cursor;
-        unsigned base = 10U;
-        if (cursor[0] == '0' && (cursor[1] == 'x' || cursor[1] == 'X')) {
-            base = 16U;
-            cursor += 2;
-        }
-        uint32_t value = 0U;
-        size_t digits = 0U;
-        for (;; ++cursor, ++digits) {
-            const char c = *cursor;
-            unsigned digit;
-            if (c >= '0' && c <= '9') digit = static_cast<unsigned>(c - '0');
-            else if (base == 16U && c >= 'a' && c <= 'f') digit = static_cast<unsigned>(c - 'a' + 10);
-            else if (base == 16U && c >= 'A' && c <= 'F') digit = static_cast<unsigned>(c - 'A' + 10);
-            else break;
-            value = value * base + digit;
-            if (value > 0xFFFFU) return false;
-        }
-        if (digits == 0U || parsed >= limit) return false;
-        words[parsed++] = static_cast<uint16_t>(value);
-        while (*cursor == ' ') ++cursor;
-        if (*cursor == '\0') break;
-        if (*cursor != ',') return false;
-        ++cursor;
-    }
-    count = parsed;
-    return true;
-}
-
 uint8_t decodeReply(const uint8_t *frame, const size_t length, uint16_t *words,
                     const size_t wordCapacity) {
     if (frame == nullptr || length < responseSize(0U)) return 0U;

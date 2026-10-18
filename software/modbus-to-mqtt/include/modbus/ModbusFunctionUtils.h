@@ -24,13 +24,23 @@ inline bool isWavinFunction(const ModbusFunctionType fn) {
     return isWavinFunctionCode(static_cast<int>(fn));
 }
 
-// Writes of exactly one 16-bit register: FC6 and Wavin 0x44.
+// Writes of exactly one 16-bit register: FC6.
 inline bool isSingleRegisterWriteCode(const int code) {
-    return code == WRITE_HOLDING || code == WAVIN_WRITE;
+    return code == WRITE_HOLDING;
 }
 
 inline bool isSingleRegisterWrite(const ModbusFunctionType fn) {
     return isSingleRegisterWriteCode(static_cast<int>(fn));
+}
+
+// Writes of one or more registers in one frame: FC16 and Wavin 0x44. How
+// many one frame may carry is the protocol profile's to say.
+inline bool isMultiRegisterWriteCode(const int code) {
+    return code == WRITE_MULTIPLE_HOLDING || code == WAVIN_WRITE;
+}
+
+inline bool isMultiRegisterWrite(const ModbusFunctionType fn) {
+    return isMultiRegisterWriteCode(static_cast<int>(fn));
 }
 
 // Coil and discrete-input reads: the response carries packed bits, so the

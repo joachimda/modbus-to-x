@@ -1657,11 +1657,11 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
     // must be rejected, not treated as a write without a value.
     const bool hasValues = req->hasParam("values");
     if (hasValues) sValues = req->getParam("values")->value();
-    std::array<uint16_t, WavinFrame::kMaxRegisters> rawWords{};
+    std::array<uint16_t, kMaxWriteWords> rawWords{};
     uint8_t rawCount = 0U;
     if (hasValues
         && (func != WAVIN_WRITE || sValue.length() > 0
-            || !WavinFrame::parseWordList(sValues.c_str(), rawWords.data(), rawWords.size(), rawCount)
+            || !ModbusValueCodec::parseWordList(sValues.c_str(), rawWords.data(), rawWords.size(), rawCount)
             || addr + rawCount - 1L > 0xFFL)) {
         req->send(HttpResponseCodes::BAD_REQUEST, HttpMediaTypes::JSON, BAD_REQUEST_RESP);
         return;

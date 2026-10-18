@@ -13,6 +13,8 @@
 #include "modbus/ModbusMqttWriteCore.h"
 #include "modbus/ModbusPollScheduler.h"
 #include "modbus/ModbusValueCodec.h"
+#include "modbus/ProtocolProfile.h"
+#include "modbus/RtuFrame.h"
 #include "modbus/WavinClient.h"
 #include "modbus/WavinFrame.h"
 #include "mqtt/MqttManager.h"
@@ -668,6 +670,7 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
                      : metadataDevice != nullptr ? metadataDevice->slaveId
                                                  : MODBUS_SLAVE_ID;
     const bool wavin = isWavinFunctionCode(request.function);
+    const ProtocolProfile &profile = profileForFunction(request.function);
     const bool registerWrite = request.function == 6 || request.function == 16
                                || request.function == WAVIN_WRITE;
     const bool expectedWrite = request.function == 5 || registerWrite;
@@ -713,22 +716,29 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
         wavinCategory = metadata->category;
         wavinPage = metadata->page;
     }
-    if (wavin && request.address > 0xFFU) {
-        result.operation = ModbusOperationResult::Success;
-        result.busStatus = ModbusMaster::ku8MBIllegalDataAddress;
-        return result;
-    }
-    if (request.function == WAVIN_READ
-        && (request.length == 0U || request.length > WavinFrame::kMaxRegisters)) {
-        result.operation = ModbusOperationResult::Success;
-        result.busStatus = ModbusMaster::ku8MBIllegalDataValue;
-        return result;
+    // What the protocol can carry is checked before anything is sent, in the
+    // order a device answers: a register count outside the profile's limit
+    // is code 3, a run past its address space code 2. Bit reads (FC1/FC2)
+    // count packed bits, not registers, so only their range is checked; a
+    // coil write names one address, which a 16-bit address cannot leave.
+    if (expectedRead) {
+        const bool registers = !isBitFunction(static_cast<ModbusFunctionType>(request.function));
+        uint8_t status = registers ? checkReadCount(profile, request.length) : RtuFrame::kSuccess;
+        if (status == RtuFrame::kSuccess) {
+            status = checkAddressRange(profile, request.address, request.length);
+        }
+        if (status != RtuFrame::kSuccess) {
+            result.operation = ModbusOperationResult::Success;
+            result.busStatus = status;
+            return result;
+        }
     }
 
-    // Register writes carry pre-encoded words (MQTT path) or an engineering
-    // value to encode with the saved datapoint's data type, scale and word
-    // order (HTTP path). A value that cannot be encoded never reaches the bus.
-    std::array<uint16_t, WavinFrame::kMaxRegisters> words = request.writeWords;
+    // Register writes carry pre-encoded words (MQTT path, HTTP `values`) or
+    // an engineering value to encode with the saved datapoint's data type,
+    // scale and word order (HTTP `value`). A value that cannot be encoded
+    // never reaches the bus.
+    std::array<uint16_t, kMaxWriteWords> words = request.writeWords;
     uint8_t wordCount = request.writeCount;
     if (registerWrite) {
         if (wordCount == 0U) {
@@ -757,14 +767,22 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
             std::copy(conversion.words.begin(), conversion.words.end(), words.begin());
             wordCount = conversion.wordCount;
         }
-        // A 0x44 write given as raw words (HTTP execute `values`) may span
-        // several registers, e.g. a whole clock page; an encoded value is one.
-        const bool rawWavinWords = request.function == WAVIN_WRITE && request.writeCount > 0U;
-        if (wordCount == 0U || wordCount > words.size()
-            || (isSingleRegisterWriteCode(request.function) && !rawWavinWords && wordCount != 1U)) {
+        // A single-register write takes exactly one word; a multi-register
+        // write as many as the protocol allows within one request here.
+        if (wordCount == 0U || (isSingleRegisterWriteCode(request.function) && wordCount != 1U)) {
             result.operation = ModbusOperationResult::Success;
             result.busStatus = ModbusMaster::ku8MBIllegalDataValue;
             result.writeRejection = ModbusMqttWriteCore::RejectionReason::UnsupportedDataType;
+            return result;
+        }
+        uint8_t status = wordCount > words.size() ? RtuFrame::kIllegalDataValue
+                                                  : checkWriteCount(profile, wordCount);
+        if (status == RtuFrame::kSuccess) {
+            status = checkAddressRange(profile, request.address, wordCount);
+        }
+        if (status != RtuFrame::kSuccess) {
+            result.operation = ModbusOperationResult::Success;
+            result.busStatus = status;
             return result;
         }
         // The written words are echoed as full registers of the type they
@@ -784,7 +802,9 @@ ModbusCommandResult ModbusManager::executeOwned(const ModbusCommandRequest &requ
     node.begin(result.slaveId, _bus.port().stream());
     const uint16_t effectiveLength = request.length;
     // Wavin replies are parsed here rather than by ModbusMaster, and may
-    // carry fewer registers than requested.
+    // carry fewer registers than requested; a full read fits the result.
+    static_assert(kMaxCommandResultWords >= WavinFrame::kMaxRegisters,
+                  "command result must hold a full Wavin read");
     std::array<uint16_t, WavinFrame::kMaxRegisters> wavinWords{};
     uint8_t wavinReceived = 0U;
     switch (request.function) {

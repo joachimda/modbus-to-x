@@ -3703,6 +3703,42 @@ void test_modbus_codec_format_reading_matches_publication(void) {
     TEST_ASSERT_EQUAL_STRING("", text);
 }
 
+void test_modbus_codec_parses_word_lists(void) {
+    constexpr size_t kCapacity = 32U;
+    uint16_t words[kCapacity + 1U] = {};
+    uint8_t count = 0U;
+    TEST_ASSERT_TRUE(ModbusValueCodec::parseWordList("2026,10, 17 ,0x5,0X0e,0,65535", words, kCapacity, count));
+    TEST_ASSERT_EQUAL_UINT8(7U, count);
+    const uint16_t expected[7] = {2026U, 10U, 17U, 5U, 14U, 0U, 65535U};
+    TEST_ASSERT_EQUAL_HEX16_ARRAY(expected, words, 7U);
+    TEST_ASSERT_TRUE(ModbusValueCodec::parseWordList("0xffff", words, kCapacity, count));
+    TEST_ASSERT_EQUAL_UINT8(1U, count);
+    TEST_ASSERT_EQUAL_HEX16(0xFFFFU, words[0]);
+
+    // Rejected: empty lists and entries, other text, values out of range.
+    const char *const rejected[] = {"", " ", "1,", ",1", "1,,2", "1;2", "-1", "+1", "1.5", "0x",
+                                    "0x10000", "65536", "1 2", "abc"};
+    for (const char *text : rejected) {
+        count = 9U;
+        TEST_ASSERT_FALSE_MESSAGE(ModbusValueCodec::parseWordList(text, words, kCapacity, count), text);
+        TEST_ASSERT_EQUAL_UINT8(0U, count);
+    }
+    // The capacity is the only limit on the count.
+    char list[160] = "0";
+    for (size_t i = 1U; i <= kCapacity; ++i) std::strcat(list, ",0");
+    TEST_ASSERT_FALSE(ModbusValueCodec::parseWordList(list, words, kCapacity, count));
+    TEST_ASSERT_EQUAL_UINT8(0U, count);
+    TEST_ASSERT_TRUE(ModbusValueCodec::parseWordList(list, words, kCapacity + 1U, count));
+    TEST_ASSERT_EQUAL_UINT8(kCapacity + 1U, count);
+    list[std::strlen(list) - 2U] = '\0';
+    TEST_ASSERT_TRUE(ModbusValueCodec::parseWordList(list, words, kCapacity, count));
+    TEST_ASSERT_EQUAL_UINT8(kCapacity, count);
+    TEST_ASSERT_FALSE(ModbusValueCodec::parseWordList("1,2,3", words, 2U, count));
+    TEST_ASSERT_FALSE(ModbusValueCodec::parseWordList("1", words, 0U, count));
+    TEST_ASSERT_FALSE(ModbusValueCodec::parseWordList(nullptr, words, kCapacity, count));
+    TEST_ASSERT_FALSE(ModbusValueCodec::parseWordList("1", nullptr, kCapacity, count));
+}
+
 void test_ota_lifecycle_rejects_duplicates_and_retains_terminal_failure(void) {
     OtaProgressCore::Lifecycle lifecycle;
     TEST_ASSERT_EQUAL_INT(
@@ -4084,36 +4120,6 @@ void test_wavin_frame_writes_whole_clock_page(void) {
     TEST_ASSERT_EQUAL_UINT(peerLength, located.dropCount);
     TEST_ASSERT_EQUAL_UINT(peerLength, located.frameOffset);
     TEST_ASSERT_FALSE(located.crcMismatch);
-}
-
-void test_wavin_frame_parses_word_lists(void) {
-    uint16_t words[WavinFrame::kMaxRegisters + 1U] = {};
-    uint8_t count = 0U;
-    TEST_ASSERT_TRUE(WavinFrame::parseWordList("2026,10, 17 ,0x5,0X0e,0,65535", words, 23U, count));
-    TEST_ASSERT_EQUAL_UINT8(7U, count);
-    const uint16_t expected[7] = {2026U, 10U, 17U, 5U, 14U, 0U, 65535U};
-    TEST_ASSERT_EQUAL_HEX16_ARRAY(expected, words, 7U);
-    TEST_ASSERT_TRUE(WavinFrame::parseWordList("0xffff", words, 23U, count));
-    TEST_ASSERT_EQUAL_UINT8(1U, count);
-    TEST_ASSERT_EQUAL_HEX16(0xFFFFU, words[0]);
-
-    // Rejected: empty entries, other text, values out of range, and more
-    // words than kMaxRegisters or the capacity.
-    const char *const rejected[] = {"", " ", "1,", ",1", "1,,2", "1;2", "-1", "+1", "1.5", "0x",
-                                    "0x10000", "65536", "1 2", "abc"};
-    for (const char *text : rejected) {
-        count = 9U;
-        TEST_ASSERT_FALSE_MESSAGE(WavinFrame::parseWordList(text, words, 23U, count), text);
-        TEST_ASSERT_EQUAL_UINT8(0U, count);
-    }
-    char list[128] = "0";
-    for (uint8_t i = 1U; i < 23U; ++i) std::strcat(list, ",0");
-    TEST_ASSERT_FALSE(WavinFrame::parseWordList(list, words, 23U, count));
-    list[std::strlen(list) - 2U] = '\0';
-    TEST_ASSERT_TRUE(WavinFrame::parseWordList(list, words, 23U, count));
-    TEST_ASSERT_EQUAL_UINT8(22U, count);
-    TEST_ASSERT_FALSE(WavinFrame::parseWordList("1,2,3", words, 2U, count));
-    TEST_ASSERT_FALSE(WavinFrame::parseWordList(nullptr, words, 23U, count));
 }
 
 void test_rtu_frame_scans_replies_and_exceptions(void) {
@@ -5084,6 +5090,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_modbus_codec_formats_wide_integers_exactly);
     RUN_TEST(test_modbus_codec_formats_float32_with_shortest_round_trip);
     RUN_TEST(test_modbus_codec_format_reading_matches_publication);
+    RUN_TEST(test_modbus_codec_parses_word_lists);
     RUN_TEST(test_ota_lifecycle_rejects_duplicates_and_retains_terminal_failure);
     RUN_TEST(test_ota_quiescence_deadlines_are_independent_and_rollover_safe);
     RUN_TEST(test_ota_progress_calculates_component_and_overall_without_overflow);
@@ -5100,7 +5107,6 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_rtu_frame_crc_matches_controller_replies);
     RUN_TEST(test_wavin_frame_builds_read_and_write_requests);
     RUN_TEST(test_wavin_frame_writes_whole_clock_page);
-    RUN_TEST(test_wavin_frame_parses_word_lists);
     RUN_TEST(test_rtu_frame_scans_replies_and_exceptions);
     RUN_TEST(test_rtu_frame_locates_reply_among_other_traffic);
     RUN_TEST(test_rtu_timing_scales_with_baud_and_fits_budget);

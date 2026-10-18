@@ -7,7 +7,6 @@
 
 #include "modbus/ModbusMqttWriteCore.h"
 #include "modbus/ModbusValueCodec.h"
-#include "modbus/WavinFrame.h"
 #include "modbus/config_structs/ModbusDataType.h"
 #include "modbus/config_structs/ModbusDatapoint.h"
 #include "mqtt/MqttRuntimeTypes.h"
@@ -44,6 +43,14 @@ struct ModbusPublicationCompletion {
     uint32_t attempt{0U};
 };
 
+// Register words one write request may carry, whatever the protocol. A
+// request is copied into the owner's queue, so the array stays at the
+// result's size rather than the 64 words standard Modbus would allow; the
+// protocol's own limit (ProtocolProfile) applies on top.
+constexpr size_t kMaxWriteWords = 32U;
+static_assert(kMaxWriteWords >= ModbusValueCodec::kMaxWords,
+              "an encoded value must fit a write request");
+
 struct ModbusCommandRequest {
     String deviceId;
     String datapointId;
@@ -61,10 +68,10 @@ struct ModbusCommandRequest {
     bool hasWavinAddress{false};
     // FC5: coil state, non-zero switches the coil on (MQTT command path).
     uint16_t writeValue{0U};
-    // FC6/FC16/0x44: register words already encoded for the datapoint's data type
-    // and word order (MQTT command path), or raw words for a 0x44 write of up
-    // to WavinFrame::kMaxRegisters registers (HTTP execute `values`).
-    std::array<uint16_t, WavinFrame::kMaxRegisters> writeWords{};
+    // FC6/FC16/0x44: register words already encoded for the datapoint's data
+    // type and word order (MQTT command path), or the raw words of a
+    // multi-register write (HTTP execute `values`).
+    std::array<uint16_t, kMaxWriteWords> writeWords{};
     uint8_t writeCount{0U};
     // HTTP execute path: the value as text, converted by the owner with the
     // MQTT command grammar. FC5: 0/1/false/true. FC6/FC16 (writeCount 0):
@@ -75,11 +82,10 @@ struct ModbusCommandRequest {
     uint32_t expectedGeneration{0U};
 };
 
-// Registers an executed command hands back; a Wavin read of the largest
-// allowed size must fit.
+// Registers an executed command hands back. A longer read is cut to this
+// many words; a protocol whose reads must arrive whole asserts against it
+// where its replies are decoded.
 constexpr size_t kMaxCommandResultWords = 32U;
-static_assert(kMaxCommandResultWords >= WavinFrame::kMaxRegisters,
-              "command result must hold a full Wavin read");
 
 struct ModbusCommandResult {
     ModbusOperationResult operation{ModbusOperationResult::Unavailable};

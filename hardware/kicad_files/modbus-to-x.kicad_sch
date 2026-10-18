@@ -6,7 +6,7 @@
 	(paper "A4")
 	(title_block
 		(title "MBX Carrier")
-		(date "2025-07-06")
+		(date "2026-10-18")
 		(rev "${HW_REV}")
 		(company "Joachim Andersen")
 	)

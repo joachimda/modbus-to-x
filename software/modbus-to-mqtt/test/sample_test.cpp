@@ -59,6 +59,7 @@
 #include "../src/modbus/RtuTransport.cpp"
 #include "../src/modbus/WavinFrame.cpp"
 #include "../src/modbus/WavinClient.cpp"
+#include "../src/modbus/ProtocolProfile.cpp"
 #include "../include/modbus/RtuLink.h"
 
 namespace {
@@ -4948,6 +4949,60 @@ void test_modbus_mqtt_wavin_write_carries_register_location(void) {
                               WAVIN_WRITE, "1", 1.0, INT32, ModbusWordOrder::Big).rejection));
 }
 
+void test_protocol_profiles_bound_addresses_and_counts(void) {
+    // Function codes map to the two built-in profiles; a code that names no
+    // function is standard Modbus and is refused later as an illegal function.
+    TEST_ASSERT_EQUAL_STRING("modbus-rtu", profileForFunction(3).id);
+    TEST_ASSERT_EQUAL_STRING("modbus-rtu", profileForFunction(16).id);
+    TEST_ASSERT_EQUAL_STRING("modbus-rtu", profileForFunction(0).id);
+    TEST_ASSERT_EQUAL_STRING("modbus-rtu", profileForFunction(99).id);
+    TEST_ASSERT_EQUAL_STRING("wavin-ahc9000", profileForFunction(0x43).id);
+    TEST_ASSERT_EQUAL_STRING("wavin-ahc9000", profileForFunction(0x44).id);
+
+    // Wavin: a one-byte index, so a run of words must end at index 255.
+    const ProtocolProfile &wavin = kWavinAhc9000Profile;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkAddressRange(wavin, 255U, 1U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataAddress, checkAddressRange(wavin, 255U, 2U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataAddress, checkAddressRange(wavin, 256U, 1U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataAddress, checkAddressRange(wavin, 0xFFFFU, 1U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkAddressRange(wavin, 0U, 22U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkAddressRange(wavin, 234U, 22U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataAddress, checkAddressRange(wavin, 235U, 22U));
+    // Count 0 checks the address alone, for a read whose length is rejected
+    // on its own.
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkAddressRange(wavin, 255U, 0U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataAddress, checkAddressRange(wavin, 256U, 0U));
+
+    // Standard Modbus: the whole 16-bit space.
+    const ProtocolProfile &modbus = kModbusRtuProfile;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkAddressRange(modbus, 0xFFFFU, 1U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataAddress, checkAddressRange(modbus, 0xFFFFU, 2U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkAddressRange(modbus, 0xFFC0U, 64U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataAddress, checkAddressRange(modbus, 0xFFC1U, 64U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataAddress, checkAddressRange(modbus, 0x10000U, 1U));
+
+    // Register counts: 1..max per request; 0 and max + 1 are code 3. Wavin's
+    // frame carries 22, ModbusMaster's buffers 64.
+    const struct {
+        const ProtocolProfile &profile;
+        uint8_t max;
+    } limits[] = {{wavin, 22U}, {modbus, 64U}};
+    for (const auto &limit : limits) {
+        TEST_ASSERT_EQUAL_UINT8(limit.max, limit.profile.maxReadRegisters);
+        TEST_ASSERT_EQUAL_UINT8(limit.max, limit.profile.maxWriteRegisters);
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue, checkReadCount(limit.profile, 0U));
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkReadCount(limit.profile, 1U));
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkReadCount(limit.profile, limit.max));
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue, checkReadCount(limit.profile, limit.max + 1U));
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue, checkReadCount(limit.profile, 0xFFFFU));
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue, checkWriteCount(limit.profile, 0U));
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkWriteCount(limit.profile, 1U));
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkWriteCount(limit.profile, limit.max));
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue,
+                               checkWriteCount(limit.profile, static_cast<uint8_t>(limit.max + 1U)));
+    }
+}
+
 int main(int /*argc*/, char ** /*argv*/) {
     UNITY_BEGIN();
     RUN_TEST(test_single_chunk_returns_full_buffer);
@@ -5056,5 +5111,6 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_modbus_configuration_parses_wavin_datapoints);
     RUN_TEST(test_modbus_configuration_rejects_baud_below_minimum);
     RUN_TEST(test_modbus_mqtt_wavin_write_carries_register_location);
+    RUN_TEST(test_protocol_profiles_bound_addresses_and_counts);
     return UNITY_END();
 }

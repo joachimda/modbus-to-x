@@ -16,6 +16,7 @@ namespace RtuFrame {
 // through the same paths: 0x00 success, 0x01..0x04 exception codes from the
 // device, 0xE2 timeout, 0xE3 CRC error.
 constexpr uint8_t kSuccess = 0x00U;
+constexpr uint8_t kIllegalDataAddress = 0x02U;
 constexpr uint8_t kIllegalDataValue = 0x03U;
 constexpr uint8_t kResponseTimedOut = 0xE2U;
 constexpr uint8_t kInvalidCrc = 0xE3U;

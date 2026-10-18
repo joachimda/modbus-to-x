@@ -4043,19 +4043,46 @@ void test_wavin_frame_writes_whole_clock_page(void) {
     TEST_ASSERT_EQUAL_HEX16_ARRAY(clock, words, 7U);
 
     // Behind the same write sent by the display, the reply is still found.
+    // Category 5 is odd, so the display's frame never looks like a reply and
+    // is dropped byte by byte without consulting the peer-request shape.
     uint8_t stream[sizeof expected + sizeof reply];
     std::memcpy(stream, expected, sizeof expected);
     std::memcpy(stream + sizeof expected, reply, sizeof reply);
     std::memset(words, 0, sizeof words);
-    const RtuFrame::LocateResult located =
+    RtuFrame::LocateResult located =
         RtuFrame::locate(stream, sizeof stream, 1U, 0x44U, anyWrite, peerWrite);
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(located.status));
     TEST_ASSERT_EQUAL_UINT(sizeof expected, located.dropCount);
     TEST_ASSERT_EQUAL_UINT(sizeof expected, located.frameOffset);
     TEST_ASSERT_EQUAL_UINT(sizeof reply, located.frameLength);
+    TEST_ASSERT_FALSE(located.crcMismatch);
     TEST_ASSERT_EQUAL_UINT8(7U, WavinFrame::decodeReply(stream + located.frameOffset, located.frameLength,
                                                         words, WavinFrame::kMaxRegisters));
     TEST_ASSERT_EQUAL_HEX16_ARRAY(clock, words, 7U);
+
+    // A schedule page (category 6) written by the display does read as a
+    // reply at first (an even byte count at offset 2), and only its own
+    // CRC tells it apart. With write frames of up to kMaxRegisters the
+    // scanner recognises the whole 7-word request and drops it at once; at
+    // the former four-word limit it was a CRC mismatch and the reply behind
+    // it a look-alike.
+    const uint16_t schedule[7] = {6U, 0U, 21U, 0U, 7U, 30U, 1U};
+    uint8_t peerFrame[WavinFrame::kMaxWriteRequestSize] = {};
+    const size_t peerLength = WavinFrame::buildWrite(1U, 6U, 0U, 0U, schedule, 7U, peerFrame,
+                                                     sizeof peerFrame);
+    TEST_ASSERT_EQUAL_UINT(22U, peerLength);
+    const RtuFrame::ScanResult peer = RtuFrame::scan(peerFrame, peerLength, 1U, 0x44U, anyWrite, peerWrite);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip), static_cast<int>(peer.status));
+    TEST_ASSERT_EQUAL_UINT(peerLength, peer.frameLength);
+    TEST_ASSERT_FALSE(peer.crcMismatch);
+    uint8_t mixed[sizeof peerFrame + sizeof reply];
+    std::memcpy(mixed, peerFrame, peerLength);
+    std::memcpy(mixed + peerLength, reply, sizeof reply);
+    located = RtuFrame::locate(mixed, peerLength + sizeof reply, 1U, 0x44U, anyWrite, peerWrite);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(located.status));
+    TEST_ASSERT_EQUAL_UINT(peerLength, located.dropCount);
+    TEST_ASSERT_EQUAL_UINT(peerLength, located.frameOffset);
+    TEST_ASSERT_FALSE(located.crcMismatch);
 }
 
 void test_wavin_frame_parses_word_lists(void) {

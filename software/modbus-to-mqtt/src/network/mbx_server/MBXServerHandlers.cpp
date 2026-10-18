@@ -1653,7 +1653,10 @@ void MBXServerHandlers::handleModbusExecute(AsyncWebServerRequest *req) {
     // in one frame from addr on, for pages the controller only accepts whole
     // (clock, schedules). They bypass the datapoint's encoding.
     String sValues;
-    const bool hasValues = getParam("values", sValues);
+    // Presence, not getParam: an empty `values=` is an unparsable list and
+    // must be rejected, not treated as a write without a value.
+    const bool hasValues = req->hasParam("values");
+    if (hasValues) sValues = req->getParam("values")->value();
     std::array<uint16_t, WavinFrame::kMaxRegisters> rawWords{};
     uint8_t rawCount = 0U;
     if (hasValues

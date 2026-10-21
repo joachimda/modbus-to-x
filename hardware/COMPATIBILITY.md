@@ -56,5 +56,4 @@ export of 2026-01-28 came from a working tree after `d7d5953` (same day).
 | v0.2-alpha | tag `v0.2-alpha-hw`, `releases/v0.2-alpha` | `b85d923` | 2025-10-05 export, tagged 2025-10-06 | The repository folder and the GitHub release carry the gerber archive and the PDFs; the release also carries a BOM. At the tag the same export sat in `kicad_files/manufactoring/rev2` |
 | rev2 (re-export) | formerly `kicad_files/manufactoring/rev2`, from 2025-11-12 until removal | `1fd5f1d` | 2025-11-06 export | Re-exported and committed with the new power-supply design over the v0.2-alpha export; untagged; fabrication status unknown |
 | rev3 | formerly `kicad_files/manufactoring/rev3` | `3e30e70` | 2026-01-28 export | Trace refinements after the power-supply change; untagged; fabrication status unknown |
-| v0.5 | inventory assembly IPN `MBX-carrier-board-v0.5` | n/a | 2026-01-06 | Inventory label only; does not correspond to a tag |
 | 0.1 | schematic title block until 2026-10-21 | n/a | 2025-07-06 | Never updated; replaced by `${HW_REV}` with the revision-identity change |

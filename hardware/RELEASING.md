@@ -130,28 +130,21 @@ procedure; this section records only the decisions behind it.
 
 ## Component data and BOM
 
-The release BOM must let a person assemble the board from the inventory
-without opening the schematic. Every placed component therefore carries:
+The release BOM must let a person order and assemble the board without
+opening the schematic. Every placed component therefore carries:
 
-- `Manufacturer` and `MPN`. The MPN is written exactly as the inventory part
-  number (IPN), including for generic parts, so the two match by equality.
+- `Manufacturer` and `MPN`, the manufacturer part number written exactly,
+  including for generic parts, so parts can be matched by equality.
 - `Datasheet`, as a link.
-- `StockLocation`, naming the inventory bin. The MPN is the stable key; the
-  bin is a convenience that can be refreshed from the inventory.
 
-Two checks follow from this:
-
-- A repository check parses the schematic and fails when any placed component
-  lacks one of the fields above, unless the component is mechanical or
-  explicitly marked do-not-populate. This can run in CI.
-- An owner-run check looks each component up in the inventory by IPN = MPN
-  and compares the bin field with the part's current stock location (or its
-  legacy placement parameter while the inventory migration is incomplete),
-  normalising whitespace. It belongs in the pre-release checklist, not CI,
-  because the inventory is private.
+A repository check parses the schematic and fails when any placed component
+lacks one of these fields, unless the component is mechanical or explicitly
+marked do-not-populate. This can run in CI.
 
 The BOM export includes reference, value, footprint, quantity, manufacturer,
-part number, datasheet and bin, plus a do-not-populate column.
+part number and datasheet, plus a do-not-populate column. Other symbol
+fields may exist in the project for the maintainer's own use; the release
+BOM does not include them.
 
 ## Release contents and storage
 

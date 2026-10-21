@@ -3,7 +3,8 @@
 These guidelines apply to anyone changing this repository, human or coding
 agent. They describe where things live, how to build and test, and the
 conventions pull requests are reviewed against. The [README](README.md) is the
-user-facing overview; [HTTP_API.md](HTTP_API.md) and
+user-facing overview, [CONTRIBUTING.md](CONTRIBUTING.md) is the pull request
+process, and [HTTP_API.md](HTTP_API.md) and
 [OTA_LIFECYCLE.md](OTA_LIFECYCLE.md) are the contracts the firmware and web UI
 must keep honouring.
 
@@ -139,14 +140,9 @@ Recent commits use short imperative or past-tense summaries such as
 `Support Wavin AHC 9000 (function codes 0x43/0x44)`. The Release OTA workflow
 turns each commit subject into a release-note line, so keep the subject to one
 short line and put detail in the body. Keep commits focused and avoid `wip`
-messages. Pull requests follow `.github/PULL_REQUEST_TEMPLATE.md`: explain the
-change, list the build and test commands you ran and their results, call out
-untested paths and required hardware or configuration, and link related
-issues. Update `README.md`, `HTTP_API.md`, `OTA_LIFECYCLE.md` and
-`data/conf/schema.json` in the same pull request when the behaviour they
-describe changes. Include screenshots for UI changes and exported schematic or
-PCB views for meaningful hardware changes. Bug reports, feature requests and
-Modbus device support requests have issue forms.
+messages. The pull request process, the pre-submission checklist and the
+expectations for hardware changes are in [CONTRIBUTING.md](CONTRIBUTING.md);
+pull requests follow `.github/PULL_REQUEST_TEMPLATE.md`.
 
 ## Security & Configuration
 

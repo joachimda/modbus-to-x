@@ -21,6 +21,7 @@ An ESP32-based hardware and firmware stack that bridges RS-485/Modbus field devi
 - [Project Structure](#project-structure)
   - [Hardware Documentation](#hardware-documentation)
   - [Software Documentation](#software-documentation)
+- [Contributing](#contributing)
 - [Acknowledgements](#acknowledgements)
 
 ## Overview
@@ -254,6 +255,8 @@ The firmware entry point, reusable libraries, and static assets live under [`sof
 - [`docs/configuration_examples/`](software/modbus-to-mqtt/docs/configuration_examples/) – JSON schemas and examples for Modbus and MQTT configuration.
 - [`boards/`](software/modbus-to-mqtt/boards/) – custom PlatformIO board definition for the production hardware (ESP32, 16 MB flash).
 
+## Contributing
+Bug reports, Modbus device support requests and feature requests use the issue forms. [CONTRIBUTING.md](CONTRIBUTING.md) explains how to propose, test and submit a change, and [AGENTS.md](AGENTS.md) documents the repository layout, commands and conventions.
 
 ## Acknowledgements
 - Built on Espressif's ESP32 platform and the open-source libraries listed in `platformio.ini` (ModbusMaster, PubSubClient, ArduinoJson, ESPAsyncWebServer).

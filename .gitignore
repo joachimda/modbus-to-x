@@ -75,6 +75,10 @@ fp-info-cache
 ~*.lck
 \#auto_saved_files#
 
+# Local KiCad fabrication exports: release assets, never tracked
+hardware/kicad_files/manufactoring/
+hardware/kicad_files/*.step
+
 # Netlist files (exported from Eeschema)
 *.net
 

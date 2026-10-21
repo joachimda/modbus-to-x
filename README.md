@@ -34,7 +34,7 @@ The project is split between dedicated hardware design files and a PlatformIO fi
 - Four-layer ESP32 carrier featuring an ESP32-WROOM-32D module, MAX3485 RS-485 transceiver
 - RJ12 Connector exposing differential RS-485 pair alongside field power for quick deployment.
 - Wide input voltage range (4.5 - 30V)
-- Supporting assets include datasheets, fabrication rules, and release notes for each board revision under `hardware/`.
+- Supporting assets include datasheets, the hardware release policy, the compatibility table and a release record for each board revision under `hardware/`.
 
 ### Firmware
 - PlatformIO-based ESP32 application primarily built with the Arduino framework.
@@ -245,7 +245,7 @@ See [OTA lifecycle and recovery](OTA_LIFECYCLE.md) and the [HTTP API request con
 ```
 
 ### Hardware Documentation
-Detailed hardware notes, KiCad sources, datasheets, and per-revision release notes are kept in [`hardware/`](hardware/). Start with the latest folder under [`hardware/releases/`](hardware/releases/) (for example, `v0.2-alpha`) for the current board spin and consult the KiCad project in [`hardware/kicad_files/`](hardware/kicad_files/) for schematics, layout, and fabrication outputs. The board-ID resistors and the `HW_REV` text variable that marks each revision are described in [`hardware/BOARD-ID.md`](hardware/BOARD-ID.md).
+Detailed hardware notes, KiCad sources, datasheets and per-revision release records are kept in [`hardware/`](hardware/). The release policy is [`hardware/RELEASING.md`](hardware/RELEASING.md) and the hardware/firmware compatibility table is [`hardware/COMPATIBILITY.md`](hardware/COMPATIBILITY.md). From revision 1.0.0 onwards each released revision has a `hw-v<rev>` GitHub release carrying the fabrication outputs (gerbers, BOM, placement data, PDFs) and a committed record under [`hardware/releases/`](hardware/releases/). The prototype spins before 1.0.0 are the `v0.1-alpha-hw` and `v0.2-alpha-hw` tags and releases; their `v0.1-alpha` and `v0.2-alpha` folders there stay as they were. The KiCad project in [`hardware/kicad_files/`](hardware/kicad_files/) holds the schematic, layout and libraries. The board-ID resistors and the `HW_REV` text variable that marks each revision are described in [`hardware/BOARD-ID.md`](hardware/BOARD-ID.md).
 
 ### Software Documentation
 The firmware entry point, reusable libraries, and static assets live under [`software/modbus-to-mqtt/`](software/modbus-to-mqtt/). Key references:

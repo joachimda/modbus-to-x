@@ -47,6 +47,8 @@ per-revision release folders (notes, exported schematic and PCB PDFs,
 fabrication ZIPs) under `releases/`, and datasheets under `datasheets/`. Do
 not hand-edit generated Gerber, ZIP, STEP, PDF or binary artifacts; regenerate
 them from the sources.
+`hardware/BOARD-ID.md` documents the board-ID resistors and the `HW_REV` text
+variable.
 
 ## Build, Test, and Development Commands
 

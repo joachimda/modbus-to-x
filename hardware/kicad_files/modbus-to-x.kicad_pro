@@ -39,9 +39,9 @@
         "other_text_thickness": 0.15,
         "other_text_upright": false,
         "pads": {
-          "drill": 0.3,
-          "height": 0.6,
-          "width": 0.6
+          "drill": 1.0,
+          "height": 0.95,
+          "width": 1.3
         },
         "silk_line_width": 0.1,
         "silk_text_italic": false,
@@ -294,7 +294,7 @@
       "internal_id": "",
       "mfg": "",
       "mpn": "",
-      "sch_revision": "0.1"
+      "sch_revision": "${HW_REV}"
     },
     "layer_pairs": [],
     "layer_presets": [],
@@ -587,7 +587,7 @@
       "gencad": "",
       "idf": "",
       "netlist": "",
-      "plot": "manufactoring/rev3",
+      "plot": "manufactoring/v1_0_0",
       "pos_files": "",
       "specctra_dsn": "",
       "step": "modbus-to-x.step",
@@ -827,7 +827,9 @@
       "modbus-to-x"
     ]
   ],
-  "text_variables": {},
+  "text_variables": {
+    "HW_REV": "1.0.0"
+  },
   "tuning_profiles": {
     "meta": {
       "version": 0

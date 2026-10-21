@@ -48,9 +48,9 @@ release (notes, manifest, validation records) under `releases/hw-v<rev>/`,
 the historical `releases/v0.1-alpha` and `v0.2-alpha` folders, and datasheets
 under `datasheets/`. Generated fabrication outputs (gerbers, drill files, BOM,
 placement data, PDFs, STEP) are assets of the `hw-v<rev>` GitHub release, not
-tracked files; `kicad_files/manufactoring/` is a local export folder that git
-ignores. Do not hand-edit generated Gerber, ZIP, STEP, PDF or binary
-artifacts; regenerate them from the sources.
+tracked files; the local KiCad export folder is listed in `.gitignore`. Do
+not hand-edit generated Gerber, ZIP, STEP, PDF or binary artifacts;
+regenerate them from the sources.
 `hardware/BOARD-ID.md` documents the board-ID resistors and the `HW_REV` text
 variable.
 

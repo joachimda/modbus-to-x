@@ -25,13 +25,13 @@ and the release records show the current state.
 
 - The board has been numbered four different ways. Git tags say
   `v0.1-alpha-hw` and `v0.2-alpha-hw`; the schematic title block says `0.1`
-  dated 2025-07-06; the tracked gerber folders are `manufactoring/rev2` and
-  `manufactoring/rev3`; the component inventory lists the assembly as
+  dated 2025-07-06; the two tracked gerber folders are named `rev2` and
+  `rev3`; the component inventory lists the assembly as
   `MBX-carrier-board-v0.5`. None of these agree.
-- `manufactoring/rev3` was exported on 2026-01-28, after the power-supply
-  change and trace refinements that followed the `v0.2-alpha-hw` tag. It was
-  never tagged or released, and whether boards were fabricated from it is not
-  recorded.
+- The `rev3` gerbers were exported on 2026-01-28, after the power-supply
+  change and trace refinements that followed the `v0.2-alpha-hw` tag. They
+  were never tagged or released, and whether boards were fabricated from them
+  is not recorded.
 - The PCB file has no title block and the silkscreen carries no revision
   text. Manufactured boards are unmarked.
 - `hardware/releases/` holds notes for 0.1 and the PDFs and gerber archive for
@@ -218,11 +218,11 @@ Keep editable design sources, project-local libraries, the `HW_REV` variable,
 the export configuration and human-written notes in Git. Generated binaries
 belong to the GitHub release, not to the tree:
 
-- `hardware/kicad_files/manufactoring/` and the exported `modbus-to-x.step`
-  were removed from the tree when this policy was adopted. History keeps
-  them, the historical spins table in COMPATIBILITY.md names a commit that
-  contains them, and `.gitignore` keeps the local export folder out of git.
-  AGENTS.md and README.md describe fabrication outputs as release assets.
+- The prototype-era gerber folders and the exported `modbus-to-x.step` were
+  removed from the tree when this policy was adopted. History keeps them,
+  the historical spins table in COMPATIBILITY.md names a commit that
+  contains them, and `.gitignore` keeps the local KiCad export folder out of
+  git. AGENTS.md and README.md describe fabrication outputs as release assets.
 - Keep `hardware/releases/v0.1-alpha` and `v0.2-alpha` unchanged for
   continuity.
 - For each new release, add `hardware/releases/hw-v<rev>/` in a follow-up

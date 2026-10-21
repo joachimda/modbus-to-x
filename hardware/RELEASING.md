@@ -221,8 +221,9 @@ belong to the GitHub release, not to the tree:
 - The prototype-era gerber folders and the exported `modbus-to-x.step` were
   removed from the tree when this policy was adopted. History keeps them,
   the historical spins table in COMPATIBILITY.md names a commit that
-  contains them, and `.gitignore` keeps the local KiCad export folder out of
-  git. AGENTS.md and README.md describe fabrication outputs as release assets.
+  contains them, and `.gitignore` keeps the local KiCad export folder and
+  the exported STEP model out of git. AGENTS.md and README.md describe
+  fabrication outputs as release assets.
 - Keep `hardware/releases/v0.1-alpha` and `v0.2-alpha` unchanged for
   continuity.
 - For each new release, add `hardware/releases/hw-v<rev>/` in a follow-up

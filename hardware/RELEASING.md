@@ -1,10 +1,10 @@
 # Hardware revision and release management
 
-Status: accepted on 2026-10-16 after review; committed on 2026-10-21. This
-document defines the policy and implements no release or workflow change by
-itself.
-Date: 2026-10-16
-Scope: Modbus-to-X hardware in this repository, from revision 1.0.0 onwards.
+- Status: accepted on 2026-10-16 after review; committed on 2026-10-21. This
+  document defines the policy and implements no release or workflow change
+  by itself.
+- Scope: Modbus-to-X hardware in this repository, from revision 1.0.0
+  onwards.
 
 ## Objective
 
@@ -68,7 +68,7 @@ historical release directories unchanged.
 | --- | --- | --- |
 | Hardware release tag | `hw-v<major>.<minor>.<patch>` | `hw-v1.0.0` |
 | Firmware release tag | Existing `v<version>` convention | `v8.1.1-beta` |
-| Physical board marking | Product and complete hardware revision | `Modbus-to-X HW 1.0.0` |
+| Physical board marking | Product abbreviation and complete hardware revision | `MBX HW 1.0.0` |
 | Release title | Explicit hardware prefix | `Hardware 1.0.0` |
 | Source identity | Full Git commit ID | Recorded in release manifest |
 
@@ -161,24 +161,26 @@ identity.
 
 ## Board identification
 
-Add a hardware ID to the 1.0.0 respin so the firmware can report the board
-revision. The exported netlist of the current design confirms
-that IO32, IO34, IO35, IO36 (SENSOR_VP) and IO39 (SENSOR_VN) are unconnected,
-and the firmware uses none of them. None is a boot-strapping pin.
+Boards from 1.0.0 onwards carry a hardware ID on resistor pads that the
+firmware can read and report. [BOARD-ID.md](BOARD-ID.md) is the reference
+for the pin map, the resistors, the code table, the fitting rule and the
+read procedure; this section records only the decisions behind it.
 
-- `HW_ID_PRESENT` on IO32. This is a normal GPIO with an internal pull-up that
-  the firmware enables. Boards from 1.0.0 onwards fit a pull-down resistor, so
-  the pin reads low. Every earlier board leaves it open and reads high, which
-  gives a deterministic "no ID" result. Without this flag the input-only pins
-  below would float on a legacy board and could read as any code.
-- `HW_ID0`, `HW_ID1` and `HW_ID2` on IO34, IO35 and IO36. These are input-only
-  pins without internal pulls, so each gets a pull-up pad and a pull-down pad
-  of which exactly one is fitted. IO39 stays spare for a fourth bit.
-- The code is read as ID2 ID1 ID0. 1.0.0 is code 1: ID0 pulled up, ID1 and ID2
-  pulled down. Codes 2 to 7 remain for later revisions.
+- The ID uses pins that the prototype design left unconnected and the
+  firmware never used. None is a boot-strapping pin, so fitting resistors to
+  them cannot change how a board starts.
+- A presence flag on a GPIO with an internal pull-up comes first. Boards from
+  1.0.0 onwards pull it low; every earlier board leaves it open and reads
+  high, which gives a deterministic "no ID" result. Without it the input-only
+  ID pins, which have no internal pulls, would float on a legacy board and
+  could read as any code.
+- Each ID bit has a pull-up pad and a pull-down pad of which exactly one is
+  fitted, so no bit ever floats. One pin stays spare for a fourth bit.
 - The firmware reads the pins once after boot and shows the result next to
-  the firmware version in the system stats and the web UI. A board without
-  the pads shows `<1.0.0`; a code without a table entry shows the raw code.
+  the firmware version in the system stats and the web UI; a board without
+  the pads is shown as older than 1.0.0 and an unknown code as its raw
+  number. The firmware side is one of the prerequisites tracked outside the
+  repository and was not in the tree when the policy was adopted.
 - Nothing else is built on the value: no mismatch handling, no refusal, no
   per-revision code paths. If a future revision ever has to move a
   firmware-visible pin or change a polarity, that is a new major version with

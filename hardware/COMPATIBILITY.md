@@ -14,12 +14,15 @@ behind both tables is in [RELEASING.md](RELEASING.md).
   [`releases/hw-v<rev>/`](releases/).
 - **ID code**: the value the firmware reads from the board-ID pads, as defined
   in [BOARD-ID.md](BOARD-ID.md).
-- **Status**: `planned` (design in progress, no tag yet), `released for
+- **Status**: `draft` (design in progress, no tag yet), `released for
   fabrication` (tagged, physical validation pending) or `validated` (tested on
   manufactured boards, with a validation record), as defined by the lifecycle
   in RELEASING.md.
 - **Minimum firmware**: the oldest firmware release that supports the
   revision. Older firmware may run but is outside the compatibility claim.
+  Only a firmware-visible hardware change sets this value; repository
+  prerequisites such as the hardware-tag filter in RELEASING.md are not
+  board support and do not.
 - **Tested firmware**: the firmware releases exercised on a physical board of
   this revision, with a link to the validation record.
 - **Notes**: design changes, known issues and anything a user of the board
@@ -29,7 +32,7 @@ behind both tables is in [RELEASING.md](RELEASING.md).
 
 | Revision | Tag | ID code | Status | Minimum firmware | Tested firmware | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1.0.0 | `hw-v1.0.0` (not yet tagged) | 1 | planned | pending: the first firmware release whose version generation and update discovery ignore hardware tags | none | First marked revision. Adds the board-ID pads, the USB bridge and the J7 isolation header. A pre-release gerber export passed a JLCPCB DFM check on 2026-10-18; no board has been fabricated. |
+| 1.0.0 | `hw-v1.0.0` (not yet tagged) | 1 | draft | pending, set at release. Nothing known requires new firmware: the ID pads use pins no shipped firmware touched, and the ID is shown only by firmware that reads them | none | First marked revision. Adds the board-ID pads, the USB bridge and the J7 isolation header. A pre-release gerber export passed a JLCPCB DFM check on 2026-10-18; no board has been fabricated. |
 
 ## Historical spins
 

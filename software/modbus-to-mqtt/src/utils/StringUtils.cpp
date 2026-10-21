@@ -1,5 +1,7 @@
 #include "utils/StringUtils.h"
 
+#include <cctype>
+
 String StringUtils::slugify(String text) {
     String out;
     out.reserve(text.length());

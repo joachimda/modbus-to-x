@@ -98,5 +98,5 @@ project. The schematic and PCB title blocks and the front silkscreen text
    DNP marks on R22 to R27 to match and update the "Board ID" note on the
    schematic sheet, which spells out the fitted set.
 3. Add a row to the code table and the fitting table above, and to the
-   hardware/firmware compatibility table once the release policy introduces
-   it.
+   hardware/firmware compatibility table in
+   [COMPATIBILITY.md](COMPATIBILITY.md).

@@ -1,5 +1,7 @@
 #include "modbus/ModbusTopicBuilder.h"
 
+#include <cctype>
+
 #include "utils/StringUtils.h"
 
 ModbusTopicBuilder::ModbusTopicBuilder(String rootTopic) : _rootTopic(std::move(rootTopic)) {

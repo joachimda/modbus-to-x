@@ -43,14 +43,16 @@ Firmware lives in `software/modbus-to-mqtt/` (a PlatformIO workspace):
 
 Hardware lives in `hardware/`: the KiCad project and its libraries in
 `kicad_files/`, the release policy in `RELEASING.md`, the hardware/firmware
-compatibility table in `COMPATIBILITY.md`, the committed record of each
-release (notes, manifest, validation records) under `releases/hw-v<rev>/`,
-the historical `releases/v0.1-alpha` and `v0.2-alpha` folders, and datasheets
-under `datasheets/`. Generated fabrication outputs (gerbers, drill files, BOM,
-placement data, PDFs, STEP) are assets of the `hw-v<rev>` GitHub release, not
-tracked files; the local KiCad export folder is listed in `.gitignore`. Do
-not hand-edit generated Gerber, ZIP, STEP, PDF or binary artifacts;
-regenerate them from the sources.
+compatibility table in `COMPATIBILITY.md`, datasheets under `datasheets/`
+and release records under `releases/`. That folder holds the historical
+`v0.1-alpha` and `v0.2-alpha` folders (the latter tracks two PDFs and a
+gerber archive, the only tracked fabrication outputs) and, from revision
+1.0.0 onwards, `hw-v<rev>/` with the notes, manifest and validation records
+of each release. From 1.0.0 onwards generated fabrication outputs (gerbers,
+drill files, BOM, placement data, PDFs, STEP) are assets of the `hw-v<rev>`
+GitHub release, not tracked files; `.gitignore` lists the local KiCad export
+folder and the exported STEP model. Do not hand-edit generated Gerber, ZIP,
+STEP, PDF or binary artifacts; regenerate them from the sources.
 `hardware/BOARD-ID.md` documents the board-ID resistors and the `HW_REV` text
 variable.
 

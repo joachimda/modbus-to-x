@@ -35,14 +35,23 @@ behind both tables is in [RELEASING.md](RELEASING.md).
 
 All spins before 1.0.0 are prototypes: unsupported, unmarked and outside the
 table above. This table exists so that the old names can be resolved. The
-gerber folders named here were removed from the tree when the release policy
-was adopted; history keeps them, and they are present at commit `1fd1ce6`
-(2026-10-21).
+`rev2` and `rev3` gerber folders named here were removed from the tree when
+the release policy was adopted; history keeps them, and both are present at
+commit `1fd1ce6` (2026-10-21). `rev2` at that commit holds the re-export of
+2025-11-06, not the v0.2-alpha export, which exists at the tag and in the
+release archive.
 
-| Name as used | Where | Source commit | Date | Notes |
+The commit column names the commit that introduced the files in the row. For
+the two untagged exports it is not the design state the gerbers came from:
+`1fd5f1d` and `3e30e70` also changed the board and schematic, so regenerating
+from either commit gives different copper than the archived gerbers. The rev3
+export of 2026-01-28 came from a working tree after `d7d5953` (same day).
+
+| Name as used | Where | Commit | Date | Notes |
 | --- | --- | --- | --- | --- |
-| v0.1-alpha | tag `v0.1-alpha-hw`, `releases/v0.1-alpha` | `335340e` | 2025-07-11 | First alpha; release notes only |
-| v0.2-alpha | tag `v0.2-alpha-hw`, `releases/v0.2-alpha`, formerly `kicad_files/manufactoring/rev2` | `b85d923` | 2025-10-06 | Gerbers, PDFs and BOM as release assets |
-| rev3 | formerly `kicad_files/manufactoring/rev3` | `3e30e70` | 2026-01-28 export | New power supply, trace refinements; untagged; fabrication status unknown |
+| v0.1-alpha | tag `v0.1-alpha-hw`, `releases/v0.1-alpha` | `335340e` | 2025-07-11 | First alpha. The repository folder holds the release notes; the GitHub release carries a BOM, a JLCPCB gerber archive and schematic and PCB PDFs |
+| v0.2-alpha | tag `v0.2-alpha-hw`, `releases/v0.2-alpha` | `b85d923` | 2025-10-05 export, tagged 2025-10-06 | The repository folder and the GitHub release carry the gerber archive and the PDFs; the release also carries a BOM. At the tag the same export sat in `kicad_files/manufactoring/rev2` |
+| rev2 (re-export) | formerly `kicad_files/manufactoring/rev2`, from 2025-11-12 until removal | `1fd5f1d` | 2025-11-06 export | Re-exported and committed with the new power-supply design over the v0.2-alpha export; untagged; fabrication status unknown |
+| rev3 | formerly `kicad_files/manufactoring/rev3` | `3e30e70` | 2026-01-28 export | Trace refinements after the power-supply change; untagged; fabrication status unknown |
 | v0.5 | inventory assembly IPN `MBX-carrier-board-v0.5` | n/a | 2026-01-06 | Inventory label only; does not correspond to a tag |
 | 0.1 | schematic title block until 2026-10-21 | n/a | 2025-07-06 | Never updated; replaced by `${HW_REV}` with the revision-identity change |

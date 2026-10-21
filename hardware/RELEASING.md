@@ -35,8 +35,8 @@ and the release records show the current state.
 - The PCB file has no title block and the silkscreen carries no revision
   text. Manufactured boards are unmarked.
 - `hardware/releases/` holds notes for 0.1 and the PDFs and gerber archive for
-  0.2. Both historical tags also exist as GitHub prereleases; the 0.2 release
-  carries a BOM, PDFs and the gerber archive as assets.
+  0.2. Both historical tags also exist as GitHub prereleases, each carrying a
+  BOM, PDFs and a gerber archive as assets.
 - Firmware releases use `v*` tags and the Release OTA workflow. Version
   generation in `software/modbus-to-mqtt/scripts/gen_version.py` uses
   unrestricted `git describe --tags`, so any tag can become a firmware version.

@@ -328,8 +328,9 @@ ConversionResult convertPayloadWithBoundary(const ModbusFunctionType function,
     }
 
     if (!isWritableHoldingFunction(function)) return reject(RejectionReason::InvalidSyntax);
+    // Only FC16 carries an encoded value wider than one register.
     if (!ModbusValueCodec::isNumeric(dataType)
-        || (isSingleRegisterWrite(function) && ModbusValueCodec::wordWidth(dataType) != 1U)) {
+        || (function != WRITE_MULTIPLE_HOLDING && ModbusValueCodec::wordWidth(dataType) != 1U)) {
         return reject(RejectionReason::UnsupportedDataType);
     }
 

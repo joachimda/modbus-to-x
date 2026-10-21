@@ -104,6 +104,13 @@ ReadingText formatReading(const uint16_t *words, size_t count, bool bitFunction,
                           ModbusDataType type, RegisterSlice slice, ModbusWordOrder order,
                           float scale, char *buffer, size_t capacity);
 
+// Parses a comma-separated list of raw register words, each decimal or
+// 0x-prefixed hex in 0..65535 (surrounding spaces allowed), into words: the
+// HTTP execute `values` grammar. Returns false, leaving count 0, for an
+// empty list or entry, other text, a value out of range, or more than
+// capacity words.
+bool parseWordList(const char *text, uint16_t *words, size_t capacity, uint8_t &count);
+
 }  // namespace ModbusValueCodec
 
 #endif

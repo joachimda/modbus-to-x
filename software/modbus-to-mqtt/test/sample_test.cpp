@@ -59,6 +59,7 @@
 #include "../src/modbus/RtuTransport.cpp"
 #include "../src/modbus/WavinFrame.cpp"
 #include "../src/modbus/WavinClient.cpp"
+#include "../src/modbus/ProtocolProfile.cpp"
 #include "../include/modbus/RtuLink.h"
 
 namespace {
@@ -3702,6 +3703,42 @@ void test_modbus_codec_format_reading_matches_publication(void) {
     TEST_ASSERT_EQUAL_STRING("", text);
 }
 
+void test_modbus_codec_parses_word_lists(void) {
+    constexpr size_t kCapacity = 32U;
+    uint16_t words[kCapacity + 1U] = {};
+    uint8_t count = 0U;
+    TEST_ASSERT_TRUE(ModbusValueCodec::parseWordList("2026,10, 17 ,0x5,0X0e,0,65535", words, kCapacity, count));
+    TEST_ASSERT_EQUAL_UINT8(7U, count);
+    const uint16_t expected[7] = {2026U, 10U, 17U, 5U, 14U, 0U, 65535U};
+    TEST_ASSERT_EQUAL_HEX16_ARRAY(expected, words, 7U);
+    TEST_ASSERT_TRUE(ModbusValueCodec::parseWordList("0xffff", words, kCapacity, count));
+    TEST_ASSERT_EQUAL_UINT8(1U, count);
+    TEST_ASSERT_EQUAL_HEX16(0xFFFFU, words[0]);
+
+    // Rejected: empty lists and entries, other text, values out of range.
+    const char *const rejected[] = {"", " ", "1,", ",1", "1,,2", "1;2", "-1", "+1", "1.5", "0x",
+                                    "0x10000", "65536", "1 2", "abc"};
+    for (const char *text : rejected) {
+        count = 9U;
+        TEST_ASSERT_FALSE_MESSAGE(ModbusValueCodec::parseWordList(text, words, kCapacity, count), text);
+        TEST_ASSERT_EQUAL_UINT8(0U, count);
+    }
+    // The capacity is the only limit on the count.
+    char list[160] = "0";
+    for (size_t i = 1U; i <= kCapacity; ++i) std::strcat(list, ",0");
+    TEST_ASSERT_FALSE(ModbusValueCodec::parseWordList(list, words, kCapacity, count));
+    TEST_ASSERT_EQUAL_UINT8(0U, count);
+    TEST_ASSERT_TRUE(ModbusValueCodec::parseWordList(list, words, kCapacity + 1U, count));
+    TEST_ASSERT_EQUAL_UINT8(kCapacity + 1U, count);
+    list[std::strlen(list) - 2U] = '\0';
+    TEST_ASSERT_TRUE(ModbusValueCodec::parseWordList(list, words, kCapacity, count));
+    TEST_ASSERT_EQUAL_UINT8(kCapacity, count);
+    TEST_ASSERT_FALSE(ModbusValueCodec::parseWordList("1,2,3", words, 2U, count));
+    TEST_ASSERT_FALSE(ModbusValueCodec::parseWordList("1", words, 0U, count));
+    TEST_ASSERT_FALSE(ModbusValueCodec::parseWordList(nullptr, words, kCapacity, count));
+    TEST_ASSERT_FALSE(ModbusValueCodec::parseWordList("1", nullptr, kCapacity, count));
+}
+
 void test_ota_lifecycle_rejects_duplicates_and_retains_terminal_failure(void) {
     OtaProgressCore::Lifecycle lifecycle;
     TEST_ASSERT_EQUAL_INT(
@@ -3995,8 +4032,12 @@ void test_wavin_frame_builds_read_and_write_requests(void) {
     TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildRead(1U, 1U, 4U, 0U, WavinFrame::kMaxRegisters + 1U,
                                                      frame, sizeof frame));
     TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildRead(1U, 1U, 4U, 0U, 1U, frame, 7U));
-    const uint16_t five[5] = {};
-    TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildWrite(1U, 2U, 0U, 3U, five, 5U, frame, sizeof frame));
+    const uint16_t tooMany[WavinFrame::kMaxRegisters + 1U] = {};
+    TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildWrite(1U, 2U, 0U, 3U, tooMany, WavinFrame::kMaxRegisters + 1U,
+                                                      frame, sizeof frame));
+    TEST_ASSERT_EQUAL_UINT(8U + 2U * WavinFrame::kMaxRegisters,
+                           WavinFrame::buildWrite(1U, 6U, 0U, 3U, tooMany, WavinFrame::kMaxRegisters,
+                                                  frame, sizeof frame));
     TEST_ASSERT_EQUAL_UINT(0U, WavinFrame::buildWrite(1U, 2U, 0U, 3U, &value, 1U, frame, 9U));
 
     // The shapes the scanner is given: a reply carries at most the requested
@@ -4012,6 +4053,73 @@ void test_wavin_frame_builds_read_and_write_requests(void) {
                           static_cast<int>(WavinFrame::peerRequestShape(0x44U).kind));
     TEST_ASSERT_EQUAL_INT(static_cast<int>(RtuFrame::FrameShape::Kind::None),
                           static_cast<int>(WavinFrame::peerRequestShape(0x03U).kind));
+}
+
+void test_wavin_frame_writes_whole_clock_page(void) {
+    using RtuFrame::ScanStatus;
+    const RtuFrame::FrameShape peerWrite = WavinFrame::peerRequestShape(0x44U);
+    const RtuFrame::FrameShape anyWrite = WavinFrame::replyShape(WavinFrame::kMaxRegisters);
+    // The clock page (category 5) is only accepted whole: 2026-10-17,
+    // Saturday (5, Monday is 0), 14:05:30 in one 7-register write.
+    const uint16_t clock[7] = {2026U, 10U, 17U, 5U, 14U, 5U, 30U};
+    uint8_t frame[WavinFrame::kMaxWriteRequestSize] = {};
+    TEST_ASSERT_EQUAL_UINT(22U, WavinFrame::buildWrite(1U, 5U, 0U, 0U, clock, 7U, frame, sizeof frame));
+    const uint8_t expected[] = {0x01, 0x44, 0x05, 0x00, 0x00, 0x07, 0x07, 0xEA, 0x00, 0x0A, 0x00,
+                                0x11, 0x00, 0x05, 0x00, 0x0E, 0x00, 0x05, 0x00, 0x1E, 0x87, 0x16};
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, frame, sizeof expected);
+
+    // The controller echoes the written data.
+    const uint8_t reply[] = {0x01, 0x44, 0x0E, 0x07, 0xEA, 0x00, 0x0A, 0x00, 0x11, 0x00,
+                             0x05, 0x00, 0x0E, 0x00, 0x05, 0x00, 0x1E, 0xB1, 0x3B};
+    uint16_t words[WavinFrame::kMaxRegisters] = {};
+    const RtuFrame::ScanResult scan = RtuFrame::scan(reply, sizeof reply, 1U, 0x44U, anyWrite, peerWrite);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(scan.status));
+    TEST_ASSERT_EQUAL_UINT(sizeof reply, scan.frameLength);
+    TEST_ASSERT_EQUAL_UINT8(7U, WavinFrame::decodeReply(reply, scan.frameLength, words,
+                                                        WavinFrame::kMaxRegisters));
+    TEST_ASSERT_EQUAL_HEX16_ARRAY(clock, words, 7U);
+
+    // Behind the same write sent by the display, the reply is still found.
+    // Category 5 is odd, so the display's frame never looks like a reply and
+    // is dropped byte by byte without consulting the peer-request shape.
+    uint8_t stream[sizeof expected + sizeof reply];
+    std::memcpy(stream, expected, sizeof expected);
+    std::memcpy(stream + sizeof expected, reply, sizeof reply);
+    std::memset(words, 0, sizeof words);
+    RtuFrame::LocateResult located =
+        RtuFrame::locate(stream, sizeof stream, 1U, 0x44U, anyWrite, peerWrite);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(located.status));
+    TEST_ASSERT_EQUAL_UINT(sizeof expected, located.dropCount);
+    TEST_ASSERT_EQUAL_UINT(sizeof expected, located.frameOffset);
+    TEST_ASSERT_EQUAL_UINT(sizeof reply, located.frameLength);
+    TEST_ASSERT_FALSE(located.crcMismatch);
+    TEST_ASSERT_EQUAL_UINT8(7U, WavinFrame::decodeReply(stream + located.frameOffset, located.frameLength,
+                                                        words, WavinFrame::kMaxRegisters));
+    TEST_ASSERT_EQUAL_HEX16_ARRAY(clock, words, 7U);
+
+    // A schedule page (category 6) written by the display does read as a
+    // reply at first (an even byte count at offset 2), and only its own
+    // CRC tells it apart. With write frames of up to kMaxRegisters the
+    // scanner recognises the whole 7-word request and drops it at once; at
+    // the former four-word limit it was a CRC mismatch and the reply behind
+    // it a look-alike.
+    const uint16_t schedule[7] = {6U, 0U, 21U, 0U, 7U, 30U, 1U};
+    uint8_t peerFrame[WavinFrame::kMaxWriteRequestSize] = {};
+    const size_t peerLength = WavinFrame::buildWrite(1U, 6U, 0U, 0U, schedule, 7U, peerFrame,
+                                                     sizeof peerFrame);
+    TEST_ASSERT_EQUAL_UINT(22U, peerLength);
+    const RtuFrame::ScanResult peer = RtuFrame::scan(peerFrame, peerLength, 1U, 0x44U, anyWrite, peerWrite);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Skip), static_cast<int>(peer.status));
+    TEST_ASSERT_EQUAL_UINT(peerLength, peer.frameLength);
+    TEST_ASSERT_FALSE(peer.crcMismatch);
+    uint8_t mixed[sizeof peerFrame + sizeof reply];
+    std::memcpy(mixed, peerFrame, peerLength);
+    std::memcpy(mixed + peerLength, reply, sizeof reply);
+    located = RtuFrame::locate(mixed, peerLength + sizeof reply, 1U, 0x44U, anyWrite, peerWrite);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(ScanStatus::Response), static_cast<int>(located.status));
+    TEST_ASSERT_EQUAL_UINT(peerLength, located.dropCount);
+    TEST_ASSERT_EQUAL_UINT(peerLength, located.frameOffset);
+    TEST_ASSERT_FALSE(located.crcMismatch);
 }
 
 void test_rtu_frame_scans_replies_and_exceptions(void) {
@@ -4699,8 +4807,9 @@ void test_wavin_client_reads_and_writes_through_the_transport(void) {
                            client.readRegisters(1U, 1U, 4U, 0U, WavinFrame::kMaxRegisters + 1U, words, 4U,
                                                 received));
     TEST_ASSERT_EQUAL_UINT8(0U, received);
-    const uint16_t five[5] = {};
-    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue, client.writeRegisters(1U, 2U, 0U, 3U, five, 5U));
+    const uint16_t tooMany[WavinFrame::kMaxRegisters + 1U] = {};
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue,
+                           client.writeRegisters(1U, 2U, 0U, 3U, tooMany, WavinFrame::kMaxRegisters + 1U));
     TEST_ASSERT_EQUAL_UINT(3U, link.sent.size());
 }
 
@@ -4846,6 +4955,60 @@ void test_modbus_mqtt_wavin_write_carries_register_location(void) {
                               WAVIN_WRITE, "1", 1.0, INT32, ModbusWordOrder::Big).rejection));
 }
 
+void test_protocol_profiles_bound_addresses_and_counts(void) {
+    // Function codes map to the two built-in profiles; a code that names no
+    // function is standard Modbus and is refused later as an illegal function.
+    TEST_ASSERT_EQUAL_STRING("modbus-rtu", profileForFunction(3).id);
+    TEST_ASSERT_EQUAL_STRING("modbus-rtu", profileForFunction(16).id);
+    TEST_ASSERT_EQUAL_STRING("modbus-rtu", profileForFunction(0).id);
+    TEST_ASSERT_EQUAL_STRING("modbus-rtu", profileForFunction(99).id);
+    TEST_ASSERT_EQUAL_STRING("wavin-ahc9000", profileForFunction(0x43).id);
+    TEST_ASSERT_EQUAL_STRING("wavin-ahc9000", profileForFunction(0x44).id);
+
+    // Wavin: a one-byte index, so a run of words must end at index 255.
+    const ProtocolProfile &wavin = kWavinAhc9000Profile;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkAddressRange(wavin, 255U, 1U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataAddress, checkAddressRange(wavin, 255U, 2U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataAddress, checkAddressRange(wavin, 256U, 1U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataAddress, checkAddressRange(wavin, 0xFFFFU, 1U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkAddressRange(wavin, 0U, 22U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkAddressRange(wavin, 234U, 22U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataAddress, checkAddressRange(wavin, 235U, 22U));
+    // Count 0 checks the address alone, for a read whose length is rejected
+    // on its own.
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkAddressRange(wavin, 255U, 0U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataAddress, checkAddressRange(wavin, 256U, 0U));
+
+    // Standard Modbus: the whole 16-bit space.
+    const ProtocolProfile &modbus = kModbusRtuProfile;
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkAddressRange(modbus, 0xFFFFU, 1U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataAddress, checkAddressRange(modbus, 0xFFFFU, 2U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkAddressRange(modbus, 0xFFC0U, 64U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataAddress, checkAddressRange(modbus, 0xFFC1U, 64U));
+    TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataAddress, checkAddressRange(modbus, 0x10000U, 1U));
+
+    // Register counts: 1..max per request; 0 and max + 1 are code 3. Wavin's
+    // frame carries 22, ModbusMaster's buffers 64.
+    const struct {
+        const ProtocolProfile &profile;
+        uint8_t max;
+    } limits[] = {{wavin, 22U}, {modbus, 64U}};
+    for (const auto &limit : limits) {
+        TEST_ASSERT_EQUAL_UINT8(limit.max, limit.profile.maxReadRegisters);
+        TEST_ASSERT_EQUAL_UINT8(limit.max, limit.profile.maxWriteRegisters);
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue, checkReadCount(limit.profile, 0U));
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkReadCount(limit.profile, 1U));
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkReadCount(limit.profile, limit.max));
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue, checkReadCount(limit.profile, limit.max + 1U));
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue, checkReadCount(limit.profile, 0xFFFFU));
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue, checkWriteCount(limit.profile, 0U));
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkWriteCount(limit.profile, 1U));
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kSuccess, checkWriteCount(limit.profile, limit.max));
+        TEST_ASSERT_EQUAL_HEX8(RtuFrame::kIllegalDataValue,
+                               checkWriteCount(limit.profile, static_cast<uint8_t>(limit.max + 1U)));
+    }
+}
+
 int main(int /*argc*/, char ** /*argv*/) {
     UNITY_BEGIN();
     RUN_TEST(test_single_chunk_returns_full_buffer);
@@ -4927,6 +5090,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_modbus_codec_formats_wide_integers_exactly);
     RUN_TEST(test_modbus_codec_formats_float32_with_shortest_round_trip);
     RUN_TEST(test_modbus_codec_format_reading_matches_publication);
+    RUN_TEST(test_modbus_codec_parses_word_lists);
     RUN_TEST(test_ota_lifecycle_rejects_duplicates_and_retains_terminal_failure);
     RUN_TEST(test_ota_quiescence_deadlines_are_independent_and_rollover_safe);
     RUN_TEST(test_ota_progress_calculates_component_and_overall_without_overflow);
@@ -4942,6 +5106,7 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_ota_ui_filesystem_gate_prevents_access_until_safe_remount);
     RUN_TEST(test_rtu_frame_crc_matches_controller_replies);
     RUN_TEST(test_wavin_frame_builds_read_and_write_requests);
+    RUN_TEST(test_wavin_frame_writes_whole_clock_page);
     RUN_TEST(test_rtu_frame_scans_replies_and_exceptions);
     RUN_TEST(test_rtu_frame_locates_reply_among_other_traffic);
     RUN_TEST(test_rtu_timing_scales_with_baud_and_fits_budget);
@@ -4952,5 +5117,6 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_modbus_configuration_parses_wavin_datapoints);
     RUN_TEST(test_modbus_configuration_rejects_baud_below_minimum);
     RUN_TEST(test_modbus_mqtt_wavin_write_carries_register_location);
+    RUN_TEST(test_protocol_profiles_bound_addresses_and_counts);
     return UNITY_END();
 }

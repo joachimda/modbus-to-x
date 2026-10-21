@@ -36,8 +36,10 @@ export function isWavinFunction(functionCode) {
     return fn === WAVIN_READ || fn === WAVIN_WRITE;
 }
 
-// Writes of exactly one 16-bit register: FC6 and Wavin 0x44. Mirrors the
-// firmware's isSingleRegisterWrite.
+// Datapoint writes whose value is encoded as exactly one 16-bit register:
+// FC6 and Wavin 0x44. Mirrors the register-shape rule of the firmware's
+// ModbusConfigDocument and ModbusMqttWriteCore (only FC16 encodes a wider
+// type), not its isSingleRegisterWrite classifier, which names FC6 alone.
 export function isSingleRegisterWrite(functionCode) {
     const fn = Number(functionCode);
     return fn === 6 || fn === WAVIN_WRITE;

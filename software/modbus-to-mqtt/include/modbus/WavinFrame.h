@@ -30,7 +30,9 @@ constexpr uint8_t kWriteFunction = 0x44;
 // such replies are accepted and their actual count reported.
 constexpr uint8_t kMaxRegisters = 22U;
 constexpr size_t kReadRequestSize = 8U;
-constexpr size_t kMaxWriteRequestSize = 8U + 2U * 4U;
+// Largest write: header (6) + data + CRC (2). Whole pages that must be written
+// in one frame (clock, schedules) fit.
+constexpr size_t kMaxWriteRequestSize = 8U + 2U * kMaxRegisters;
 // Offset of the register count in a request; a write request's size follows
 // from it.
 constexpr size_t kRequestCountOffset = 5U;
@@ -66,7 +68,7 @@ constexpr RtuFrame::FrameShape replyShape(const uint8_t count) {
 // Shape of a request another master (the wall display) sends for the same
 // function, so the scanner can tell it from a reply to ours once its CRC
 // has arrived: a read is kReadRequestSize bytes, a write carries its
-// register count (1..4 words) at kRequestCountOffset.
+// register count (1..kMaxRegisters words) at kRequestCountOffset.
 constexpr RtuFrame::FrameShape peerRequestShape(const uint8_t function) {
     return function == kReadFunction
                ? RtuFrame::FrameShape::fixed(kReadRequestSize)

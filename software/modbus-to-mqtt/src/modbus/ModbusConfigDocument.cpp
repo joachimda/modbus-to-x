@@ -170,7 +170,8 @@ bool applyRegisterShapeRules(ModbusDatapoint &datapoint, const long requestedCou
 
     uint8_t width = ModbusValueCodec::wordWidth(datapoint.dataType);
     uint8_t coercedCount = datapoint.numOfRegisters;
-    if (isSingleRegisterWrite(datapoint.function)) {
+    // Only FC16 writes an encoded value wider than one register.
+    if (registerWrite && datapoint.function != WRITE_MULTIPLE_HOLDING) {
         if (width != 1U) {
             if (mode == ParseMode::Strict) {
                 return fail(error, ValidationReason::InvalidRegisterCount, deviceIndex, datapointIndex);

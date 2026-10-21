@@ -13,10 +13,6 @@ definition, fabrication outputs and validation results. Keep hardware versions
 independent of firmware versions, with explicit records of their compatibility,
 and let the firmware report which board it is running on.
 
-Continue using this repository for both stacks. A separate hardware repository
-or a permanent branch for each board revision is unnecessary: immutable tags
-identify released designs, while working branches contain changes under review.
-
 ## Situation at adoption
 
 This is the state the policy was written against, on 2026-10-16. It is kept

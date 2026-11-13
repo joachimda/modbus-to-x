@@ -33,14 +33,19 @@ struct ValidationError {
     size_t datapointIndex{0U};
 };
 
-// How FC6 combined with a 32-bit or 64-bit data type is handled; every other
-// shape problem is repaired in both modes.
+// How FC6 combined with a 32-bit or 64-bit data type, and a polling interval
+// outside the accepted range, are handled; every other shape problem is
+// repaired in both modes.
 enum class ParseMode : uint8_t {
     // Reject the document (API submissions: the caller can fix it).
     Strict = 0,
-    // Treat the data type as uint16 (the encoding every FC6 value had before
-    // data types were honoured) and report a notice, so a configuration
-    // saved by an earlier firmware keeps loading and behaving as before.
+    // Repair the datapoint and report a notice, so a configuration saved by
+    // an earlier firmware keeps loading. FC6 with a wide data type is
+    // treated as uint16 (the encoding every FC6 value had before data types
+    // were honoured). A polling interval is brought into range: a negative
+    // number becomes 0, a fraction is rounded down, a number above the
+    // maximum becomes the maximum, and a value that is not a number counts
+    // as absent.
     Lenient,
 };
 
@@ -59,14 +64,18 @@ enum class ParseWarning : uint8_t {
     // FC6 with a 32-bit or 64-bit data type was treated as uint16 (lenient
     // mode only).
     DataTypeCoercedToUint16,
+    // poll_interval_ms or poll_interval was outside the accepted range and
+    // was repaired (lenient mode only). `coerced` is the interval in use, in
+    // milliseconds; `previous` is not set.
+    PollIntervalRepaired,
 };
 
 struct ParseNotice {
     ParseWarning warning{ParseWarning::None};
     size_t deviceIndex{0U};
     size_t datapointIndex{0U};
-    uint16_t previous{0U};
-    uint16_t coerced{0U};
+    uint32_t previous{0U};
+    uint32_t coerced{0U};
 };
 
 bool parse(const char *json, size_t length, ConfigurationRoot &outConfig,

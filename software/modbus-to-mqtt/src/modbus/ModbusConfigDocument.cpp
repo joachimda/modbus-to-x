@@ -129,7 +129,7 @@ bool fail(ValidationError *error, const ValidationReason reason,
 
 void notice(std::vector<ParseNotice> *notices, const ParseWarning warning,
             const size_t deviceIndex, const size_t datapointIndex,
-            const uint16_t previous, const uint16_t coerced) {
+            const uint32_t previous, const uint32_t coerced) {
     if (notices == nullptr) return;
     ParseNotice entry;
     entry.warning = warning;
@@ -206,47 +206,61 @@ bool applyRegisterShapeRules(ModbusDatapoint &datapoint, const long requestedCou
     return true;
 }
 
-bool parseBoundedWholeNumber(const JsonVariantConst &value, const uint32_t maximum,
-                             uint32_t &result) {
-    if (!value.is<double>()) return false;
+enum class IntervalField : uint8_t { Absent, Valid, Repaired, Invalid };
+
+// Reads a whole number of 0..maximum. In lenient mode a number outside that
+// set is brought into it and anything that is not a number counts as absent.
+IntervalField parseIntervalField(const JsonVariantConst &value, const uint32_t maximum,
+                                 const ParseMode mode, uint32_t &result) {
+    result = 0U;
+    if (value.isUnbound()) return IntervalField::Absent;
+
+    const bool lenient = mode == ParseMode::Lenient;
+    if (!value.is<double>()) {
+        return lenient ? IntervalField::Absent : IntervalField::Invalid;
+    }
 
     const double numericValue = value.as<double>();
-    if (!std::isfinite(numericValue)
-        || numericValue < 0.0
-        || numericValue > static_cast<double>(maximum)
-        || std::floor(numericValue) != numericValue) {
+    if (std::isfinite(numericValue)
+        && numericValue >= 0.0
+        && numericValue <= static_cast<double>(maximum)
+        && std::floor(numericValue) == numericValue) {
+        result = static_cast<uint32_t>(numericValue);
+        return IntervalField::Valid;
+    }
+    if (!lenient) return IntervalField::Invalid;
+
+    if (std::isnan(numericValue) || numericValue < 0.0) {
+        result = 0U;
+    } else if (numericValue > static_cast<double>(maximum)) {
+        result = maximum;
+    } else {
+        result = static_cast<uint32_t>(std::floor(numericValue));
+    }
+    return IntervalField::Repaired;
+}
+
+// poll_interval_ms wins when both fields are present. In strict mode an
+// invalid value in either field rejects the datapoint, including the field
+// that would not have been used.
+bool parsePollInterval(const JsonObject &point, const ParseMode mode,
+                       uint32_t &pollIntervalMs, bool &repaired) {
+    uint32_t milliseconds = 0U;
+    const IntervalField millisecondsField =
+        parseIntervalField(point["poll_interval_ms"],
+                           ModbusPollScheduler::MAX_POLL_INTERVAL_MS, mode, milliseconds);
+    uint32_t seconds = 0U;
+    const IntervalField secondsField =
+        parseIntervalField(point["poll_interval"],
+                           ModbusPollScheduler::MAX_LEGACY_POLL_INTERVAL_SECONDS, mode, seconds);
+    if (millisecondsField == IntervalField::Invalid
+        || secondsField == IntervalField::Invalid) {
         return false;
     }
 
-    result = static_cast<uint32_t>(numericValue);
-    return true;
-}
-
-bool parsePollInterval(const JsonObject &point, uint32_t &pollIntervalMs) {
-    const JsonVariantConst millisecondsValue = point["poll_interval_ms"];
-    const JsonVariantConst secondsValue = point["poll_interval"];
-    const bool hasMilliseconds = !millisecondsValue.isUnbound();
-    const bool hasSeconds = !secondsValue.isUnbound();
-
-    uint32_t milliseconds = 0U;
-    if (hasMilliseconds) {
-        if (!parseBoundedWholeNumber(millisecondsValue,
-                                     ModbusPollScheduler::MAX_POLL_INTERVAL_MS,
-                                     milliseconds)) {
-            return false;
-        }
-    }
-
-    uint32_t seconds = 0U;
-    if (hasSeconds) {
-        if (!parseBoundedWholeNumber(secondsValue,
-                                     ModbusPollScheduler::MAX_LEGACY_POLL_INTERVAL_SECONDS,
-                                     seconds)) {
-            return false;
-        }
-    }
-
-    pollIntervalMs = hasMilliseconds ? milliseconds : seconds * 1000U;
+    const bool useMilliseconds = millisecondsField != IntervalField::Absent;
+    pollIntervalMs = useMilliseconds ? milliseconds : seconds * 1000U;
+    repaired = (useMilliseconds ? millisecondsField : secondsField) == IntervalField::Repaired;
     return true;
 }
 
@@ -365,9 +379,15 @@ bool parse(const char *json, const size_t length, ConfigurationRoot &outConfig,
                     datapoint.topic.trim();
                     datapoint.registerSlice = parseRegisterSlice(point["registerSlice"]);
                     datapoint.wordOrder = parseWordOrder(point["wordOrder"]);
-                    if (!parsePollInterval(point, datapoint.pollIntervalMs)) {
+                    bool pollIntervalRepaired = false;
+                    if (!parsePollInterval(point, mode, datapoint.pollIntervalMs,
+                                           pollIntervalRepaired)) {
                         return fail(validationError, ValidationReason::InvalidPollInterval,
                                     deviceIndex, datapointIndex);
+                    }
+                    if (pollIntervalRepaired) {
+                        notice(notices, ParseWarning::PollIntervalRepaired, deviceIndex,
+                               datapointIndex, 0U, datapoint.pollIntervalMs);
                     }
                     datapoint.nextDueAtMs = 0U;
                     datapoint.hasScheduledDeadline = false;
@@ -442,6 +462,7 @@ const char *warningToString(const ParseWarning warning) {
         case ParseWarning::TextWriteCoercedToUint16: return "text_write_coerced_to_uint16";
         case ParseWarning::RegisterCountClamped: return "register_count_clamped";
         case ParseWarning::DataTypeCoercedToUint16: return "data_type_coerced_to_uint16";
+        case ParseWarning::PollIntervalRepaired: return "poll_interval_repaired";
         case ParseWarning::None: break;
     }
     return "none";

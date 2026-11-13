@@ -30,6 +30,13 @@ void ModbusPollScheduler::scheduleNext(ModbusDatapoint &dp, const uint32_t nowMs
     }
 }
 
+void ModbusPollScheduler::clearDeadlines(ModbusDevice &device) {
+    for (auto &dp : device.datapoints) {
+        dp.nextDueAtMs = 0;
+        dp.hasScheduledDeadline = false;
+    }
+}
+
 std::vector<ModbusDatapoint *> ModbusPollScheduler::dueReadDatapoints(ModbusDevice &device, const uint32_t nowMs) {
     std::vector<ModbusDatapoint *> due;
     due.reserve(device.datapoints.size());

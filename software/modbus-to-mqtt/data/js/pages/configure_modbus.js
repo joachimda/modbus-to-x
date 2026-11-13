@@ -1,7 +1,8 @@
 import {API, safeJson, STATIC_FILES} from "app";
 import {parseConfiguredScale, validateDatapointScale} from "./modbus_scale.mjs";
 import {
-    MAX_LEGACY_POLL_INTERVAL_SECONDS,
+    pollIntervalFromSchema,
+    pollIntervalToSchema,
     pollIntervalValidationError,
 } from "./modbus_poll.mjs";
 import {
@@ -100,12 +101,7 @@ function schemaToUi(json) {
                 topic: (typeof p.topic === "string") ? p.topic.trim() : "",
                 category: toByteField(p.category),
                 page: toByteField(p.page),
-                poll_secs: (Number.isFinite(Number(p?.poll_interval))
-                    ? Number(p.poll_interval)
-                    : (Number.isFinite(Number(p?.poll_interval_ms))
-                        ? Math.min(MAX_LEGACY_POLL_INTERVAL_SECONDS,
-                            Math.round(Number(p.poll_interval_ms) / 1000))
-                        : 0))
+                ...pollIntervalFromSchema(p)
             };
         }) : []
     }));
@@ -142,7 +138,6 @@ function uiToSchema(uiModel) {
                 const func = Number(p.func) || 3;
                 const type = normalizeDataType(p.type);
                 const order = normalizeWordOrder(p.order);
-                const pollInterval = Number(p.poll_secs ?? 0);
                 const dp = {
                     id: p.id,
                     name: p.name,
@@ -152,7 +147,7 @@ function uiToSchema(uiModel) {
                     dataType: type,
                     scale: parseConfiguredScale(p.scale),
                     unit: p.unit || "",
-                    ...(pollInterval !== 0 ? { poll_interval: pollInterval } : {})
+                    ...pollIntervalToSchema(p)
                 };
                 // Byte slices apply to 16-bit types only; word order to multi-register types only.
                 if (slice !== "full" && wordWidth(type) === 1) {
@@ -937,6 +932,8 @@ function showDatapointEditor() {
     };
     $("#dp-poll").oninput = () => {
         datapoint.poll_secs = Number($("#dp-poll").value);
+        // An edited interval is saved in seconds, even when it reads the same.
+        delete datapoint.poll_ms;
     };
 }
 
@@ -1146,6 +1143,13 @@ $("#btn-dev-add-dp").onclick = () => {
 
 $("#btn-export").onclick = () => {
     const cfg = uiToSchema(model);
+    // The file may be sent straight to the device API, which rejects what
+    // the save dialog would have refused.
+    const v = validateSchemaConfig(cfg);
+    if (!v.ok && !confirm(
+        `The device will reject this configuration:\n${v.errors.join("\n")}\n\nExport it anyway?`)) {
+        return;
+    }
     const blob = new Blob([JSON.stringify(cfg, null, 2)], {
         type: "application/json"
     });

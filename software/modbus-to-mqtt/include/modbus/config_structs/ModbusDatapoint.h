@@ -26,5 +26,6 @@ struct ModbusDatapoint {
     uint8_t category{0};
     uint8_t page{0};
     uint32_t nextDueAtMs{0};
+    bool hasScheduledDeadline{false};
 };
 #endif

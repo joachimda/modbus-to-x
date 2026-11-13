@@ -54,6 +54,7 @@
 #include "../src/utils/StringUtils.cpp"
 #include "../src/modbus/ModbusValueCodec.cpp"
 #include "../src/modbus/ModbusConfigDocument.cpp"
+#include "../src/modbus/ModbusPollScheduler.cpp"
 #include "../src/modbus/ModbusTopicBuilder.cpp"
 #include "../src/modbus/RtuFrame.cpp"
 #include "../src/modbus/RtuTransport.cpp"
@@ -2941,6 +2942,88 @@ void test_modbus_mqtt_production_handler_submits_only_accepted_commands(void) {
     TEST_ASSERT_EQUAL_UINT8(0U, submissions[2].wordCount);
 }
 
+void assertPollingApiAgreement(ModbusDevice &device, const uint32_t nowMs,
+                               const bool expectedDue) {
+    TEST_ASSERT_EQUAL(expectedDue,
+                      ModbusPollScheduler::isDue(device.datapoints[0], nowMs));
+    TEST_ASSERT_FALSE(ModbusPollScheduler::isDue(device.datapoints[1], nowMs));
+    TEST_ASSERT_EQUAL(expectedDue,
+                      ModbusPollScheduler::hasDueReadDatapoints(device, nowMs));
+
+    const auto allocated = ModbusPollScheduler::dueReadDatapoints(device, nowMs);
+    TEST_ASSERT_EQUAL_UINT(expectedDue ? 1U : 0U, allocated.size());
+    if (expectedDue) TEST_ASSERT_EQUAL_PTR(&device.datapoints[0], allocated[0]);
+
+    std::vector<ModbusDatapoint *> collected;
+    const size_t collectedCount =
+        ModbusPollScheduler::collectDueReadDatapoints(device, nowMs, collected);
+    TEST_ASSERT_EQUAL_UINT(expectedDue ? 1U : 0U, collectedCount);
+    TEST_ASSERT_EQUAL_UINT(expectedDue ? 1U : 0U, collected.size());
+    if (expectedDue) TEST_ASSERT_EQUAL_PTR(&device.datapoints[0], collected[0]);
+}
+
+ModbusDevice rolloverPollingDevice(const uint32_t intervalMs) {
+    ModbusDevice device{};
+    ModbusDatapoint readable{};
+    readable.function = READ_HOLDING;
+    readable.pollIntervalMs = intervalMs;
+    device.datapoints.push_back(readable);
+
+    ModbusDatapoint writable{};
+    writable.function = WRITE_HOLDING;
+    writable.pollIntervalMs = intervalMs;
+    device.datapoints.push_back(writable);
+    return device;
+}
+
+void test_modbus_polling_initial_state_and_all_due_apis_are_rollover_safe(void) {
+    ModbusDevice device = rolloverPollingDevice(1000U);
+
+    assertPollingApiAgreement(device, 0x80000000U, true);
+    TEST_ASSERT_FALSE(device.datapoints[0].hasScheduledDeadline);
+    TEST_ASSERT_FALSE(device.datapoints[1].hasScheduledDeadline);
+
+    device.datapoints[0].pollIntervalMs = 0U;
+    assertPollingApiAgreement(device, 0xFFFFFFFFU, true);
+    ModbusPollScheduler::scheduleNext(device.datapoints[0], 0xFFFFFFFFU);
+    TEST_ASSERT_FALSE(device.datapoints[0].hasScheduledDeadline);
+    assertPollingApiAgreement(device, 0U, true);
+}
+
+void test_modbus_polling_deadlines_are_ordered_across_millis_rollover(void) {
+    ModbusDevice device = rolloverPollingDevice(32U);
+    auto &readable = device.datapoints[0];
+
+    ModbusPollScheduler::scheduleNext(readable, 0xFFFFFFE0U);
+    TEST_ASSERT_TRUE(readable.hasScheduledDeadline);
+    TEST_ASSERT_EQUAL_HEX32(0U, readable.nextDueAtMs);
+    assertPollingApiAgreement(device, 0xFFFFFFFFU, false);
+    assertPollingApiAgreement(device, 0U, true);
+
+    ModbusPollScheduler::scheduleNext(readable, 0xFFFFFFF0U);
+    TEST_ASSERT_EQUAL_HEX32(0x10U, readable.nextDueAtMs);
+    assertPollingApiAgreement(device, 0xFFFFFFFFU, false);
+    assertPollingApiAgreement(device, 0x10U, true);
+    assertPollingApiAgreement(device, 0x11U, true);
+
+    readable.nextDueAtMs = 0xFFFFFFF0U;
+    readable.hasScheduledDeadline = true;
+    assertPollingApiAgreement(device, 0x05U, true);
+}
+
+void test_modbus_polling_reschedules_once_from_supplied_attempt_timestamp(void) {
+    ModbusDevice device = rolloverPollingDevice(32U);
+    auto &readable = device.datapoints[0];
+    readable.nextDueAtMs = 0xFFFFFFE0U;
+    readable.hasScheduledDeadline = true;
+    assertPollingApiAgreement(device, 0xFFFFFFF0U, true);
+
+    ModbusPollScheduler::scheduleNext(readable, 0xFFFFFFF0U);
+    TEST_ASSERT_EQUAL_HEX32(0x10U, readable.nextDueAtMs);
+    assertPollingApiAgreement(device, 0xFFFFFFF0U, false);
+    assertPollingApiAgreement(device, 0U, false);
+}
+
 std::string modbusConfigurationWithScale(const int function, const char *scale,
                                          const char *dataType = "uint16",
                                          const int numOfRegisters = 1,
@@ -3124,6 +3207,83 @@ void test_modbus_configuration_coerces_register_shape_per_data_type(void) {
                           static_cast<int>(notices[0].warning));
     TEST_ASSERT_EQUAL_UINT16(300U, notices[0].previous);
     TEST_ASSERT_EQUAL_UINT16(125U, notices[0].coerced);
+}
+
+std::string modbusConfigurationWithPollInterval(const char *field, const char *value) {
+    return std::string(R"({"version":1,"bus":{"enabled":true,"baud":9600,"serialFormat":"8N1"},"devices":[{"id":"device","name":"Device","slaveId":1,"dataPoints":[{"id":"point","name":"Point","function":3,"address":10,"numOfRegisters":1,"scale":1,"dataType":"uint16","unit":"",")")
+           + field + R"(":)" + value + R"(}]}]})";
+}
+
+void assertPollIntervalRejectedAtomically(const char *field, const char *value) {
+    ConfigurationRoot active;
+    active.bus.baud = 19200;
+    active.bus.serialFormat = "7E1";
+    active.bus.enabled = true;
+    ModbusDevice existing{};
+    existing.id = "existing";
+    active.devices.push_back(existing);
+
+    ModbusConfigDocument::ValidationError error;
+    const std::string json = modbusConfigurationWithPollInterval(field, value);
+    TEST_ASSERT_FALSE(ModbusConfigDocument::parse(json.c_str(), json.size(), active, &error));
+    TEST_ASSERT_EQUAL_INT(
+        static_cast<int>(ModbusConfigDocument::ValidationReason::InvalidPollInterval),
+        static_cast<int>(error.reason));
+    TEST_ASSERT_EQUAL_UINT(0U, error.deviceIndex);
+    TEST_ASSERT_EQUAL_UINT(0U, error.datapointIndex);
+    TEST_ASSERT_EQUAL_INT(19200, active.bus.baud);
+    TEST_ASSERT_EQUAL_STRING("7E1", active.bus.serialFormat.c_str());
+    TEST_ASSERT_TRUE(active.bus.enabled);
+    TEST_ASSERT_EQUAL_UINT(1U, active.devices.size());
+    TEST_ASSERT_EQUAL_STRING("existing", active.devices[0].id.c_str());
+}
+
+void test_modbus_configuration_accepts_rollover_safe_poll_interval_boundaries(void) {
+    struct AcceptedInterval {
+        const char *field;
+        const char *value;
+        uint32_t expectedMilliseconds;
+    };
+    const AcceptedInterval acceptedIntervals[] = {
+        {"poll_interval_ms", "0", 0U},
+        {"poll_interval_ms", "1.0", 1U},
+        {"poll_interval_ms", "1e3", 1000U},
+        {"poll_interval_ms", "2147483647", 2147483647U},
+        {"poll_interval", "0", 0U},
+        {"poll_interval", "1.0", 1000U},
+        {"poll_interval", "1e3", 1000000U},
+        {"poll_interval", "2147483", 2147483000U},
+    };
+
+    for (const auto &accepted : acceptedIntervals) {
+        ConfigurationRoot parsed;
+        const std::string json =
+            modbusConfigurationWithPollInterval(accepted.field, accepted.value);
+        TEST_ASSERT_TRUE(ModbusConfigDocument::parse(json.c_str(), json.size(), parsed));
+        TEST_ASSERT_EQUAL_UINT(1U, parsed.devices.size());
+        TEST_ASSERT_EQUAL_UINT(1U, parsed.devices[0].datapoints.size());
+        const auto &datapoint = parsed.devices[0].datapoints[0];
+        TEST_ASSERT_EQUAL_UINT32(accepted.expectedMilliseconds, datapoint.pollIntervalMs);
+        TEST_ASSERT_FALSE(datapoint.hasScheduledDeadline);
+    }
+}
+
+void test_modbus_configuration_rejects_invalid_poll_intervals_atomically(void) {
+    const char *invalidMilliseconds[] = {
+        "2147483648", "-1", "1.5", "\"1000\"", "true", "null",
+        "18446744073709551615",
+    };
+    for (const char *value : invalidMilliseconds) {
+        assertPollIntervalRejectedAtomically("poll_interval_ms", value);
+    }
+
+    const char *invalidSeconds[] = {
+        "2147484", "-1", "1.5", "\"1000\"", "true", "null",
+        "18446744073709551615",
+    };
+    for (const char *value : invalidSeconds) {
+        assertPollIntervalRejectedAtomically("poll_interval", value);
+    }
 }
 
 void test_modbus_configuration_rejects_noninvertible_writable_scales_atomically(void) {
@@ -5080,6 +5240,11 @@ int main(int /*argc*/, char ** /*argv*/) {
     RUN_TEST(test_modbus_mqtt_holding_payload_grammar_and_conversion);
     RUN_TEST(test_modbus_mqtt_typed_holding_conversion);
     RUN_TEST(test_modbus_mqtt_production_handler_submits_only_accepted_commands);
+    RUN_TEST(test_modbus_polling_initial_state_and_all_due_apis_are_rollover_safe);
+    RUN_TEST(test_modbus_polling_deadlines_are_ordered_across_millis_rollover);
+    RUN_TEST(test_modbus_polling_reschedules_once_from_supplied_attempt_timestamp);
+    RUN_TEST(test_modbus_configuration_accepts_rollover_safe_poll_interval_boundaries);
+    RUN_TEST(test_modbus_configuration_rejects_invalid_poll_intervals_atomically);
     RUN_TEST(test_modbus_configuration_rejects_noninvertible_writable_scales_atomically);
     RUN_TEST(test_modbus_configuration_coerces_register_shape_per_data_type);
     RUN_TEST(test_modbus_home_assistant_number_bounds_follow_scale_direction);

@@ -1,6 +1,10 @@
 import {API, safeJson, STATIC_FILES} from "app";
 import {parseConfiguredScale, validateDatapointScale} from "./modbus_scale.mjs";
 import {
+    MAX_LEGACY_POLL_INTERVAL_SECONDS,
+    pollIntervalValidationError,
+} from "./modbus_poll.mjs";
+import {
     SHAPE_MESSAGES,
     WAVIN_READ,
     WAVIN_WRITE,
@@ -98,7 +102,10 @@ function schemaToUi(json) {
                 page: toByteField(p.page),
                 poll_secs: (Number.isFinite(Number(p?.poll_interval))
                     ? Number(p.poll_interval)
-                    : (Number.isFinite(Number(p?.poll_interval_ms)) ? Math.round(Number(p.poll_interval_ms)/1000) : 0))
+                    : (Number.isFinite(Number(p?.poll_interval_ms))
+                        ? Math.min(MAX_LEGACY_POLL_INTERVAL_SECONDS,
+                            Math.round(Number(p.poll_interval_ms) / 1000))
+                        : 0))
             };
         }) : []
     }));
@@ -135,6 +142,7 @@ function uiToSchema(uiModel) {
                 const func = Number(p.func) || 3;
                 const type = normalizeDataType(p.type);
                 const order = normalizeWordOrder(p.order);
+                const pollInterval = Number(p.poll_secs ?? 0);
                 const dp = {
                     id: p.id,
                     name: p.name,
@@ -144,7 +152,7 @@ function uiToSchema(uiModel) {
                     dataType: type,
                     scale: parseConfiguredScale(p.scale),
                     unit: p.unit || "",
-                    ...(Number.isFinite(Number(p.poll_secs)) && Number(p.poll_secs) > 0 ? { poll_interval: Number(p.poll_secs) } : {})
+                    ...(pollInterval !== 0 ? { poll_interval: pollInterval } : {})
                 };
                 // Byte slices apply to 16-bit types only; word order to multi-register types only.
                 if (slice !== "full" && wordWidth(type) === 1) {
@@ -223,8 +231,9 @@ function validateSchemaConfig(cfg) {
             if (!Number.isInteger(p.address) || p.address < 0 || p.address > 65535) {
                 errors.push(`Datapoint ${p.id}: address 0-65535`);
             }
-            if (p.poll_interval != null && (!Number.isInteger(p.poll_interval) || p.poll_interval < 0)) {
-                errors.push(`Datapoint ${p.id}: poll_interval must be >= 0 seconds`);
+            const pollIntervalError = pollIntervalValidationError(p);
+            if (pollIntervalError != null) {
+                errors.push(`Datapoint ${p.id}: ${pollIntervalError}`);
             }
             if (!Number.isInteger(p.numOfRegisters) || p.numOfRegisters < 1 || p.numOfRegisters > 125) {
                 errors.push(`Datapoint ${p.id}: numOfRegisters 1-125`);
@@ -927,8 +936,7 @@ function showDatapointEditor() {
         datapoint.topic = ($("#dp-topic").value || "").trim();
     };
     $("#dp-poll").oninput = () => {
-        const v = Number($("#dp-poll").value);
-        datapoint.poll_secs = Math.max(0, Number.isFinite(v) ? v : 0);
+        datapoint.poll_secs = Number($("#dp-poll").value);
     };
 }
 

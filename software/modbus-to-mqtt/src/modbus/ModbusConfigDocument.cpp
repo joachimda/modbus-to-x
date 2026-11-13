@@ -8,6 +8,7 @@
 #include "Config.h"
 #include "modbus/ModbusFunctionUtils.h"
 #include "modbus/ModbusMqttWriteCore.h"
+#include "modbus/ModbusPollScheduler.h"
 #include "modbus/ModbusValueCodec.h"
 #include "modbus/WavinFrame.h"
 #include "modbus/config_structs/ModbusDatapoint.h"
@@ -205,6 +206,50 @@ bool applyRegisterShapeRules(ModbusDatapoint &datapoint, const long requestedCou
     return true;
 }
 
+bool parseBoundedWholeNumber(const JsonVariantConst &value, const uint32_t maximum,
+                             uint32_t &result) {
+    if (!value.is<double>()) return false;
+
+    const double numericValue = value.as<double>();
+    if (!std::isfinite(numericValue)
+        || numericValue < 0.0
+        || numericValue > static_cast<double>(maximum)
+        || std::floor(numericValue) != numericValue) {
+        return false;
+    }
+
+    result = static_cast<uint32_t>(numericValue);
+    return true;
+}
+
+bool parsePollInterval(const JsonObject &point, uint32_t &pollIntervalMs) {
+    const JsonVariantConst millisecondsValue = point["poll_interval_ms"];
+    const JsonVariantConst secondsValue = point["poll_interval"];
+    const bool hasMilliseconds = !millisecondsValue.isUnbound();
+    const bool hasSeconds = !secondsValue.isUnbound();
+
+    uint32_t milliseconds = 0U;
+    if (hasMilliseconds) {
+        if (!parseBoundedWholeNumber(millisecondsValue,
+                                     ModbusPollScheduler::MAX_POLL_INTERVAL_MS,
+                                     milliseconds)) {
+            return false;
+        }
+    }
+
+    uint32_t seconds = 0U;
+    if (hasSeconds) {
+        if (!parseBoundedWholeNumber(secondsValue,
+                                     ModbusPollScheduler::MAX_LEGACY_POLL_INTERVAL_SECONDS,
+                                     seconds)) {
+            return false;
+        }
+    }
+
+    pollIntervalMs = hasMilliseconds ? milliseconds : seconds * 1000U;
+    return true;
+}
+
 }  // namespace
 
 bool parse(const char *json, const size_t length, ConfigurationRoot &outConfig,
@@ -320,14 +365,12 @@ bool parse(const char *json, const size_t length, ConfigurationRoot &outConfig,
                     datapoint.topic.trim();
                     datapoint.registerSlice = parseRegisterSlice(point["registerSlice"]);
                     datapoint.wordOrder = parseWordOrder(point["wordOrder"]);
-                    if (point["poll_interval_ms"].is<unsigned long>()) {
-                        datapoint.pollIntervalMs =
-                            static_cast<uint32_t>(point["poll_interval_ms"].as<unsigned long>());
-                    } else {
-                        datapoint.pollIntervalMs =
-                            static_cast<uint32_t>(point["poll_interval"].as<unsigned long>()) * 1000UL;
+                    if (!parsePollInterval(point, datapoint.pollIntervalMs)) {
+                        return fail(validationError, ValidationReason::InvalidPollInterval,
+                                    deviceIndex, datapointIndex);
                     }
                     datapoint.nextDueAtMs = 0U;
+                    datapoint.hasScheduledDeadline = false;
                     if (!applyRegisterShapeRules(datapoint, requestedCount, deviceIndex, datapointIndex,
                                                  mode, validationError, notices)) {
                         return false;
@@ -352,6 +395,7 @@ const char *reasonToString(const ValidationReason reason) {
         case ValidationReason::InvalidRegisterCount: return "invalid_register_count";
         case ValidationReason::InvalidWavinAddress: return "invalid_wavin_address";
         case ValidationReason::InvalidBaudRate: return "invalid_baud_rate";
+        case ValidationReason::InvalidPollInterval: return "invalid_poll_interval";
         case ValidationReason::None: break;
     }
     return "none";
@@ -369,6 +413,8 @@ const char *reasonDescription(const ValidationReason reason) {
         case ValidationReason::InvalidWavinAddress:
             return "Wavin functions need address (register index), category and page in 0-255";
         case ValidationReason::InvalidBaudRate: return "Bus baud rate must be an integer of at least 1200";
+        case ValidationReason::InvalidPollInterval:
+            return "Poll interval must be a whole number of 0-2147483647 ms (poll_interval_ms) or 0-2147483 s (poll_interval)";
         case ValidationReason::None: break;
     }
     return "";
@@ -379,6 +425,7 @@ bool locatesDatapoint(const ValidationReason reason) {
         case ValidationReason::InvalidScale:
         case ValidationReason::InvalidRegisterCount:
         case ValidationReason::InvalidWavinAddress:
+        case ValidationReason::InvalidPollInterval:
             return true;
         case ValidationReason::None:
         case ValidationReason::InvalidJson:

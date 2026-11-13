@@ -196,11 +196,13 @@
                 },
                 "poll_interval": {
                   "type": "integer",
-                  "minimum": 0
+                  "minimum": 0,
+                  "maximum": 2147483
                 },
                 "poll_interval_ms": {
                   "type": "integer",
-                  "minimum": 0
+                  "minimum": 0,
+                  "maximum": 2147483647
                 }
               },
               "additionalProperties": false

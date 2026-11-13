@@ -21,6 +21,10 @@ enum class ValidationReason : uint8_t {
     // A bus baud rate below MODBUS_MIN_BAUD_RATE, or one that is not an
     // integer.
     InvalidBaudRate,
+    // poll_interval_ms above ModbusPollScheduler::MAX_POLL_INTERVAL_MS,
+    // poll_interval above MAX_LEGACY_POLL_INTERVAL_SECONDS, or either one
+    // negative, fractional or not a number.
+    InvalidPollInterval,
 };
 
 struct ValidationError {

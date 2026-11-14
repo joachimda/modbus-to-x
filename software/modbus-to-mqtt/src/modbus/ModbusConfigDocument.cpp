@@ -8,6 +8,7 @@
 #include "Config.h"
 #include "modbus/ModbusFunctionUtils.h"
 #include "modbus/ModbusMqttWriteCore.h"
+#include "modbus/ModbusPollScheduler.h"
 #include "modbus/ModbusValueCodec.h"
 #include "modbus/WavinFrame.h"
 #include "modbus/config_structs/ModbusDatapoint.h"
@@ -128,7 +129,7 @@ bool fail(ValidationError *error, const ValidationReason reason,
 
 void notice(std::vector<ParseNotice> *notices, const ParseWarning warning,
             const size_t deviceIndex, const size_t datapointIndex,
-            const uint16_t previous, const uint16_t coerced) {
+            const uint32_t previous, const uint32_t coerced) {
     if (notices == nullptr) return;
     ParseNotice entry;
     entry.warning = warning;
@@ -202,6 +203,64 @@ bool applyRegisterShapeRules(ModbusDatapoint &datapoint, const long requestedCou
                static_cast<uint16_t>(RegisterSlice::Full));
         datapoint.registerSlice = RegisterSlice::Full;
     }
+    return true;
+}
+
+enum class IntervalField : uint8_t { Absent, Valid, Repaired, Invalid };
+
+// Reads a whole number of 0..maximum. In lenient mode a number outside that
+// set is brought into it and anything that is not a number counts as absent.
+IntervalField parseIntervalField(const JsonVariantConst &value, const uint32_t maximum,
+                                 const ParseMode mode, uint32_t &result) {
+    result = 0U;
+    if (value.isUnbound()) return IntervalField::Absent;
+
+    const bool lenient = mode == ParseMode::Lenient;
+    if (!value.is<double>()) {
+        return lenient ? IntervalField::Absent : IntervalField::Invalid;
+    }
+
+    const double numericValue = value.as<double>();
+    if (std::isfinite(numericValue)
+        && numericValue >= 0.0
+        && numericValue <= static_cast<double>(maximum)
+        && std::floor(numericValue) == numericValue) {
+        result = static_cast<uint32_t>(numericValue);
+        return IntervalField::Valid;
+    }
+    if (!lenient) return IntervalField::Invalid;
+
+    if (std::isnan(numericValue) || numericValue < 0.0) {
+        result = 0U;
+    } else if (numericValue > static_cast<double>(maximum)) {
+        result = maximum;
+    } else {
+        result = static_cast<uint32_t>(std::floor(numericValue));
+    }
+    return IntervalField::Repaired;
+}
+
+// poll_interval_ms wins when both fields are present. In strict mode an
+// invalid value in either field rejects the datapoint, including the field
+// that would not have been used.
+bool parsePollInterval(const JsonObject &point, const ParseMode mode,
+                       uint32_t &pollIntervalMs, bool &repaired) {
+    uint32_t milliseconds = 0U;
+    const IntervalField millisecondsField =
+        parseIntervalField(point["poll_interval_ms"],
+                           ModbusPollScheduler::MAX_POLL_INTERVAL_MS, mode, milliseconds);
+    uint32_t seconds = 0U;
+    const IntervalField secondsField =
+        parseIntervalField(point["poll_interval"],
+                           ModbusPollScheduler::MAX_LEGACY_POLL_INTERVAL_SECONDS, mode, seconds);
+    if (millisecondsField == IntervalField::Invalid
+        || secondsField == IntervalField::Invalid) {
+        return false;
+    }
+
+    const bool useMilliseconds = millisecondsField != IntervalField::Absent;
+    pollIntervalMs = useMilliseconds ? milliseconds : seconds * 1000U;
+    repaired = (useMilliseconds ? millisecondsField : secondsField) == IntervalField::Repaired;
     return true;
 }
 
@@ -320,14 +379,18 @@ bool parse(const char *json, const size_t length, ConfigurationRoot &outConfig,
                     datapoint.topic.trim();
                     datapoint.registerSlice = parseRegisterSlice(point["registerSlice"]);
                     datapoint.wordOrder = parseWordOrder(point["wordOrder"]);
-                    if (point["poll_interval_ms"].is<unsigned long>()) {
-                        datapoint.pollIntervalMs =
-                            static_cast<uint32_t>(point["poll_interval_ms"].as<unsigned long>());
-                    } else {
-                        datapoint.pollIntervalMs =
-                            static_cast<uint32_t>(point["poll_interval"].as<unsigned long>()) * 1000UL;
+                    bool pollIntervalRepaired = false;
+                    if (!parsePollInterval(point, mode, datapoint.pollIntervalMs,
+                                           pollIntervalRepaired)) {
+                        return fail(validationError, ValidationReason::InvalidPollInterval,
+                                    deviceIndex, datapointIndex);
+                    }
+                    if (pollIntervalRepaired) {
+                        notice(notices, ParseWarning::PollIntervalRepaired, deviceIndex,
+                               datapointIndex, 0U, datapoint.pollIntervalMs);
                     }
                     datapoint.nextDueAtMs = 0U;
+                    datapoint.hasScheduledDeadline = false;
                     if (!applyRegisterShapeRules(datapoint, requestedCount, deviceIndex, datapointIndex,
                                                  mode, validationError, notices)) {
                         return false;
@@ -352,6 +415,7 @@ const char *reasonToString(const ValidationReason reason) {
         case ValidationReason::InvalidRegisterCount: return "invalid_register_count";
         case ValidationReason::InvalidWavinAddress: return "invalid_wavin_address";
         case ValidationReason::InvalidBaudRate: return "invalid_baud_rate";
+        case ValidationReason::InvalidPollInterval: return "invalid_poll_interval";
         case ValidationReason::None: break;
     }
     return "none";
@@ -369,6 +433,8 @@ const char *reasonDescription(const ValidationReason reason) {
         case ValidationReason::InvalidWavinAddress:
             return "Wavin functions need address (register index), category and page in 0-255";
         case ValidationReason::InvalidBaudRate: return "Bus baud rate must be an integer of at least 1200";
+        case ValidationReason::InvalidPollInterval:
+            return "Poll interval must be a whole number of 0-2147483647 ms (poll_interval_ms) or 0-2147483 s (poll_interval)";
         case ValidationReason::None: break;
     }
     return "";
@@ -379,6 +445,7 @@ bool locatesDatapoint(const ValidationReason reason) {
         case ValidationReason::InvalidScale:
         case ValidationReason::InvalidRegisterCount:
         case ValidationReason::InvalidWavinAddress:
+        case ValidationReason::InvalidPollInterval:
             return true;
         case ValidationReason::None:
         case ValidationReason::InvalidJson:
@@ -395,6 +462,7 @@ const char *warningToString(const ParseWarning warning) {
         case ParseWarning::TextWriteCoercedToUint16: return "text_write_coerced_to_uint16";
         case ParseWarning::RegisterCountClamped: return "register_count_clamped";
         case ParseWarning::DataTypeCoercedToUint16: return "data_type_coerced_to_uint16";
+        case ParseWarning::PollIntervalRepaired: return "poll_interval_repaired";
         case ParseWarning::None: break;
     }
     return "none";

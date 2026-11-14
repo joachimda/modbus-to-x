@@ -91,6 +91,7 @@ private:
     void quiesceForOtaOwned(uint32_t operationId, ModbusOperationResult &result);
 
     void resumeFromOtaOwned(uint32_t operationId, ModbusOperationResult &result);
+    void restartPollSchedule();
 
     ModbusCommandResult executeOwned(const ModbusCommandRequest &request);
 

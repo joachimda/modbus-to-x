@@ -404,6 +404,7 @@ void ModbusManager::processCommand(Command &command) {
             }
             break;
         case Command::Type::SetEnabled:
+            if (command.enabled && !_bus.isActive()) restartPollSchedule();
             _bus.setActive(command.enabled);
             command.result = ModbusOperationResult::Success;
             break;
@@ -465,6 +466,15 @@ void ModbusManager::quiesceForOtaOwned(const uint32_t operationId,
     }
 }
 
+// Deadlines kept across a pause could lie more than half the millis() range
+// in the past by the time polling resumes, where the scheduler would read
+// them as not yet due. Every datapoint is polled once after a resume instead.
+void ModbusManager::restartPollSchedule() {
+    for (auto &device : _modbusRoot.devices) {
+        ModbusPollScheduler::clearDeadlines(device);
+    }
+}
+
 void ModbusManager::resumeFromOtaOwned(const uint32_t operationId,
                                       ModbusOperationResult &result) {
     if (operationId == 0U
@@ -477,6 +487,7 @@ void ModbusManager::resumeFromOtaOwned(const uint32_t operationId,
             result = ModbusOperationResult::StaleGeneration;
             return;
         }
+        if (_busActiveBeforeOta) restartPollSchedule();
         _bus.setActive(_busActiveBeforeOta);
         _otaQuiesced = false;
         _otaOperationId = 0U;

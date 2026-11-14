@@ -7,7 +7,7 @@
 namespace {
 
 // Data-type notices carry ModbusDataType values; print their names.
-String noticeValueToString(const ModbusConfigDocument::ParseWarning warning, const uint16_t value) {
+String noticeValueToString(const ModbusConfigDocument::ParseWarning warning, const uint32_t value) {
     using ModbusConfigDocument::ParseWarning;
     if (warning == ParseWarning::TextWriteCoercedToUint16
         || warning == ParseWarning::DataTypeCoercedToUint16) {
@@ -50,8 +50,9 @@ bool ModbusConfigLoader::loadConfiguration(Logger *logger, const char *path, Con
     f.close();
 
     // A stored document must keep loading: one datapoint an earlier firmware
-    // accepted (FC6 with a 32/64-bit type) keeps its old uint16 encoding and
-    // is logged rather than stopping Modbus on every device.
+    // accepted (FC6 with a 32/64-bit type, or a polling interval outside the
+    // range accepted now) is repaired and logged rather than stopping Modbus
+    // on every device.
     return parseConfiguration(logger, json.c_str(), json.length(), outConfig, nullptr,
                               ModbusConfigDocument::ParseMode::Lenient);
 }
@@ -67,6 +68,14 @@ bool ModbusConfigLoader::parseConfiguration(Logger *logger, const char *json,
     if (ModbusConfigDocument::parse(json, length, outConfig, error, &notices, mode)) {
         if (logger != nullptr) {
             for (const auto &notice : notices) {
+                if (notice.warning == ModbusConfigDocument::ParseWarning::PollIntervalRepaired) {
+                    logger->logWarning((String("Modbus configuration adjusted: ")
+                                        + ModbusConfigDocument::warningToString(notice.warning)
+                                        + ", deviceIndex=" + String(notice.deviceIndex)
+                                        + ", datapointIndex=" + String(notice.datapointIndex)
+                                        + ", pollIntervalMs=" + String(notice.coerced)).c_str());
+                    continue;
+                }
                 logger->logWarning((String("Modbus configuration adjusted: ")
                                     + ModbusConfigDocument::warningToString(notice.warning)
                                     + ", deviceIndex=" + String(notice.deviceIndex)

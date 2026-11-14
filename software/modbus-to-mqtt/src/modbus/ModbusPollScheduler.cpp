@@ -2,6 +2,10 @@
 
 #include "modbus/ModbusFunctionUtils.h"
 
+bool ModbusPollScheduler::isDeadlineReached(const uint32_t nowMs, const uint32_t deadlineMs) {
+    return static_cast<int32_t>(nowMs - deadlineMs) >= 0;
+}
+
 bool ModbusPollScheduler::isDue(const ModbusDatapoint &dp, const uint32_t nowMs) {
     if (!isReadOnlyFunction(dp.function)) {
         return false;
@@ -9,15 +13,27 @@ bool ModbusPollScheduler::isDue(const ModbusDatapoint &dp, const uint32_t nowMs)
     if (dp.pollIntervalMs == 0) {
         return true;
     }
+    if (!dp.hasScheduledDeadline) {
+        return true;
+    }
 
-    return nowMs >= dp.nextDueAtMs;
+    return isDeadlineReached(nowMs, dp.nextDueAtMs);
 }
 
 void ModbusPollScheduler::scheduleNext(ModbusDatapoint &dp, const uint32_t nowMs) {
     if (dp.pollIntervalMs > 0) {
         dp.nextDueAtMs = nowMs + dp.pollIntervalMs;
+        dp.hasScheduledDeadline = true;
     } else {
         dp.nextDueAtMs = 0;
+        dp.hasScheduledDeadline = false;
+    }
+}
+
+void ModbusPollScheduler::clearDeadlines(ModbusDevice &device) {
+    for (auto &dp : device.datapoints) {
+        dp.nextDueAtMs = 0;
+        dp.hasScheduledDeadline = false;
     }
 }
 
@@ -30,10 +46,8 @@ std::vector<ModbusDatapoint *> ModbusPollScheduler::dueReadDatapoints(ModbusDevi
 
 bool ModbusPollScheduler::hasDueReadDatapoints(const ModbusDevice &device, const uint32_t nowMs) {
     for (const auto &dp : device.datapoints) {
-        if (isReadOnlyFunction(dp.function)) {
-            if (dp.pollIntervalMs == 0 || nowMs >= dp.nextDueAtMs) {
-                return true;
-            }
+        if (isDue(dp, nowMs)) {
+            return true;
         }
     }
     return false;
